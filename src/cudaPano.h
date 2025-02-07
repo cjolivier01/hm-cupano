@@ -1,0 +1,82 @@
+#pragma once
+
+#include "canvasManager.h"
+#include "cudaBlend.h"
+#include "cudaMat.h"
+#include "cudaStatus.h"
+
+#include <memory>
+
+namespace hm {
+namespace pano {
+namespace cuda {
+
+/**
+ *   _____ _   _  _        _     _              _____             _               _
+ *  / ____| | (_)| |      | |   (_)            / ____|           | |             | |
+ * | (___ | |_ _ | |_  ___| |__  _ _ __   __ _| |      ___  _ __ | |_  ___ __  __| |_
+ *  \___ \| __| || __|/ __| '_ \| | '_ \ / _` | |     / _ \| '_ \| __|/ _ \\ \/ /| __|
+ *  ____) | |_| || |_| (__| | | | | | | | (_| | |____| (_) | | | | |_|  __/ >  < | |_
+ * |_____/ \__|_| \__|\___|_| |_|_|_| |_|\__, |\_____|\___/|_| |_|\__|\___|/_/\_\ \__|
+ *                                        __/ |
+ *                                       |___/
+ */
+template <typename T, typename T_compute>
+struct StitchingContext {
+  StitchingContext(int batch_size, bool is_hard_seam) : batch_size_(batch_size), is_hard_seam_(is_hard_seam) {}
+  // Static buffers
+  std::unique_ptr<CudaMat<uint16_t>> remap_1_x;
+  std::unique_ptr<CudaMat<uint16_t>> remap_1_y;
+  std::unique_ptr<CudaMat<uint16_t>> remap_2_x;
+  std::unique_ptr<CudaMat<uint16_t>> remap_2_y;
+
+  std::unique_ptr<CudaMat<T_compute>> cudaBlendSoftSeam;
+  std::unique_ptr<CudaMat<unsigned char>> cudaBlendHardSeam;
+
+  // Scratch buffers
+  std::unique_ptr<CudaMat<T_compute>> cudaFull1;
+  std::unique_ptr<CudaMat<T_compute>> cudaFull2;
+
+  // Laplacian Blend Scratch context
+  std::unique_ptr<CudaBatchLaplacianBlendContext<BaseScalar_t<T_compute>>> laplacian_blend_context;
+
+  constexpr int batch_size() const {
+    return batch_size_;
+  }
+  constexpr bool is_hard_seam() const {
+    return is_hard_seam_;
+  }
+
+ private:
+  int batch_size_;
+  bool is_hard_seam_;
+};
+
+/**
+ *   _____           _        _____ _   _  _        _     _____
+ *  / ____|         | |      / ____| | (_)| |      | |   |  __ \
+ * | |     _   _  __| | __ _| (___ | |_ _ | |_  ___| |__ | |__) |__ _ _ __   ___
+ * | |    | | | |/ _` |/ _` |\___ \| __| || __|/ __| '_ \|  ___// _` | '_ \ / _ \
+ * | |____| |_| | (_| | (_| |____) | |_| || |_| (__| | | | |   | (_| | | | | (_) |
+ *  \_____|\__,_|\__,_|\__,_|_____/ \__|_| \__|\___|_| |_|_|    \__,_|_| |_|\___/
+ *
+ *
+ */
+template <typename T, typename T_compute>
+class CudaStitchPano {
+ public:
+  CudaStitchPano(int batch_size);
+  static CudaStatusOr<std::unique_ptr<CudaMat<T>>> process(
+      const CudaMat<T>& sampleImage1,
+      const CudaMat<T>& sampleImage2,
+      StitchingContext<T, T_compute>& stitch_context,
+      const CanvasManager& canvas_manager,
+      cudaStream_t stream,
+      std::unique_ptr<CudaMat<T>>&& canvas);
+};
+
+} // namespace cuda
+} // namespace pano
+} // namespace hm
+
+#include "cudaPano.inl"

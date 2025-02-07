@@ -1,0 +1,51 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "JU Build All",
+      "type": "shell",
+      "command": "bazelisk",
+      "args": [
+        "build",
+        "--config=debug",
+        "//...",
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true,
+      },
+      "options": {
+        "cwd": "${workspaceRoot}",
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": true,
+      },
+      "problemMatcher": [],
+    },
+    {
+      "label": "JU Clean",
+      "type": "shell",
+      "command": "bazelisk",
+      "args": [
+        "clean",
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": false,
+      },
+      "options": {
+        "cwd": "${workspaceRoot}",
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": true,
+      },
+      "problemMatcher": []
+    },
+  ]
+}

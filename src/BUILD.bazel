@@ -1,0 +1,103 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cuda//cuda:defs.bzl", "cuda_library")
+
+config_setting(
+    name = "aarch64-linux-gnu",
+    constraint_values = ["@platforms//cpu:aarch64"],
+)
+
+config_setting(
+    name = "x86_64-linux-gnu",
+    constraint_values = ["@platforms//cpu:x86_64"],
+)
+
+cc_library(
+    name = "cuda_matrix",
+    srcs = [
+        "cudaMat.cpp",
+        "showImage.cpp",
+    ],
+    hdrs = [
+        "cudaMat.h",
+        "cudaMat.inl",
+        "showImage.h",
+    ],
+    copts = [
+        # "-DWITH_JETSON_UTILS=1",
+    ],
+    includes = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cuda_blend_cuda_lib",
+        # "//image:image_format",
+        "@opencv_linux//:opencv",
+    ],
+)
+
+cc_library(
+    name = "pano",
+    srcs = [
+        "canvasManager.cpp",
+        "controlMasks.cpp",
+    ],
+    hdrs = [
+        "canvasManager.h",
+        "controlMasks.h",
+    ],
+    copts = [
+    ],
+    includes = ["."],
+    linkopts = [
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@opencv_linux//:opencv",
+    ],
+)
+
+cc_library(
+    name = "cuda_pano",
+    srcs = [
+        "cudaPano.cpp",
+    ],
+    hdrs = [
+        "cudaPano.h",
+        "cudaPano.inl",
+    ],
+    copts = [
+    ],
+    includes = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cuda_matrix",
+        ":pano",
+    ],
+)
+
+cuda_library(
+    name = "cuda_blend_cuda_lib",
+    srcs = [
+        "cudaBlend.cu",
+        "cudaMakeFull.cu",
+        "cudaRemap.cu",
+    ],
+    hdrs = [
+        "cudaBlend.h",
+        "cudaMakeFull.h",
+        "cudaRemap.h",
+        "cudaStatus.h",
+    ],
+    copts = [
+        "-std=c++17",
+        "-Xcompiler=-fPIC",
+        "-Xcompiler=-rdynamic",
+        "-G",
+        "-keep",
+        "-g",
+    ],
+    includes = ["."],
+    visibility = ["//visibility:private"],
+    deps = [
+        "@local_cuda//:cuda_runtime",
+    ],
+)
