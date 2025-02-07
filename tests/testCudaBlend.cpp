@@ -225,9 +225,9 @@ int main(int argc, char** argv) {
 
   // stitch-fix
   // Left video frame
-  std::string sample_img_left_path = game_dir + "GX010100.png";
+  std::string sample_img_left_path = game_dir + "left.png";
   // Right video frame
-  std::string sample_img_right_path = game_dir + "GX010019.png";
+  std::string sample_img_right_path = game_dir + "right.png";
 
   // std::string sample_img_left_path = game_dir + "GX010097.png";
   // std::string sample_img_right_path = game_dir + "GX010016.png";
