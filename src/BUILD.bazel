@@ -80,12 +80,14 @@ cuda_library(
         "cudaBlend.cu",
         "cudaMakeFull.cu",
         "cudaRemap.cu",
+        "cudaImageAdjust.cu",
     ],
     hdrs = [
         "cudaBlend.h",
         "cudaMakeFull.h",
         "cudaRemap.h",
         "cudaStatus.h",
+        "cudaImageAdjust.h",
     ],
     copts = [
         "-std=c++17",
