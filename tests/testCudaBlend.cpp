@@ -174,7 +174,7 @@ int main(int argc, char** argv) {
                               sample_img_left,
                               sample_img_right,
                               control_masks.whole_seam_mask_image,
-                              /*N=*/10,
+                              /*N=*/6,
                               cv::Point(control_masks.positions[0].xpos, control_masks.positions[0].ypos),
                               cv::Point(control_masks.positions[1].xpos, control_masks.positions[1].ypos))
                           .value();
