@@ -12,7 +12,9 @@ template <typename T_pipeline, typename T_compute>
 CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
     int batch_size,
     int num_levels,
-    const ControlMasks& control_masks) {
+    const ControlMasks& control_masks,
+    bool match_exposure)
+    : match_exposure_(match_exposure) {
   stitch_context_ = std::make_unique<StitchingContext<T_pipeline, T_compute>>(
       /*batch_size=*/batch_size, /*is_hard_seam=*/num_levels == 0);
   assert(!control_masks.positions.empty());

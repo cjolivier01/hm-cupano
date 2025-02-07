@@ -7,6 +7,7 @@
 #include "cudaStatus.h"
 
 #include <memory>
+#include <optional>
 
 namespace hm {
 namespace pano {
@@ -66,7 +67,7 @@ struct StitchingContext {
 template <typename T_pipeline, typename T_compute>
 class CudaStitchPano {
  public:
-  CudaStitchPano(int batch_size, int num_levels, const ControlMasks& control_masks);
+  CudaStitchPano(int batch_size, int num_levels, const ControlMasks& control_masks, bool match_exposure = true);
 
   int canvas_width() const {
     return canvas_manager_->canvas_width();
@@ -86,6 +87,14 @@ class CudaStitchPano {
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
+  static std::optional<cv::Scalar> match_seam_images(
+      cv::Mat& image1,
+      cv::Mat& image2,
+      const cv::Mat& seam,
+      int N,
+      const cv::Point& topLeft1,
+      const cv::Point& topLeft2);
+
  protected:
   static CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process(
       const CudaMat<T_pipeline>& sampleImage1,
@@ -98,6 +107,7 @@ class CudaStitchPano {
  private:
   std::unique_ptr<StitchingContext<T_pipeline, T_compute>> stitch_context_;
   std::unique_ptr<CanvasManager> canvas_manager_;
+  bool match_exposure_;
 };
 
 } // namespace cuda
