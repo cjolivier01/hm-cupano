@@ -178,7 +178,6 @@ int main(int argc, char** argv) {
                           cv::Point(control_masks.positions[0].xpos, control_masks.positions[0].ypos),
                           cv::Point(control_masks.positions[1].xpos, control_masks.positions[1].ypos))
                           .value();
-  (void)offset;
 
   if (std::is_floating_point_v<BaseScalar_t<T_pipeline>>) {
     sample_img_left.convertTo(sample_img_left, CV_T_PIPELINE, 1.0 / 255.0);
@@ -190,7 +189,8 @@ int main(int argc, char** argv) {
 
   auto canvas = std::make_unique<CudaMat<T_pipeline>>(pano.batch_size(), pano.canvas_width(), pano.canvas_height());
 
-  auto blendedCanvasResult = pano.process(sampleImage1, sampleImage2, stream, std::move(canvas));
+  auto blendedCanvasResult = pano.process(
+      sampleImage1, sampleImage2, stream, std::move(canvas));
   if (!blendedCanvasResult.ok()) {
     std::cerr << blendedCanvasResult.status().message() << std::endl;
     return blendedCanvasResult.status().code();

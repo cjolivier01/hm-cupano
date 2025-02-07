@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cudaImageAdjust.h"
 #include "cudaMakeFull.h"
 #include "cudaPano.h"
 #include "cudaRemap.h"
@@ -85,6 +86,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     const CudaMat<T_pipeline>& sampleImage2,
     StitchingContext<T_pipeline, T_compute>& stitch_context,
     const CanvasManager& canvas_manager,
+    const std::optional<T_compute>& image_adjustment,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
   CudaStatus cuerr;
@@ -93,6 +95,23 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
 
   auto roi_width = [](const cv::Rect2i& roi) { return roi.width; };
   // auto roi_height = [](const cv::Rect2i& roi) { return roi.height; };
+
+  // if (image_adjustment.has_value()) {
+  //   cuerr = adjustImageCudaBatch(
+  //       sampleImage1.data(),
+  //       stitch_context.batch_size(),
+  //       sampleImage1.width(),
+  //       sampleImage1.height(),
+  //       *image_adjustment);
+  //   CUDA_RETURN_IF_ERROR(cuerr);
+  //   cuerr = adjustImageCudaBatch(
+  //       sampleImage2.data(),
+  //       stitch_context.batch_size(),
+  //       sampleImage1.width(),
+  //       sampleImage1.height(),
+  //       *image_adjustment);
+  //   CUDA_RETURN_IF_ERROR(cuerr);
+  // }
 
   if (!stitch_context.is_hard_seam()) {
     //
@@ -120,7 +139,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
         /*offsetX=*/canvas_manager._x1,
         /*offsetY=*/canvas_manager._y1,
         stream);
-    // CUDA_RETURN_IF_ERROR(cuerr);
+    CUDA_RETURN_IF_ERROR(cuerr);
     // SHOW_SMALL(canvas);
 #endif
 
@@ -329,7 +348,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     const CudaMat<T_pipeline>& sampleImage2,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
-  return process(sampleImage1, sampleImage2, *stitch_context_, *canvas_manager_, stream, std::move(canvas));
+  return process(
+      sampleImage1, sampleImage2, *stitch_context_, *canvas_manager_, std::nullopt, stream, std::move(canvas));
 }
 
 } // namespace cuda
