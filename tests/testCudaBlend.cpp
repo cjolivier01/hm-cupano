@@ -33,7 +33,7 @@
 std::vector<cv::Mat> as_batch(const cv::Mat& mat, int batch_size) {
   std::vector<cv::Mat> batch;
   batch.reserve(batch_size);
-  for (size_t i = 0; i < batch_size; ++i) {
+  for (int i = 0; i < batch_size; ++i) {
     batch.emplace_back(mat.clone());
   }
   return batch;
@@ -170,14 +170,14 @@ int main(int argc, char** argv) {
 
   const int CV_T_PIPELINE = cudaPixelTypeToCvType(CudaTypeToPixelType<T_pipeline>::value);
 
-  cv::Scalar offset = hm::pano::match_seam_images(
-                          sample_img_left,
-                          sample_img_right,
-                          control_masks.whole_seam_mask_image,
-                          /*N=*/6,
-                          cv::Point(control_masks.positions[0].xpos, control_masks.positions[0].ypos),
-                          cv::Point(control_masks.positions[1].xpos, control_masks.positions[1].ypos))
-                          .value();
+  // cv::Scalar offset = hm::pano::match_seam_images(
+  //                         sample_img_left,
+  //                         sample_img_right,
+  //                         control_masks.whole_seam_mask_image,
+  //                         /*N=*/6,
+  //                         cv::Point(control_masks.positions[0].xpos, control_masks.positions[0].ypos),
+  //                         cv::Point(control_masks.positions[1].xpos, control_masks.positions[1].ypos))
+  //                         .value();
 
   if (std::is_floating_point_v<BaseScalar_t<T_pipeline>>) {
     sample_img_left.convertTo(sample_img_left, CV_T_PIPELINE, 1.0 / 255.0);
