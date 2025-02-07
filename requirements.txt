@@ -1,0 +1,6 @@
+moviepy
+kornia
+scipy
+ffmpegio
+opencv-python
+

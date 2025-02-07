@@ -25,13 +25,24 @@
       }
     },
     {
-      "name": "gl-display-test",
-      "type": "lldb",
+      //
+      // Python: Create Control Points
+      //
+      "name": "Python: create_control_points.py",
+      "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/bazel-bin/display/gl-display-test/gl_display_test",
-      "args": [],
+      "program": "${workspaceFolder}/scripts/create_control_points.py",
+      "args": [
+        "${env:HOME}/Videos/stitch-fix/GX010100.MP4",
+        "${env:HOME}/Videos/stitch-fix/GX010019.MP4",
+        "${env:HOME}/Videos/stitch-fix/hm_project.pto",
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
       "cwd": "${workspaceFolder}",
-      "preLaunchTask": "JU Build All",
+      "env": {
+        "PYTHONPATH": "${workspaceRoot}/build:${workspaceRoot}/src:${workspaceRoot}/external/MOTChallengeEvalKit"
+      }
     },
     {
       "name": "(LLDB) cudaBlend",
@@ -41,8 +52,6 @@
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
       "args": [
         "stitch-fix",
-        //"mlk-heat-1",
-        //"pdp",
         "${workspaceRoot}/output.png",
       ],
       "sourceMap": {
