@@ -51,8 +51,9 @@
       "cwd": "${workspaceFolder}",
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
       "args": [
-        "stitch-fix",
-        "${workspaceRoot}/output.png",
+        "--show",
+        "--game-id=stitch-fix",
+        "--output=${workspaceRoot}/output.png",
       ],
       "sourceMap": {
         "/proc/self/cwd": "${workspaceFolder}",
@@ -74,7 +75,7 @@
       "cwd": "${workspaceFolder}",
       "debuggerPath": "/usr/local/cuda/bin/cuda-gdb",
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
-      "args": "stitch-fix ${workspaceRoot}/output.png",
+      "args": "--game-id=stitch-fix --output=${workspaceRoot}/output.png",
       "initCommands": [
         "directory ${workspaceFolder}",
       ],
