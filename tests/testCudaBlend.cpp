@@ -31,7 +31,12 @@
 #include <unistd.h>
 
 std::vector<cv::Mat> as_batch(const cv::Mat& mat, int batch_size) {
-  return std::vector<cv::Mat>(batch_size, mat);
+  std::vector<cv::Mat> batch;
+  batch.reserve(batch_size);
+  for (size_t i = 0; i < batch_size; ++i) {
+    batch.emplace_back(mat.clone());
+  }
+  return batch;
 }
 
 int main(int argc, char** argv) {
@@ -169,7 +174,7 @@ int main(int argc, char** argv) {
                               sample_img_left,
                               sample_img_right,
                               control_masks.whole_seam_mask_image,
-                              10,
+                              /*N=*/10,
                               cv::Point(control_masks.positions[0].xpos, control_masks.positions[0].ypos),
                               cv::Point(control_masks.positions[1].xpos, control_masks.positions[1].ypos))
                           .value();

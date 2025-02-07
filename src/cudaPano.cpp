@@ -183,6 +183,7 @@ std::optional<cv::Scalar> match_seam_images(
         channels[i] += static_cast<float>(adjustment[i]);
       }
       cv::merge(channels, img);
+      img = img.clone();
     }
   };
 
