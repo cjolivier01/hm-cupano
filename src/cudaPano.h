@@ -1,6 +1,7 @@
 #pragma once
 
 #include "canvasManager.h"
+#include "controlMasks.h"
 #include "cudaBlend.h"
 #include "cudaMat.h"
 #include "cudaStatus.h"
@@ -21,7 +22,7 @@ namespace cuda {
  *                                        __/ |
  *                                       |___/
  */
-template <typename T, typename T_compute>
+template <typename T_pipeline, typename T_compute>
 struct StitchingContext {
   StitchingContext(int batch_size, bool is_hard_seam) : batch_size_(batch_size), is_hard_seam_(is_hard_seam) {}
   // Static buffers
@@ -62,17 +63,41 @@ struct StitchingContext {
  *
  *
  */
-template <typename T, typename T_compute>
+template <typename T_pipeline, typename T_compute>
 class CudaStitchPano {
  public:
-  CudaStitchPano(int batch_size);
-  static CudaStatusOr<std::unique_ptr<CudaMat<T>>> process(
-      const CudaMat<T>& sampleImage1,
-      const CudaMat<T>& sampleImage2,
-      StitchingContext<T, T_compute>& stitch_context,
+  CudaStitchPano(int batch_size, int num_levels, const ControlMasks& control_masks);
+
+  int canvas_width() const {
+    return canvas_manager_->canvas_width();
+  }
+
+  int canvas_height() const {
+    return canvas_manager_->canvas_height();
+  }
+
+  int batch_size() const {
+    return stitch_context_->batch_size();
+  }
+
+  CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process(
+      const CudaMat<T_pipeline>& sampleImage1,
+      const CudaMat<T_pipeline>& sampleImage2,
+      cudaStream_t stream,
+      std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
+
+ protected:
+  static CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process(
+      const CudaMat<T_pipeline>& sampleImage1,
+      const CudaMat<T_pipeline>& sampleImage2,
+      StitchingContext<T_pipeline, T_compute>& stitch_context,
       const CanvasManager& canvas_manager,
       cudaStream_t stream,
-      std::unique_ptr<CudaMat<T>>&& canvas);
+      std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
+
+ private:
+  std::unique_ptr<StitchingContext<T_pipeline, T_compute>> stitch_context_;
+  std::unique_ptr<CanvasManager> canvas_manager_;
 };
 
 } // namespace cuda
