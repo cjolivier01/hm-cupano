@@ -82,15 +82,15 @@ class CudaStitchPano {
   }
 
   CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process(
-      const CudaMat<T_pipeline>& sampleImage1,
-      const CudaMat<T_pipeline>& sampleImage2,
+      const CudaMat<T_pipeline>& inputImage1,
+      const CudaMat<T_pipeline>& inputImage2,
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
  protected:
   static CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process(
-      const CudaMat<T_pipeline>& sampleImage1,
-      const CudaMat<T_pipeline>& sampleImage2,
+      const CudaMat<T_pipeline>& inputImage1,
+      const CudaMat<T_pipeline>& inputImage2,
       StitchingContext<T_pipeline, T_compute>& stitch_context,
       const CanvasManager& canvas_manager,
       const std::optional<T_compute>& image_adjustment,
@@ -98,9 +98,15 @@ class CudaStitchPano {
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
  private:
+  std::optional<float3> compute_image_adjustment(
+      const CudaMat<T_pipeline>& inputImage1,
+      const CudaMat<T_pipeline>& inputImage2);
+
   std::unique_ptr<StitchingContext<T_pipeline, T_compute>> stitch_context_;
   std::unique_ptr<CanvasManager> canvas_manager_;
   bool match_exposure_;
+  std::optional<float3> image_adjustment_;
+  std::optional<cv::Mat> whole_seam_mask_image_;
 };
 
 } // namespace cuda

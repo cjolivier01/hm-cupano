@@ -78,6 +78,9 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
     assert(blend_seam.type() == CV_8U);
     stitch_context_->cudaBlendHardSeam = std::make_unique<CudaMat<unsigned char>>(blend_seam);
   }
+  if (match_exposure_) {
+    whole_seam_mask_image_ = control_masks.whole_seam_mask_image;
+  }
 }
 
 constexpr inline float3 neg(const float3& f) {
@@ -90,8 +93,8 @@ constexpr inline float3 neg(const float3& f) {
 
 template <typename T_pipeline, typename T_compute>
 CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_compute>::process(
-    const CudaMat<T_pipeline>& sampleImage1,
-    const CudaMat<T_pipeline>& sampleImage2,
+    const CudaMat<T_pipeline>& inputImage1,
+    const CudaMat<T_pipeline>& inputImage2,
     StitchingContext<T_pipeline, T_compute>& stitch_context,
     const CanvasManager& canvas_manager,
     const std::optional<T_compute>& image_adjustment,
@@ -102,24 +105,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   assert(canvas);
 
   auto roi_width = [](const cv::Rect2i& roi) { return roi.width; };
-  // auto roi_height = [](const cv::Rect2i& roi) { return roi.height; };
-
-  // if (image_adjustment.has_value()) {
-  //   cuerr = adjustImageCudaBatch(
-  //       sampleImage1.data(),
-  //       stitch_context.batch_size(),
-  //       sampleImage1.width(),
-  //       sampleImage1.height(),
-  //       *image_adjustment);
-  //   CUDA_RETURN_IF_ERROR(cuerr);
-  //   cuerr = adjustImageCudaBatch(
-  //       sampleImage2.data(),
-  //       stitch_context.batch_size(),
-  //       sampleImage1.width(),
-  //       sampleImage1.height(),
-  //       *image_adjustment);
-  //   CUDA_RETURN_IF_ERROR(cuerr);
-  // }
 
   if (!stitch_context.is_hard_seam()) {
     //
@@ -132,9 +117,9 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     // Remap image 1 onto the canvas
     //
     cuerr = batched_remap_kernel_ex_offset(
-        sampleImage1.data(),
-        sampleImage1.width(),
-        sampleImage1.height(),
+        inputImage1.data(),
+        inputImage1.width(),
+        inputImage1.height(),
         canvas->data(),
         canvas->width(),
         canvas->height(),
@@ -189,9 +174,9 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
 #if 1
     if (image_adjustment.has_value()) {
       cuerr = batched_remap_kernel_ex_offset_with_dest_map_adjust(
-          sampleImage1.data(),
-          sampleImage1.width(),
-          sampleImage1.height(),
+          inputImage1.data(),
+          inputImage1.width(),
+          inputImage1.height(),
           canvas->data(),
           canvas->width(),
           canvas->height(),
@@ -210,9 +195,9 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stream);
     } else {
       cuerr = batched_remap_kernel_ex_offset_with_dest_map(
-          sampleImage1.data(),
-          sampleImage1.width(),
-          sampleImage1.height(),
+          inputImage1.data(),
+          inputImage1.width(),
+          inputImage1.height(),
           canvas->data(),
           canvas->width(),
           canvas->height(),
@@ -229,7 +214,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           /*offsetY=*/canvas_manager._y1,
           stream);
     }
-    // SHOW_SMALL(&sampleImage1);
+    // SHOW_SMALL(&inputImage1);
     // SHOW_IMAGE(canvas);
 #endif
   }
@@ -245,9 +230,9 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     // Remap image 2 directly onto the canvas (will overwrite the overlappign portion of image 1)
     //
     cuerr = batched_remap_kernel_ex_offset(
-        sampleImage2.data(),
-        sampleImage2.width(),
-        sampleImage2.height(),
+        inputImage2.data(),
+        inputImage2.width(),
+        inputImage2.height(),
         canvas->data(),
         canvas->width(),
         canvas->height(),
@@ -304,9 +289,9 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     assert(canvas_manager._x2 + stitch_context.remap_2_x->width() <= canvas->width());
     assert(canvas_manager._y2 + stitch_context.remap_2_x->height() <= canvas->height());
     cuerr = batched_remap_kernel_ex_offset_with_dest_map(
-        sampleImage2.data(),
-        sampleImage2.width(),
-        sampleImage2.height(),
+        inputImage2.data(),
+        inputImage2.width(),
+        inputImage2.height(),
         canvas->data(),
         canvas->width(),
         canvas->height(),
@@ -322,7 +307,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
         /*offsetX=*/canvas_manager._x2,
         /*offsetY=*/canvas_manager._y2,
         stream);
-    // SHOW_SMALL(&sampleImage2);
+    // SHOW_SMALL(&inputImage2);
     // SHOW_SMALL(canvas);
     // SHOW_SMALL(stitch_context.cudaBlendHardSeam);
 #endif
@@ -374,13 +359,34 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
 }
 
 template <typename T_pipeline, typename T_compute>
+std::optional<float3> CudaStitchPano<T_pipeline, T_compute>::compute_image_adjustment(
+    const CudaMat<T_pipeline>& inputImage1,
+    const CudaMat<T_pipeline>& inputImage2) {
+  std::optional<cv::Scalar> adjustment_result = match_seam_images(
+      inputImage1.download(),
+      inputImage2.download(),
+      *whole_seam_mask_image_,
+      /*N=*/6,
+      canvas_manager_->canvas_positions()[0],
+      canvas_manager_->canvas_positions()[1]);
+  if (adjustment_result.has_value()) {
+    const cv::Scalar& adjustment = *adjustment_result;
+    return float3{
+        .x = (float)adjustment[0],
+        .y = (float)adjustment[1],
+        .z = (float)adjustment[2],
+    };
+  }
+  return std::nullopt;
+}
+
+template <typename T_pipeline, typename T_compute>
 CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_compute>::process(
-    const CudaMat<T_pipeline>& sampleImage1,
-    const CudaMat<T_pipeline>& sampleImage2,
+    const CudaMat<T_pipeline>& inputImage1,
+    const CudaMat<T_pipeline>& inputImage2,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
-  return process(
-      sampleImage1, sampleImage2, *stitch_context_, *canvas_manager_, std::nullopt, stream, std::move(canvas));
+  return process(inputImage1, inputImage2, *stitch_context_, *canvas_manager_, std::nullopt, stream, std::move(canvas));
 }
 
 } // namespace cuda

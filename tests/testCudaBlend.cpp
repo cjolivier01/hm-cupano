@@ -180,17 +180,19 @@ int main(int argc, char** argv) {
   //                         .value();
 
   if (std::is_floating_point_v<BaseScalar_t<T_pipeline>>) {
-    sample_img_left.convertTo(sample_img_left, CV_T_PIPELINE, 1.0 / 255.0);
-    sample_img_right.convertTo(sample_img_right, CV_T_PIPELINE, 1.0 / 255.0);
+    sample_img_left.convertTo(sample_img_left, CV_T_PIPELINE);
+    sample_img_right.convertTo(sample_img_right, CV_T_PIPELINE);
+    // sample_img_left.convertTo(sample_img_left, CV_T_PIPELINE, 1.0 / 255.0);
+    // sample_img_right.convertTo(sample_img_right, CV_T_PIPELINE, 1.0 / 255.0);
   }
 
-  CudaMat<T_pipeline> sampleImage1(as_batch(sample_img_left, kBatchSize));
-  CudaMat<T_pipeline> sampleImage2(as_batch(sample_img_right, kBatchSize));
+  CudaMat<T_pipeline> inputImage1(as_batch(sample_img_left, kBatchSize));
+  CudaMat<T_pipeline> inputImage2(as_batch(sample_img_right, kBatchSize));
 
   auto canvas = std::make_unique<CudaMat<T_pipeline>>(pano.batch_size(), pano.canvas_width(), pano.canvas_height());
 
   auto blendedCanvasResult = pano.process(
-      sampleImage1, sampleImage2, stream, std::move(canvas));
+      inputImage1, inputImage2, stream, std::move(canvas));
   if (!blendedCanvasResult.ok()) {
     std::cerr << blendedCanvasResult.status().message() << std::endl;
     return blendedCanvasResult.status().code();
@@ -214,7 +216,7 @@ int main(int argc, char** argv) {
 
     size_t frame_count = 100;
     for (size_t i = 0; i < frame_count; ++i) {
-      canvas = pano.process(sampleImage1, sampleImage2, stream, std::move(canvas)).ConsumeValueOrDie();
+      canvas = pano.process(inputImage1, inputImage2, stream, std::move(canvas)).ConsumeValueOrDie();
       cudaStreamSynchronize(stream);
     }
 

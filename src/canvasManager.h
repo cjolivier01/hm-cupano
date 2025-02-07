@@ -125,6 +125,10 @@ class CanvasManager {
     return canvas_info_.height;
   }
 
+  constexpr const std::vector<cv::Point>& canvas_positions() const {
+    return canvas_info_.positions;
+  }
+
   /// Public members holding the two remappers (for two images).
   Remapper _remapper_1;
   Remapper _remapper_2;
