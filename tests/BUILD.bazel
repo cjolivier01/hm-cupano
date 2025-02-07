@@ -1,0 +1,15 @@
+cc_binary(
+    name = "test_cuda_blend",
+    srcs = [
+        "testCudaBlend.cpp",
+    ],
+    linkopts = [
+        "-ltiff",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src:cuda_pano",
+        "@local_cuda//:cuda_runtime",
+        "@opencv_linux//:opencv",
+    ],
+)

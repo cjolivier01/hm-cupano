@@ -1,0 +1,8 @@
+/build
+*.pyc
+/bazel-*
+/output.png
+/compile_commands.json
+keypoints.png
+matches.png
+output.png

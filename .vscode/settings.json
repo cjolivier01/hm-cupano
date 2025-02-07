@@ -1,0 +1,609 @@
+{
+  //"editor.fontSize": 12,
+  "editor.fontWeight": "normal",
+  "editor.tabSize": 2,
+  "editor.lineNumbers": "on",
+  "editor.glyphMargin": true,
+  "editor.insertSpaces": true,
+  "editor.scrollBeyondLastLine": true,
+  "editor.minimap.enabled": true,
+  "files.insertFinalNewline": true,
+  "editor.autoIndent": "advanced",
+  "editor.detectIndentation": false,
+  "editor.wrappingIndent": "indent",
+  "editor.folding": false,
+  "files.autoSave": "onFocusChange",
+  "editor.fontFamily": "Source Code Pro, Menlo",
+  "editor.formatOnPaste": false,
+  "editor.formatOnType": false,
+  "editor.selectionClipboard": false,
+  "editor.renderLineHighlight": "none",
+  "bazel.executable": "${workspaceRoot}/bazel/bazel",
+  "bazel.buildifierPath": "/cb/home/chriso/bin/buildifier",
+  "bazel.showExtensionLog": true,
+  "trailing-spaces.deleteModifiedLinesOnly": false,
+  "trailing-spaces.backgroundColor": "rgba(55,55,55,0.3)",
+  "trailing-spaces.borderColor": "rgba(55,55,55,0.15)",
+  "autoDocstring.docstringFormat": "sphinx",
+  "workbench.editor.enablePreview": false,
+  "workbench.sideBar.location": "right",
+  "workbench.colorCustomizations": {
+    "editor.background": "#000000",
+    "editor.selectionBackground": "#276127",
+    "editor.selectionHighlightBackground": "#404110",
+    "editor.findMatchBackground": "#1a6a1ef8",
+    "editor.wordHighlightBackground": "#525352",
+    "editor.inactiveSelectionBackground": "#1a6a1ef8",
+    "sideBar.background": "#363636",
+    "sideBar.border": "#8f8f8f",
+    "button.hoverBackground": "#a1a1a1",
+    "list.hoverBackground": "#505050",
+    "list.hoverForeground": "#ffffff",
+    "list.inactiveSelectionBackground": "#251725dc",
+    "list.inactiveSelectionForeground": "#ffffff",
+    "list.activeSelectionBackground": "#7a7a7a",
+    "list.highlightForeground": "#ffffff",
+    "editorGutter.background": "#252424",
+    "statusBar.background": "#646464",
+    "statusBar.noFolderBackground": "#646464",
+    "statusBar.debuggingBackground": "#a58d4c",
+    "scrollbarSlider.background": "#646464",
+    "scrollbar.shadow": "#ffffff",
+    "scrollbarSlider.activeBackground": "#8f8f8f",
+    "scrollbarSlider.hoverBackground": "#d0d0d0",
+    "panel.background": "#000000",
+    "terminal.background": "#000000",
+    "panelTitle.activeBorder": "#ffffff",
+    "tab.inactiveBackground": "#505050",
+    "tab.inactiveForeground": "#909090",
+    "tab.activeBackground": "#3841aa",
+    "tab.activeForeground": "#ffffff",
+    "dropdown.listBackground": "#505050",
+    "editorRuler.foreground": "#303030",
+    "window.activeBorder": "#444444",
+    "window.inactiveBorder": "#222222",
+  },
+  "debug.console.fontSize": 13.5,
+  "terminal.integrated.fontSize": 12.5,
+  "terminal.integrated.scrollback": 999999,
+  "terminal.integrated.rightClickBehavior": "default",
+  "editor.matchBrackets": "always",
+  "editor.rulers": [
+    100
+  ],
+  // "explorer.autoReveal": true,
+  "cmake.configureArgs": [
+    // "-G'Unix Makefiles'",
+    // 	"-DUSE_CUDA=0",
+    // 	"-DBUILD_PYTORCH=1",
+    // 	"-DBUILD_PYTORCH_XLA=1",
+    // 	"-DTF_BUILD_METHOD=gcc",
+    // 	"-DUSE_TF_SOURCES=0",
+    // 	"-DBUILD_TENSORFLOW=1",
+    // 	"-DTF_BUILD_PIP_PACKAGE=0",
+    // 	"-DPYTORCH_AS_RELEASE_MODE=0",
+    // 	"-DMONOLITH_DIR=monolith",
+    //  "-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc",
+  ],
+  // "cmake.cmakePath": "/cb/data/pytorch/toolchain/monolith-tf/a6096dae-b718-11ea-baed-0fb62320b59b/sdk-x86_64/bin/cmake",
+  // "cmake.generator": "Unix Makefiles",
+  "C_Cpp.loggingLevel": "Information",
+  "C_Cpp.autocomplete": "default",
+  "C_Cpp.experimentalFeatures": "enabled",
+  "C_Cpp.enhancedColorization": "enabled",
+  "C_Cpp.dimInactiveRegions": false,
+  "C_Cpp.intelliSenseEngine":"disabled",
+  "C_Cpp.workspaceParsingPriority": "low",
+  "C_Cpp.clang_format_fallbackStyle": "{ BasedOnStyle: Google, IndentWidth: 4 }",
+  //"npm.autoDetect": "off",
+  //"typescript.tsc.autoDetect": "off",
+  "editor.tokenColorCustomizations": {
+    "keywords": "#FFFFFF",
+    "numbers": "#FF0000",
+    "strings": "#FF0000",
+    "variables": "#9bf8ff",
+    "functions": "#9bf8ff",
+    "comments": "#55ff00",
+    "types": "#dda1e5c5",
+    "[Default Dark+]": {
+      //"[Default Dark+]": {
+      "textMateRules": [
+        {
+          "scope": [
+            "keyword.operator.comparison.less",
+            "keyword.operator.comparison.greater",
+            "keyword.operator.logical.shift.left.cpp",
+            "keyword.operator.logical.shift.right.cpp"
+          ],
+          "settings": {
+            "foreground": "#FFFF00" // Yellow color
+          }
+        },
+        {
+          "scope": [
+            "keyword.other.unit.suffix.integer",
+            "keyword.other.unit.suffix.floating-point",
+            "string",
+            "keyword.other.unit.hexadecimal.c",
+            "keyword.other.unit.hexadecimal.cpp"
+          ],
+          "settings": {
+            "foreground": "#FF0000",
+            "fontStyle": ""
+          }
+        },
+        {
+          "scope": [
+            "invalid.unknown.documentation.command.cpp",
+            "invalid.unknown.documentation.command.c"
+          ],
+          "settings": {
+            "foreground": "#55ff00",
+            "fontStyle": ""
+          }
+        },
+        {
+          "scope": [
+            "variable.other.property.cpp",
+          ],
+          "settings": {
+            "foreground": "#ffffff",
+            "fontStyle": ""
+          }
+        },
+        {
+          "scope": [
+            "meta.class",
+            "entity.name.scope-resolution",
+            "entity.name.type",
+            "meta.qualified_type.cpp",
+            "entity.name.type.enum.cpp"
+          ],
+          "settings": {
+            "foreground": "#caafcede",
+            "fontStyle": ""
+          }
+        },
+        {
+          "scope": [
+            "meta.preprocessor",
+            "variable.other.enummember.cpp",
+            "variable.other.enummember.c"
+          ],
+          "settings": {
+            "foreground": "#da974b",
+            "fontStyle": ""
+          }
+        },
+        {
+          "scope": [
+            "meta.type",
+            "source.python",
+            "source.cpp",
+            "source.c"
+          ],
+          "settings": {
+            "foreground": "#00E0E0",
+            "fontStyle": ""
+          }
+        },
+        {
+          "scope": [
+            "meta.function",
+            "meta.function.definition.body.lambda"
+          ],
+          "settings": {
+            "foreground": "#00E0E0",
+            "fontStyle": "bold"
+          }
+        },
+        {
+          "scope": [
+            "meta.function-call",
+            "meta.function-call.python"
+          ],
+          "settings": {
+            "foreground": "#00E0E0",
+            "fontStyle": "bold"
+          }
+        },
+        {
+          "scope": "meta",
+          "settings": {
+            "foreground": "#00E0E0",
+            "fontStyle": ""
+          }
+        },
+        {
+          "scope": [
+            "variable.parameter",
+            "variable.other"
+          ],
+          "settings": {
+            "foreground": "#7992ff",
+            "fontStyle": ""
+          }
+        },
+        {
+          "scope": "variable",
+          "settings": {
+            "foreground": "#00E0E0",
+            "fontStyle": ""
+          }
+        },
+        {
+          "scope": [
+            "entity.name.function.definition.cpp"
+          ],
+          "settings": {
+            "foreground": "#FFC0C0",
+            "fontStyle": "bold"
+          }
+        },
+        {
+          // Python multi-line comment
+          "scope": [
+            "string.quoted.docstring.multi.python"
+          ],
+          "settings": {
+            "foreground": "#00FF00",
+            "fontStyle": "italic"
+          }
+        },
+        {
+          "scope": [
+            "keyword.operator",
+            "keyword.operator.logical",
+            "keyword.other",
+            "punctuation.separator",
+            "punctuation.terminator",
+            "punctuation.separator.continuation",
+            "punctuation.section.parens.begin.bracket.round",
+            "punctuation.section.parens.begin.bracket.round.cpp",
+            "punctuation.section.parens.end.bracket.round.cpp",
+            "punctuation.section.parens.end.bracket.round",
+            "punctuation.section.block.begin.bracket.curly",
+            "punctuation.section.block.end.bracket.curly",
+            "punctuation.section.angle-brackets.begin.template.call.cpp",
+            "punctuation.section.angle-brackets.end.template.call.cpp",
+            "punctuation.section.angle-brackets.start.template.definition.cpp",
+            "punctuation.section.angle-brackets.end.template.definition.cpp",
+            "punctuation.separator.delimiter.comma.template.argument.cpp",
+            "storage.modifier.pointer.cpp",
+            "storage.modifier.reference.cpp",
+            "punctuation.section.parens.begin.bracket.round",
+            "punctuation.section.parens.end.bracket.round",
+            "punctuation.definition.begin.bracket.square",
+            "punctuation.definition.end.bracket.square",
+            "punctuation.section.parameters.begin.bracket.round.function.pointer.cpp",
+            "punctuation.section.parameters.end.bracket.round.function.pointer.cpp",
+            "punctuation.section.arguments.begin.bracket.round.function.member.cpp",
+            "punctuation.section.arguments.end.bracket.round.function.member.cpp",
+            "punctuation.section.arguments.begin.bracket.round.function.call.cpp",
+            "punctuation.section.arguments.end.bracket.round.function.call.cpp",
+            "punctuation.section.parens.begin.bracket.round.assembly.cpp",
+            "punctuation.section.parens.end.bracket.round.assembly.cpp",
+            "punctuation.section.parameters.begin.bracket.round.special.constructor.cpp",
+            "punctuation.section.parameters.end.bracket.round.special.constructor.cpp",
+            "punctuation.section.parameters.begin.bracket.round.special.member.destructor.cpp",
+            "punctuation.section.parameters.end.bracket.round.special.member.destructor.cpp",
+            "punctuation.section.parameters.begin.bracket.round.special.operator-overload.cpp",
+            "punctuation.section.parameters.end.bracket.round.special.operator-overload.cpp",
+            "punctuation.definition.arguments.begin.python",
+            "punctuation.definition.arguments.end.python",
+            "keyword.operator.delete.array.bracket.cpp",
+            "entity.name.operator.cpp",
+            "punctuation.definition.list.begin.python",
+            "punctuation.definition.list.end.python",
+            "punctuation.definition.dictionary.begin.python",
+            "punctuation.definition.dictionary.end.python",
+            "punctuation.definition.capture.begin.lambda.cpp",
+            "punctuation.definition.capture.end.lambda.cpp",
+            "punctuation.definition.parameters.begin",
+            "punctuation.definition.parameters.end",
+            "punctuation.section.parameters.begin.bracket.round.cpp",
+            "punctuation.section.parameters.end.bracket.round.cpp",
+            "punctuation.section.block.begin.bracket.curly.namespace.cpp",
+            "punctuation.section.block.end.bracket.curly.namespace.cpp",
+            "punctuation.section.arguments.begin.bracket.round.operator.sizeof.cpp",
+            "punctuation.section.arguments.end.bracket.round.operator.sizeof.cpp",
+            "punctuation.section.arguments.begin.bracket.round.initializer.cpp",
+            "punctuation.section.arguments.end.bracket.round.initializer.cpp",
+            "punctuation.section.arguments.begin.bracket.round",
+            "punctuation.section.arguments.end.bracket.round",
+            "keyword.operator.not"
+          ],
+          "settings": {
+            "foreground": "#FFFF00",
+            "fontStyle": ""
+          }
+        },
+        {
+          "scope": "constant.numeric.integer",
+          "settings": {
+            "foreground": "#FF0000",
+            "fontStyle": ""
+          }
+        },
+        {
+          "scope": [
+            "keyword.control",
+            "keyword.control.cpp",
+            "storage.modifier",
+            "keyword.other.using.directive.cpp",
+            "keyword.operator.new.cpp",
+            "keyword.operator.delete.cpp",
+            "keyword.operator.delete.array.cpp",
+            "meta.qualified_type.cpp",
+            "keyword.control.flow.python",
+            "keyword.operator.logical.python",
+            "constant.language.python",
+            "constant.language.nullptr.cpp",
+            "constant.language.false",
+            "constant.language.true",
+            "variable.language.this",
+            "keyword.operator.cast.reinterpret_cast.cpp",
+            "keyword.operator.cast.const_cast.cpp",
+            "keyword.operator.cast.dynamic_cast.cpp",
+            "keyword.operator.cast.static_cast.cpp",
+            "keyword.operator.new",
+            "keyword.operator.sizeof",
+            "keyword.other.typedef",
+            "keyword.other.typename.cpp",
+            "keyword.other.typeid.cpp",
+            "keyword.other.default.constructor.cpp",
+            "keyword.other.delete.constructor.cpp",
+            "keyword.other.operator.overload.cpp",
+            "keyword.other.python",
+            "punctuation.definition.decorator.python",
+            "entity.name.function.decorator.python",
+            "storage.type.class.doxygen.c",
+            "storage.type.class.doxygen.cpp",
+            "meta.head.function.definition.cpp",
+            "meta.head.function.definition.c",
+            "support.function.builtin.python"
+          ],
+          "settings": {
+            "foreground": "#FFFFFF",
+            "fontStyle": ""
+          }
+        },
+        {
+          "scope": [],
+          "settings": {
+            "foreground": "#FFFFFF",
+            "fontStyle": "bold"
+          }
+        }
+      ]
+    }
+  },
+  "python.terminal.activateEnvironment": false,
+  "files.exclude": {
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/node_modules": true,
+    "**/CVS": true,
+    "node_modules": true,
+    "data": true,
+    "cerebras": true,
+    "regress": true,
+    "src/regress": true,
+    "/net/**": true,
+    "build/**": true,
+    "toolchain/**": true,
+    "release_dir/**": true,
+    //"/net/chriso-dev/srv/nfs/chriso-data/src/**": true
+  },
+  "files.associations": {
+    "cctype": "cpp",
+    "clocale": "cpp",
+    "cmath": "cpp",
+    "csignal": "cpp",
+    "cstdarg": "cpp",
+    "cstddef": "cpp",
+    "cstdio": "cpp",
+    "cstdlib": "cpp",
+    "cstring": "cpp",
+    "ctime": "cpp",
+    "cwchar": "cpp",
+    "cwctype": "cpp",
+    "*.ipp": "cpp",
+    "array": "cpp",
+    "atomic": "cpp",
+    "hash_map": "cpp",
+    "hash_set": "cpp",
+    "strstream": "cpp",
+    "*.tcc": "cpp",
+    "bitset": "cpp",
+    "chrono": "cpp",
+    "codecvt": "cpp",
+    "complex": "cpp",
+    "condition_variable": "cpp",
+    "cstdint": "cpp",
+    "deque": "cpp",
+    "forward_list": "cpp",
+    "list": "cpp",
+    "unordered_map": "cpp",
+    "unordered_set": "cpp",
+    "vector": "cpp",
+    "exception": "cpp",
+    "algorithm": "cpp",
+    "functional": "cpp",
+    "iterator": "cpp",
+    "map": "cpp",
+    "memory": "cpp",
+    "memory_resource": "cpp",
+    "numeric": "cpp",
+    "optional": "cpp",
+    "random": "cpp",
+    "ratio": "cpp",
+    "regex": "cpp",
+    "set": "cpp",
+    "string": "cpp",
+    "string_view": "cpp",
+    "system_error": "cpp",
+    "tuple": "cpp",
+    "type_traits": "cpp",
+    "utility": "cpp",
+    "rope": "cpp",
+    "slist": "cpp",
+    "fstream": "cpp",
+    "future": "cpp",
+    "initializer_list": "cpp",
+    "iomanip": "cpp",
+    "iosfwd": "cpp",
+    "iostream": "cpp",
+    "istream": "cpp",
+    "limits": "cpp",
+    "mutex": "cpp",
+    "new": "cpp",
+    "ostream": "cpp",
+    "sstream": "cpp",
+    "stdexcept": "cpp",
+    "streambuf": "cpp",
+    "thread": "cpp",
+    "cfenv": "cpp",
+    "cinttypes": "cpp",
+    "typeindex": "cpp",
+    "typeinfo": "cpp",
+    "valarray": "cpp",
+    "__bit_reference": "cpp",
+    "__config": "cpp",
+    "__debug": "cpp",
+    "__functional_base": "cpp",
+    "__hash_table": "cpp",
+    "__locale": "cpp",
+    "__mutex_base": "cpp",
+    "__nullptr": "cpp",
+    "__split_buffer": "cpp",
+    "__tree": "cpp",
+    "__tuple": "cpp",
+    "ios": "cpp",
+    "locale": "cpp",
+    "queue": "cpp",
+    "stack": "cpp",
+    "worker_configapi.h": "c",
+    "*.stats": "cpp",
+    "*.log": "cpp",
+    "param.h": "c",
+    "csetjmp": "cpp",
+    "cuchar": "cpp",
+    "scoped_allocator": "cpp",
+    "shared_mutex": "cpp",
+    "worker_dtgcommon.h": "c",
+    "*.d": "cpp",
+    "plan.meta": "json",
+    "hostio_api.h": "c",
+    "*.md": "cpp",
+    "license": "cpp",
+    "*.xml": "cpp",
+    "valgrind.log": "valgrind",
+    "*.py": "python",
+    "*.inc": "cpp",
+    "*.casm": "masm",
+    "variant": "cpp",
+    "*.cuh": "cpp",
+    "*.vc": "cpp",
+    "any": "cpp",
+    "__node_handle": "cpp",
+    "__string": "cpp",
+    "bit": "cpp",
+    "charconv": "cpp",
+    "__errc": "cpp",
+    "__threading_support": "cpp",
+    "format": "cpp",
+    "__bits": "cpp",
+    "concepts": "cpp"
+  },
+  "cmake.configureOnOpen": false,
+  "git.ignoreLimitWarning": true,
+  "workbench.iconTheme": "vscode-icons",
+  "jupyter.debugJustMyCode": false,
+  "editor.guides.indentation": false,
+  // "clangd.arguments": [
+    // "--header-insertion=never",
+    // "--log=verbose",
+    //"--extra-arg=-std=c++17",
+    //"--extra-arg=-I${workspaceRoot}/dojotorch",
+    //"--path-mappings=/home/colivier/src=~/src",
+    //"--path-mappings=~/src=/home/colivier/src",
+    //"--path-mappings=/home/colivier/src=/mnt/data/src",
+    //"--path-mappings=/mnt/data/src=/home/colivier/src",
+    //"--path-mappings=/local/colivier/src/dojo/glowtorch=/local/colivier/bazel_output/_local_colivier_src_dojo/execroot/com_tesla_dojo/bazel-out/k8-dbg/bin/glowtorch/_virtual_includes/glowtorch,/local/colivier/src/dojo/dojotorch/dojotorch/csrc/backend=/local/colivier/bazel_output/_local_colivier_src_dojo/execroot/com_tesla_dojo/bazel-out/k8-dbg/bin/dojotorch/dojotorch/csrc/backend/_virtual_includes/storage/dojotorch/csrc/backend,/local/colivier/src/dojo/dojotorch/dojotorch/csrc/core=/local/colivier/bazel_output/_local_colivier_src_dojo/execroot/com_tesla_dojo/bazel-out/k8-dbg/bin/dojotorch/dojotorch/csrc/core/_virtual_includes/storage/dojotorch/csrc/core",
+  // ],
+  //"python.defaultInterpreterPath": "/data/dojo/sw/conda/envs/dojo-dev-a941112aa47c/bin/python",
+  //"python.defaultInterpreterPath": "/apcv/shared/conda-envs/ai-dojo-0356/bin/python",
+  //"python.defaultInterpreterPath": "/home/colivier/.conda/envs/ai-dojo/bin/python",
+  "autoDocstring.startOnNewLine": true,
+  "bsv.bazel.buildFlags": [
+    "--config=dbg",
+    "--copt=-O0",
+    "--//bazel/build_settings:glowtorch_build_type=debug",
+  ],
+  "bsv.cc.compdb.targets": [
+    "//...",
+  ],
+  "explorer.autoRevealExclude": {
+    "${workspaceRoot}/bazel-out": true,
+    "${workspaceRoot}/bazel-bin": true,
+  },
+  //
+  //  _      _      _____  ____
+  // | |    | |    |  __ \|  _ \
+  // | |    | |    | |  | | |_) |
+  // | |    | |    | |  | |  _ <
+  // | |____| |____| |__| | |_) |
+  // |______|______|_____/|____/
+  //
+  //
+  "lldb.launch.initCommands": [
+    "command source ~/.lldbinit",
+  ],
+  /**
+  *  _____        _   _
+  * |  __ \      | | | |
+  * | |__) |_   _| |_| |__   ___  _ __
+  * |  ___/| | | | __| '_ \ / _ \| '_ \
+  * | |    | |_| | |_| | | | (_) | | | |
+  * |_|     \__, |\__|_| |_|\___/|_| |_|
+  *          __/ |
+  *         |___/
+  */
+  "[python]": {
+    "editor.insertSpaces": true,
+    "editor.tabSize": 4,
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "always",
+    },
+  },
+  "isort.args": [
+    "--profile",
+    "black"
+  ],
+  "python.testing.unittestArgs": [
+    "-v",
+    "-s",
+    ".",
+    "-p",
+    "*.py"
+  ],
+  "python.testing.unittestEnabled": true,
+  "python.testing.pytestEnabled": false,
+  "python.analysis.extraPaths": [
+    "./src/hmlib"
+  ],
+  "editor.formatOnSaveMode": "modifications",
+  "python.analysis.inlayHints.variableTypes": true,
+  "python.analysis.inlayHints.functionReturnTypes": true,
+  "C_Cpp.default.compileCommands": "/home/colivier/src/gstreamer/builddir/compile_commands.json",
+  "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild",
+  // "python.analysis.nodeExecutable": "/usr/bin/node",
+  //"python.testing.cwd": "${workspaceRoot}/dojotorch/tests",
+
+  // "terminal.integrated.env.linux": {
+  //     "GTK_PATH": ""
+  // },
+}

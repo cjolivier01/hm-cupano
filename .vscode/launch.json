@@ -1,0 +1,85 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  //
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "----------------- jetson-utils -----------------",
+    },
+    {
+      //
+      // Python: Current File
+      //
+      "name": "Python: Current File",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "args": [],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceRoot}/build:${workspaceRoot}/src:${workspaceRoot}/external/MOTChallengeEvalKit"
+      }
+    },
+    {
+      //
+      // Python: Create Control Points
+      //
+      "name": "Python: create_control_points.py",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/create_control_points.py",
+      "args": [
+        "${env:HOME}/Videos/stitch-fix/GX010100.MP4",
+        "${env:HOME}/Videos/stitch-fix/GX010019.MP4",
+        "${env:HOME}/Videos/stitch-fix/hm_project.pto",
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceRoot}/build:${workspaceRoot}/src:${workspaceRoot}/external/MOTChallengeEvalKit"
+      }
+    },
+    {
+      "name": "(LLDB) cudaBlend",
+      "type": "lldb",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
+      "args": [
+        "--show",
+        "--game-id=stitch-fix",
+        "--output=${workspaceRoot}/output.png",
+      ],
+      "sourceMap": {
+        "/proc/self/cwd": "${workspaceFolder}",
+        "~/src": "${env:HOME}/src",
+        "external/deepstream/sources": "${env:HOME}/src/hstream/external/deepstream/sources",
+        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils",
+      },
+      //"stopOnEntry": true,
+      "env": {
+        "DISPLAY": ":1",
+        "CUDA_LAUNCH_BLOCKING": "1",
+      },
+      "preLaunchTask": "JU Build All",
+    },
+    {
+      "name": "(CUDA) cudaBlend",
+      "type": "cuda-gdb",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "debuggerPath": "/usr/local/cuda/bin/cuda-gdb",
+      "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
+      "args": "--game-id=stitch-fix --output=${workspaceRoot}/output.png",
+      "initCommands": [
+        "directory ${workspaceFolder}",
+      ],
+      "preLaunchTask": "JU Build All",
+    },
+  ]
+}
