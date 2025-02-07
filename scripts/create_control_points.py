@@ -464,7 +464,7 @@ def configure_stitching(
     frame1: np.ndarray,
     frame2: np.ndarray,
     directory: str,
-    force: bool = False,
+    force: bool = True,
     skip_if_exists: bool = False,
     fov: float = 108,  # Default FOV (e.g., GoPro Wide)
     max_control_points: int = 240,
