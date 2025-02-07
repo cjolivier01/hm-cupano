@@ -3,9 +3,11 @@ Fast panorama stitching of two images.
 Used for stitching two high-resolution (5K) GoPro videos into a single (roughly) 8500x3300 panorama video.
 This repo simply delivers the high-performance stitching code.  Running through each frame of videos and stitching them is not currently part of this repo, since this repo is focused mainly on the stitching code wrt a single frame.
 
-Speed on RTX4090 with 6 laplacian levels: 340 fps
-Speed on Jetson with 6 levels:              8 fps
-Speed on Jetson with 0 levels:             20 fps
+```
+Speed on RTX4090 with 6 laplacian levels:     340 fps
+Speed on Jetson with 6 levels:                  8 fps
+Speed on Jetson with 0 levels:                 20 fps
+```
 
 For the Jetson, scaling down the pano config to around 6000 pixels width brings it up to 50 fps
 
