@@ -165,7 +165,7 @@ int main(int argc, char** argv) {
 
   const int CV_T_PIPELINE = cudaPixelTypeToCvType(CudaTypeToPixelType<T_pipeline>::value);
 
-  cv::Scalar offset = pano.match_seam_images(
+  cv::Scalar offset = hm::pano::match_seam_images(
                               sample_img_left,
                               sample_img_right,
                               control_masks.whole_seam_mask_image,

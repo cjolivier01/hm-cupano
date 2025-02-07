@@ -87,14 +87,6 @@ class CudaStitchPano {
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
-  static std::optional<cv::Scalar> match_seam_images(
-      cv::Mat& image1,
-      cv::Mat& image2,
-      const cv::Mat& seam,
-      int N,
-      const cv::Point& topLeft1,
-      const cv::Point& topLeft2);
-
  protected:
   static CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process(
       const CudaMat<T_pipeline>& sampleImage1,
@@ -111,6 +103,15 @@ class CudaStitchPano {
 };
 
 } // namespace cuda
+
+std::optional<cv::Scalar> match_seam_images(
+    cv::Mat& image1,
+    cv::Mat& image2,
+    const cv::Mat& seam,
+    int N,
+    const cv::Point& topLeft1,
+    const cv::Point& topLeft2);
+
 } // namespace pano
 } // namespace hm
 

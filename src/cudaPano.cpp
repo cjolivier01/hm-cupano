@@ -2,7 +2,6 @@
 
 namespace hm {
 namespace pano {
-namespace cuda {
 
 //
 // For hard seams, the seam visibility can be reduced significantly
@@ -193,6 +192,6 @@ std::optional<cv::Scalar> match_seam_images(
   return offset;
 }
 
-} // namespace cuda
+namespace cuda {} // namespace cuda
 } // namespace pano
 } // namespace hm
