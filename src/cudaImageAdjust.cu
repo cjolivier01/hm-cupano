@@ -2,7 +2,7 @@
 
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
-#include <algorithm>
+
 #include <cstdio>
 #include <cstdlib>
 
@@ -14,6 +14,21 @@
 __device__ float clampf(float val, float minVal, float maxVal) {
   return fminf(maxVal, fmaxf(minVal, val));
 }
+
+//------------------------------------------------------------------------------
+// PixelAdjuster: A traits struct with specializations for different pixel types.
+//
+// Each specialization provides a static __device__ method "adjust" that applies a
+// per-channel adjustment (passed as a float3) to a pixel value. For 8-bit types,
+// the result is clamped to the range [0,255]. For floating-point types, the adjustment
+// is applied directly (and alpha is preserved in 4-channel types).
+//------------------------------------------------------------------------------
+
+// Primary template declaration (undefined).
+template <typename T>
+struct PixelAdjuster {
+  __device__ static T adjust(const T& pixel, const float3& adjustment);
+};
 
 // Specialization for uchar3 (3-channel 8-bit pixel)
 template <>
