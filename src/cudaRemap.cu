@@ -2,6 +2,7 @@
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
+#include "cudaImageAdjust.h"
 #include "cudaRemap.h" // Assumed to declare these host functions
 
 namespace {
@@ -298,7 +299,7 @@ __global__ void BatchedRemapKernelExOffsetWithDestMap(
 
   int destIdx = destY * destW + destX;
   int mapIdx = y * remapW + x;
-  
+
   int checkIdx = (offsetY + y) * destW + (offsetX + x);
 
   if (dest_image_map[checkIdx] == this_image_index) {
@@ -308,6 +309,64 @@ __global__ void BatchedRemapKernelExOffsetWithDestMap(
     if (srcX < srcW && srcY < srcH) {
       int srcIdx = srcY * srcW + srcX;
       destImage[destIdx] = static_cast<T_out>(srcImage[srcIdx]);
+    } else {
+      destImage[destIdx] = deflt;
+    }
+  }
+}
+
+template <typename T_in, typename T_out>
+__global__ void BatchedRemapKernelExOffsetWithDestMapAdjust(
+    const T_in* src,
+    int srcW,
+    int srcH,
+    T_out* dest,
+    int destW,
+    int destH,
+    const unsigned short* mapX, // mapping arrays of size (remapW x remapH)
+    const unsigned short* mapY,
+    T_in deflt,
+    int this_image_index,
+    const unsigned char* dest_image_map,
+    int batchSize,
+    int remapW,
+    int remapH,
+    int offsetX,
+    int offsetY,
+    float3 adjustment) {
+  int b = blockIdx.z;
+  if (b >= batchSize)
+    return;
+
+  int srcImageSize = srcW * srcH;
+  int destImageSize = destW * destH;
+
+  const T_in* srcImage = src + b * srcImageSize;
+  T_out* destImage = dest + b * destImageSize;
+
+  // Coordinates within the remap region.
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x >= remapW || y >= remapH)
+    return;
+
+  int destX = offsetX + x;
+  int destY = offsetY + y;
+  if (destX < 0 || destX >= destW || destY < 0 || destY >= destH)
+    return;
+
+  int destIdx = destY * destW + destX;
+  int mapIdx = y * remapW + x;
+
+  int checkIdx = (offsetY + y) * destW + (offsetX + x);
+
+  if (dest_image_map[checkIdx] == this_image_index) {
+    int srcX = static_cast<int>(mapX[mapIdx]);
+    int srcY = static_cast<int>(mapY[mapIdx]);
+    if (srcX < srcW && srcY < srcH) {
+      int srcIdx = srcY * srcW + srcX;
+      // Out is more likely to be a float, so adjust after any cast
+      destImage[destIdx] = PixelAdjuster<T_out>::adjust(static_cast<T_out>(srcImage[srcIdx]), adjustment);
     } else {
       destImage[destIdx] = deflt;
     }

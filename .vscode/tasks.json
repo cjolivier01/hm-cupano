@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "JU Build All",
+      "label": "Build All",
       "type": "shell",
       "command": "bazelisk",
       "args": [
@@ -26,7 +26,7 @@
       "problemMatcher": [],
     },
     {
-      "label": "JU Clean",
+      "label": "Clean",
       "type": "shell",
       "command": "bazelisk",
       "args": [
