@@ -50,12 +50,19 @@ int main(int argc, char** argv) {
   std::string output;
   int device_id = 0;
 
+#ifdef __aarch64__
+  int num_levels = 0;
+#else
+  int num_levels = 6;
+#endif
+
   // Define the long options.
   // The 'val' field provides a short option equivalent.
   static struct option long_options[] = {
       {"show", no_argument, 0, 's'}, // --show (flag)
       {"perf", no_argument, 0, 'p'}, // --perf (flag)
       {"game-id", required_argument, 0, 'g'}, // --game-id <value>
+      {"levels", required_argument, 0, 'l'}, // --levels <value>
       {"adjust", required_argument, 0, 'a'}, // --directory <value>
       {"directory", required_argument, 0, 'd'}, // --directory <value>
       {"output", required_argument, 0, 'o'}, // --output <value>
@@ -67,13 +74,16 @@ int main(int argc, char** argv) {
   // 's' for --show (no argument),
   // 'g:' means option 'g' requires an argument,
   // 'd:' means option 'd' requires an argument.
-  const char* short_opts = "spg:d:o:c:a:";
+  const char* short_opts = "spg:d:o:c:a:l:";
 
   int option_index = 0;
   int opt;
   // Loop through and parse each option.
   while ((opt = getopt_long(argc, argv, short_opts, long_options, &option_index)) != -1) {
     switch (opt) {
+      case 'l': // --levels
+        num_levels = std::atoi(optarg);
+        break;
       case 'a': // --adjust
         adjust_images = !!std::atoi(optarg);
         break;
@@ -98,7 +108,7 @@ int main(int argc, char** argv) {
       case '?': // Unknown option or missing required argument.
         std::cerr
             << "Usage: " << argv[0]
-            << " [--show] [--perf] [--game-id <id>] [--directory <dir>] [--cuda-device <value>] [--output <value>] [--adjust <0|1>]"
+            << " [--show] [--perf] [--game-id <id>] [--directory <dir>] [--cuda-device <value>] [--output <value>] [--adjust <0|1>] [--levels <value>]"
             << std::endl;
         exit(EXIT_FAILURE);
       default:
@@ -138,18 +148,7 @@ int main(int argc, char** argv) {
   hm::pano::ControlMasks control_masks;
   control_masks.load(directory);
 
-// Configurable parameter: number of pyramid levels.
-#ifdef __aarch64__
-  // Lower compute, quick and dirty
-  int numLevels = 0;
-  // int numLevels = 6;
-#else
-  // int numLevels = 6;
-  // int numLevels = 2;
-  int numLevels = 6;
-  // int numLevels = 0;
-#endif
-
+  // Configurable parameter: number of pyramid levels.
 #if 1
 #if 1
   // using T_pipeline = uchar3;
@@ -170,7 +169,7 @@ int main(int argc, char** argv) {
   // constexpr int kBatchSize = 2;
 
   hm::pano::cuda::CudaStitchPano<T_pipeline, T_compute> pano(
-      kBatchSize, numLevels, control_masks, /*match_exposure=*/adjust_images);
+      kBatchSize, num_levels, control_masks, /*match_exposure=*/adjust_images);
 
   std::cout << "Canvas size: " << pano.canvas_width() << " x " << pano.canvas_height() << std::endl;
 
