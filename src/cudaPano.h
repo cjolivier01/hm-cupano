@@ -117,7 +117,8 @@ std::optional<cv::Scalar> match_seam_images(
     const cv::Mat& seam,
     int N,
     const cv::Point& topLeft1,
-    const cv::Point& topLeft2);
+    const cv::Point& topLeft2,
+    bool verbose = false);
 
 } // namespace pano
 } // namespace hm

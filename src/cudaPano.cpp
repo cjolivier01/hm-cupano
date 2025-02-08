@@ -23,7 +23,8 @@ std::optional<cv::Scalar> match_seam_images(
     const cv::Mat& seam,
     int N,
     const cv::Point& topLeft1,
-    const cv::Point& topLeft2) {
+    const cv::Point& topLeft2,
+    bool verbose) {
   // Ensure the seam mask is of type CV_8U.
   if (seam.type() != CV_8U) {
     std::cerr << "Error: Seam mask must be of type CV_8U." << std::endl;
@@ -153,13 +154,16 @@ std::optional<cv::Scalar> match_seam_images(
   // Compute per-channel averages.
   cv::Scalar avgLeft = sumLeft * (1.0 / countLeft);
   cv::Scalar avgRight = sumRight * (1.0 / countRight);
-  std::cout << "Average values (Image1, left side): " << avgLeft << std::endl;
-  std::cout << "Average values (Image2, right side): " << avgRight << std::endl;
-
+  if (verbose) {
+    std::cout << "Average values (Image1, left side): " << avgLeft << std::endl;
+    std::cout << "Average values (Image2, right side): " << avgRight << std::endl;
+  }
   // Compute an offset per channel (half the difference).
   // The idea is to subtract this offset from image1 and add it to image2.
   cv::Scalar offset = (avgLeft - avgRight) * 0.5;
-  std::cout << "Offset: " << offset << std::endl;
+  if (verbose) {
+    std::cout << "Offset: " << offset << std::endl;
+  }
 
   // Helper lambda: adjusts an image by a per-channel amount.
   auto adjustImage = [&](cv::Mat& img, cv::Scalar adjustment) {
