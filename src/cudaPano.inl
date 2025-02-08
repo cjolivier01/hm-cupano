@@ -118,22 +118,42 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     //
     // Remap image 1 onto the canvas
     //
-    cuerr = batched_remap_kernel_ex_offset(
-        inputImage1.data(),
-        inputImage1.width(),
-        inputImage1.height(),
-        canvas->data(),
-        canvas->width(),
-        canvas->height(),
-        stitch_context.remap_1_x->data(),
-        stitch_context.remap_1_y->data(),
-        {0, 0, 0},
-        /*batchSize=*/stitch_context.batch_size(),
-        stitch_context.remap_1_x->width(),
-        stitch_context.remap_1_x->height(),
-        /*offsetX=*/canvas_manager._x1,
-        /*offsetY=*/canvas_manager._y1,
-        stream);
+    if (image_adjustment.has_value()) {
+      cuerr = batched_remap_kernel_ex_offset_adjust(
+          inputImage1.data(),
+          inputImage1.width(),
+          inputImage1.height(),
+          canvas->data(),
+          canvas->width(),
+          canvas->height(),
+          stitch_context.remap_1_x->data(),
+          stitch_context.remap_1_y->data(),
+          {0, 0, 0},
+          /*batchSize=*/stitch_context.batch_size(),
+          stitch_context.remap_1_x->width(),
+          stitch_context.remap_1_x->height(),
+          /*offsetX=*/canvas_manager._x1,
+          /*offsetY=*/canvas_manager._y1,
+          tmp::neg(*image_adjustment),
+          stream);
+    } else {
+      cuerr = batched_remap_kernel_ex_offset(
+          inputImage1.data(),
+          inputImage1.width(),
+          inputImage1.height(),
+          canvas->data(),
+          canvas->width(),
+          canvas->height(),
+          stitch_context.remap_1_x->data(),
+          stitch_context.remap_1_y->data(),
+          {0, 0, 0},
+          /*batchSize=*/stitch_context.batch_size(),
+          stitch_context.remap_1_x->width(),
+          stitch_context.remap_1_x->height(),
+          /*offsetX=*/canvas_manager._x1,
+          /*offsetY=*/canvas_manager._y1,
+          stream);
+    }
     CUDA_RETURN_IF_ERROR(cuerr);
     // SHOW_SMALL(canvas);
 #endif
@@ -231,22 +251,42 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     //
     // Remap image 2 directly onto the canvas (will overwrite the overlappign portion of image 1)
     //
-    cuerr = batched_remap_kernel_ex_offset(
-        inputImage2.data(),
-        inputImage2.width(),
-        inputImage2.height(),
-        canvas->data(),
-        canvas->width(),
-        canvas->height(),
-        stitch_context.remap_2_x->data(),
-        stitch_context.remap_2_y->data(),
-        {0, 0, 0},
-        /*batchSize=*/stitch_context.batch_size(),
-        stitch_context.remap_2_x->width(),
-        stitch_context.remap_2_x->height(),
-        /*offsetX=*/canvas_manager._x2,
-        /*offsetY=*/canvas_manager._y2,
-        stream);
+    if (image_adjustment.has_value()) {
+      cuerr = batched_remap_kernel_ex_offset_adjust(
+          inputImage2.data(),
+          inputImage2.width(),
+          inputImage2.height(),
+          canvas->data(),
+          canvas->width(),
+          canvas->height(),
+          stitch_context.remap_2_x->data(),
+          stitch_context.remap_2_y->data(),
+          {0, 0, 0},
+          /*batchSize=*/stitch_context.batch_size(),
+          stitch_context.remap_2_x->width(),
+          stitch_context.remap_2_x->height(),
+          /*offsetX=*/canvas_manager._x2,
+          /*offsetY=*/canvas_manager._y2,
+          *image_adjustment,
+          stream);
+    } else {
+      cuerr = batched_remap_kernel_ex_offset(
+          inputImage2.data(),
+          inputImage2.width(),
+          inputImage2.height(),
+          canvas->data(),
+          canvas->width(),
+          canvas->height(),
+          stitch_context.remap_2_x->data(),
+          stitch_context.remap_2_y->data(),
+          {0, 0, 0},
+          /*batchSize=*/stitch_context.batch_size(),
+          stitch_context.remap_2_x->width(),
+          stitch_context.remap_2_x->height(),
+          /*offsetX=*/canvas_manager._x2,
+          /*offsetY=*/canvas_manager._y2,
+          stream);
+    }
     CUDA_RETURN_IF_ERROR(cuerr);
     // SHOW_SMALL(canvas);
 #endif
