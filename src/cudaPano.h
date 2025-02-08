@@ -88,6 +88,7 @@ class CudaStitchPano {
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
  protected:
+
   static CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process(
       const CudaMat<T_pipeline>& inputImage1,
       const CudaMat<T_pipeline>& inputImage2,

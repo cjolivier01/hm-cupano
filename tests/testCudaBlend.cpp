@@ -45,7 +45,7 @@ int main(int argc, char** argv) {
 
   bool perf = false;
   bool show = false;
-  bool adjust_images = true;
+  bool adjust_images = false;
   std::string game_id;
   std::string directory;
   std::string output;

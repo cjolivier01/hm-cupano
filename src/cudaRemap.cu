@@ -5,7 +5,11 @@
 #include "cudaImageAdjust.h"
 #include "cudaRemap.h" // Assumed to declare these host functions
 
+#include <limits>
+
 namespace {
+
+constexpr unsigned short kUnmappedPositionValue = std::numeric_limits<unsigned short>::max();
 
 //------------------------------------------------------------------------------
 // Templated Remap Kernel for a Single Image (unchanged)
@@ -271,6 +275,7 @@ __global__ void BatchedRemapKernelExOffsetAdjust(
     int remapH,
     int offsetX,
     int offsetY,
+    bool no_unmapped_write,
     float3 adjustment) {
   int b = blockIdx.z;
   if (b >= batchSize)
@@ -303,7 +308,10 @@ __global__ void BatchedRemapKernelExOffsetAdjust(
     int srcIdx = srcY * srcW + srcX;
     destImage[destIdx] = PixelAdjuster<T_out>::adjust(static_cast<T_out>(srcImage[srcIdx]), adjustment);
   } else {
-    destImage[destIdx] = deflt;
+    // We trust that srcY will also be kUnmappedPositionValue
+    if (!no_unmapped_write || srcX != kUnmappedPositionValue) {
+      destImage[destIdx] = deflt;
+    }
   }
 }
 
@@ -586,6 +594,7 @@ cudaError_t batched_remap_kernel_ex_offset_adjust(
     int remapH,
     int offsetX,
     int offsetY,
+    bool no_unmapped_write,
     float3 adjustment,
     cudaStream_t stream) {
   dim3 blockDim(16, 16, 1);
@@ -605,6 +614,7 @@ cudaError_t batched_remap_kernel_ex_offset_adjust(
       remapH,
       offsetX,
       offsetY,
+      no_unmapped_write,
       adjustment);
   return cudaGetLastError();
 }
@@ -752,6 +762,7 @@ cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust(
       int remapH,                                                        \
       int offsetX,                                                       \
       int offsetY,                                                       \
+      bool no_unmapped_write,                                            \
       float3 adjustment,                                                 \
       cudaStream_t stream);
 

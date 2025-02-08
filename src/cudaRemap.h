@@ -86,6 +86,7 @@ cudaError_t batched_remap_kernel_ex_offset_adjust(
     int remapH,
     int offsetX,
     int offsetY,
+    bool no_unmapped_write,
     float3 adjustment,
     cudaStream_t stream = 0);
 

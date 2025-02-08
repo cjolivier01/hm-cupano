@@ -51,9 +51,10 @@
       "cwd": "${workspaceFolder}",
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
       "args": [
-        "--game-id=mlk-heat-1",
+        "--game-id=stitch-fix",
         "--show",
         "--adjust=1",
+        "--levels=6",
         "--output=${workspaceRoot}/output.png",
       ],
       "sourceMap": {

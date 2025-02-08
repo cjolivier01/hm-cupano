@@ -4,6 +4,7 @@
 #include "cudaMakeFull.h"
 #include "cudaPano.h"
 #include "cudaRemap.h"
+#include "showImage.h"
 
 namespace hm {
 namespace pano {
@@ -134,6 +135,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stitch_context.remap_1_x->height(),
           /*offsetX=*/canvas_manager._x1,
           /*offsetY=*/canvas_manager._y1,
+          /*no_unmapped_write=*/false,
           tmp::neg(*image_adjustment),
           stream);
     } else {
@@ -155,7 +157,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stream);
     }
     CUDA_RETURN_IF_ERROR(cuerr);
-    // SHOW_SMALL(canvas);
+    //SHOW_SCALED(canvas, 0.5);
 #endif
 
 #if 1
@@ -267,6 +269,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stitch_context.remap_2_x->height(),
           /*offsetX=*/canvas_manager._x2,
           /*offsetY=*/canvas_manager._y2,
+          /*no_unmapped_write=*/false,
           *image_adjustment,
           stream);
     } else {
@@ -288,6 +291,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stream);
     }
     CUDA_RETURN_IF_ERROR(cuerr);
+    //SHOW_SCALED(&inputImage2, 0.5);
+    //SHOW_SCALED(canvas, 0.5);
     // SHOW_SMALL(canvas);
 #endif
 
@@ -372,8 +377,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           /*offsetY=*/canvas_manager._y2,
           stream);
     }
-    // SHOW_SMALL(&inputImage2);
-    // SHOW_SMALL(canvas);
+    // SHOW_SCALED(canvas, 0.5);
     // SHOW_SMALL(stitch_context.cudaBlendHardSeam);
 #endif
   }
