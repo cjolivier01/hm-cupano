@@ -255,6 +255,58 @@ __global__ void BatchedRemapKernelExOffset(
   }
 }
 
+template <typename T_in, typename T_out>
+__global__ void BatchedRemapKernelExOffsetAdjust(
+    const T_in* src,
+    int srcW,
+    int srcH,
+    T_out* dest,
+    int destW,
+    int destH,
+    const unsigned short* mapX, // mapping arrays of size (remapW x remapH)
+    const unsigned short* mapY,
+    T_in deflt,
+    int batchSize,
+    int remapW,
+    int remapH,
+    int offsetX,
+    int offsetY,
+    float3 adjustment) {
+  int b = blockIdx.z;
+  if (b >= batchSize)
+    return;
+
+  int srcImageSize = srcW * srcH;
+  int destImageSize = destW * destH;
+
+  const T_in* srcImage = src + b * srcImageSize;
+  T_out* destImage = dest + b * destImageSize;
+
+  // Coordinates within the remap region.
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x >= remapW || y >= remapH)
+    return;
+
+  int destX = offsetX + x;
+  int destY = offsetY + y;
+  if (destX < 0 || destX >= destW || destY < 0 || destY >= destH)
+    return;
+
+  int destIdx = destY * destW + destX;
+  int mapIdx = y * remapW + x;
+
+  int srcX = static_cast<int>(mapX[mapIdx]);
+  int srcY = static_cast<int>(mapY[mapIdx]);
+
+  if (srcX < srcW && srcY < srcH) {
+    int srcIdx = srcY * srcW + srcX;
+    destImage[destIdx] = PixelAdjuster<T_out>::adjust(static_cast<T_out>(srcImage[srcIdx]));
+  } else {
+    destImage[destIdx] = deflt;
+  }
+}
+
 //------------------------------------------------------------------------------
 // NEW: Templated Batched Remap Kernel EX with Offset (Single-channel)
 //------------------------------------------------------------------------------
@@ -515,6 +567,45 @@ cudaError_t batched_remap_kernel_ex_offset(
   dim3 gridDim((remapW + blockDim.x - 1) / blockDim.x, (remapH + blockDim.y - 1) / blockDim.y, batchSize);
   BatchedRemapKernelExOffset<T_in, T_out><<<gridDim, blockDim, 0, stream>>>(
       d_src, srcW, srcH, d_dest, destW, destH, d_mapX, d_mapY, deflt, batchSize, remapW, remapH, offsetX, offsetY);
+  return cudaGetLastError();
+}
+
+template <typename T_in, typename T_out>
+cudaError_t batched_remap_kernel_ex_offset_adjust(
+    const T_in* d_src,
+    int srcW,
+    int srcH,
+    T_out* d_dest,
+    int destW,
+    int destH,
+    const unsigned short* d_mapX,
+    const unsigned short* d_mapY,
+    T_in deflt,
+    int batchSize,
+    int remapW,
+    int remapH,
+    int offsetX,
+    int offsetY,
+    float3 adjustment,
+    cudaStream_t stream) {
+  dim3 blockDim(16, 16, 1);
+  dim3 gridDim((remapW + blockDim.x - 1) / blockDim.x, (remapH + blockDim.y - 1) / blockDim.y, batchSize);
+  BatchedRemapKernelExOffsetAdjust<T_in, T_out><<<gridDim, blockDim, 0, stream>>>(
+      d_src,
+      srcW,
+      srcH,
+      d_dest,
+      destW,
+      destH,
+      d_mapX,
+      d_mapY,
+      deflt,
+      batchSize,
+      remapW,
+      remapH,
+      offsetX,
+      offsetY,
+      adjustment);
   return cudaGetLastError();
 }
 

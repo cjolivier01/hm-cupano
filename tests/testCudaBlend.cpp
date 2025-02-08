@@ -44,6 +44,7 @@ int main(int argc, char** argv) {
 
   bool perf = false;
   bool show = false;
+  bool adjust_images = true;
   std::string game_id;
   std::string directory;
   std::string output;
@@ -55,6 +56,7 @@ int main(int argc, char** argv) {
       {"show", no_argument, 0, 's'}, // --show (flag)
       {"perf", no_argument, 0, 'p'}, // --perf (flag)
       {"game-id", required_argument, 0, 'g'}, // --game-id <value>
+      {"adjust", required_argument, 0, 'a'}, // --directory <value>
       {"directory", required_argument, 0, 'd'}, // --directory <value>
       {"output", required_argument, 0, 'o'}, // --output <value>
       {"cuda-device", required_argument, 0, 'c'}, // --cuda-device <value>
@@ -65,13 +67,16 @@ int main(int argc, char** argv) {
   // 's' for --show (no argument),
   // 'g:' means option 'g' requires an argument,
   // 'd:' means option 'd' requires an argument.
-  const char* short_opts = "spg:d:o:c:";
+  const char* short_opts = "spg:d:o:c:a:";
 
   int option_index = 0;
   int opt;
   // Loop through and parse each option.
   while ((opt = getopt_long(argc, argv, short_opts, long_options, &option_index)) != -1) {
     switch (opt) {
+      case 'a': // --adjust
+        adjust_images = !!std::atoi(optarg);
+        break;
       case 'p': // --perf
         perf = true;
         break;
@@ -93,7 +98,7 @@ int main(int argc, char** argv) {
       case '?': // Unknown option or missing required argument.
         std::cerr
             << "Usage: " << argv[0]
-            << " [--show] [--perf] [--game-id <id>] [--directory <dir>] [--cuda-device <value>] [--output <value>]"
+            << " [--show] [--perf] [--game-id <id>] [--directory <dir>] [--cuda-device <value>] [--output <value>] [--adjust <0|1>]"
             << std::endl;
         exit(EXIT_FAILURE);
       default:
@@ -165,26 +170,15 @@ int main(int argc, char** argv) {
   // constexpr int kBatchSize = 2;
 
   hm::pano::cuda::CudaStitchPano<T_pipeline, T_compute> pano(
-      kBatchSize, numLevels, control_masks, /*match_exposure=*/true);
+      kBatchSize, numLevels, control_masks, /*match_exposure=*/adjust_images);
 
   std::cout << "Canvas size: " << pano.canvas_width() << " x " << pano.canvas_height() << std::endl;
 
   const int CV_T_PIPELINE = cudaPixelTypeToCvType(CudaTypeToPixelType<T_pipeline>::value);
 
-  // cv::Scalar offset = hm::pano::match_seam_images(
-  //                         sample_img_left,
-  //                         sample_img_right,
-  //                         control_masks.whole_seam_mask_image,
-  //                         /*N=*/6,
-  //                         cv::Point(control_masks.positions[0].xpos, control_masks.positions[0].ypos),
-  //                         cv::Point(control_masks.positions[1].xpos, control_masks.positions[1].ypos))
-  //                         .value();
-
-  if (std::is_floating_point_v<BaseScalar_t<T_pipeline>>) {
+  if (sample_img_left.type() != CV_T_PIPELINE) {
     sample_img_left.convertTo(sample_img_left, CV_T_PIPELINE);
     sample_img_right.convertTo(sample_img_right, CV_T_PIPELINE);
-    // sample_img_left.convertTo(sample_img_left, CV_T_PIPELINE, 1.0 / 255.0);
-    // sample_img_right.convertTo(sample_img_right, CV_T_PIPELINE, 1.0 / 255.0);
   }
 
   CudaMat<T_pipeline> inputImage1(as_batch(sample_img_left, kBatchSize));
