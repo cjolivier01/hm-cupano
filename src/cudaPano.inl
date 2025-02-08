@@ -164,17 +164,15 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     //
     // Now copy the blending portion of remapped image 1 from the canvas onto the blend image
     //
-    cuerr = simple_make_full_batch<BaseScalar_t<T_pipeline>, BaseScalar_t<T_compute>, unsigned char>(
+    cuerr = simple_make_full_batch<T_pipeline, T_compute, unsigned char>(
         // Image 1 (float image)
-        canvas->data_raw(),
+        canvas->data(),
         canvas->width(),
         canvas->height(),
         /*region_width=*/roi_width(canvas_manager.roi_blend_1),
         /*region_height=*/stitch_context.cudaBlendSoftSeam->height() /*roi_height(canvas_manager.roi_blend_1)*/,
-        /*channels=*/3,
         // Batch of masks (optional)
         nullptr,
-        0,
         0,
         0,
         canvas_manager.roi_blend_1.x,
@@ -185,7 +183,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
         stitch_context.cudaBlendSoftSeam->height(),
         /*adjust_origin=*/false,
         /*batchSize=*/stitch_context.batch_size(),
-        stitch_context.cudaFull1->data_raw(),
+        stitch_context.cudaFull1->data(),
         /*d_full_masks=*/nullptr,
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
@@ -301,17 +299,15 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     // Now copy the blending portion of remapped image 2 from the canvas onto the blend image
     //
     // assert(stitch_context.cudaBlendSoftSeam->height() == roi_height(canvas_manager.roi_blend_2));
-    cuerr = simple_make_full_batch<BaseScalar_t<T_pipeline>, BaseScalar_t<T_compute>, unsigned char>(
+    cuerr = simple_make_full_batch<T_pipeline, T_compute, unsigned char>(
         // Image 1 (float image)
-        canvas->data_raw(),
+        canvas->data(),
         canvas->width(),
         canvas->height(),
         /*region_width=*/roi_width(canvas_manager.roi_blend_2),
         /*region_height=*/stitch_context.cudaBlendSoftSeam->height() /*roi_height(canvas_manager.roi_blend_2)*/,
-        /*channels=*/3,
         // Batch of masks (optional)
         nullptr,
-        0,
         0,
         0,
         /*offsetX=*/canvas_manager._x2,
@@ -322,7 +318,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
         stitch_context.cudaBlendSoftSeam->height(),
         /*adjust_origin=*/false,
         /*batchSize=*/stitch_context.batch_size(),
-        stitch_context.cudaFull2->data_raw(),
+        stitch_context.cudaFull2->data(),
         /*d_full_masks=*/nullptr,
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);

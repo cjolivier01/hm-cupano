@@ -35,6 +35,8 @@ __device__ inline unsigned char round_to_uchar(const F& x) {
 
 template <typename T_dest, typename T_src>
 __device__ inline T_dest perform_cast(const T_src& src) {
+  // Make sure this isn't casting anything down to char without proper clamping
+  static_assert(sizeof(T_dest) != 1 || sizeof(T_src) <= sizeof(T_dest));
   return static_cast<T_dest>(src);
 }
 
@@ -59,11 +61,36 @@ __device__ inline uchar3 perform_cast(const half3& src) {
 template <>
 __device__ inline half3 perform_cast(const uchar3& src) {
   return half3{
-      .x = static_cast<unsigned char>(round_to_uchar(src.x)),
-      .y = static_cast<unsigned char>(round_to_uchar(src.y)),
-      .z = static_cast<unsigned char>(round_to_uchar(src.z)),
+      .x = static_cast<__half>(src.x),
+      .y = static_cast<__half>(src.y),
+      .z = static_cast<__half>(src.z),
   };
 }
+
+template <>
+__device__ inline float3 perform_cast(const uchar3& src) {
+  return float3{
+      .x = static_cast<float>(src.x),
+      .y = static_cast<float>(src.y),
+      .z = static_cast<float>(src.z),
+  };
+}
+
+// template <typename T>
+// __device__ inline T all_zero() {
+//   return 0;
+// }
+
+// template <>
+// __device__ inline uchar3 all_zero() {
+//   return uchar3{0, 0, 0};
+// }
+
+// template <>
+// __device__ inline float3 all_zero() {
+//   return float3{0, 0, 0};
+// }
+
 } // namespace
 /**
  * @brief Templated batched kernel to fill an image (or batch of images) with a constant value.
@@ -78,19 +105,17 @@ __device__ inline half3 perform_cast(const uchar3& src) {
  * @param value Constant value to fill.
  * @param batchSize Number of images in the batch.
  */
-template <typename T>
-__global__ void fillKernelBatched(T* dest, int destWidth, int destHeight, int channels, T value, int batchSize) {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  int b = blockIdx.z;
-  if (b < batchSize && x < destWidth && y < destHeight) {
-    int offset = b * (destWidth * destHeight * channels);
-    int idx = (y * destWidth + x) * channels;
-    for (int c = 0; c < channels; ++c) {
-      dest[offset + idx + c] = value;
-    }
-  }
-}
+// template <typename T>
+// __global__ void fillKernelBatched(T* dest, int destWidth, int destHeight, T value, int batchSize) {
+//   int x = blockIdx.x * blockDim.x + threadIdx.x;
+//   int y = blockIdx.y * blockDim.y + threadIdx.y;
+//   int b = blockIdx.z;
+//   if (b < batchSize && x < destWidth && y < destHeight) {
+//     int offset = b * (destWidth * destHeight);
+//     int idx = (y * destWidth + x);
+//     dest[offset + idx] = value;
+//   }
+// }
 
 /**
  * @brief Templated batched kernel to copy a region of interest (ROI) from a source image
@@ -130,7 +155,6 @@ __global__ void copyRoiKernelBatched(
     int destHeight,
     int offsetX,
     int offsetY,
-    int channels,
     int batchSize) {
   int b = blockIdx.z;
   if (b >= batchSize)
@@ -143,17 +167,14 @@ __global__ void copyRoiKernelBatched(
     int srcX = srcROI_x + x;
     int srcY = srcROI_y + y;
     if (srcX < full_src_width && srcY < full_src_height) {
-      int srcOffset = b * (full_src_width * full_src_height * channels);
-      int srcIdx = (srcY * full_src_width + srcX) * channels;
+      int srcOffset = b * (full_src_width * full_src_height);
+      int srcIdx = (srcY * full_src_width + srcX);
       int destX = offsetX + x;
       int destY = offsetY + y;
       if (destX < destWidth && destY < destHeight) {
-        int destOffset = b * (destWidth * destHeight * channels);
-        int destIdx = (destY * destWidth + destX) * channels;
-        for (int c = 0; c < channels; ++c) {
-          dest[destOffset + destIdx + c] = perform_cast<T_out>(src[srcOffset + srcIdx + c]);
-          // dest[destOffset + destIdx + c] = static_cast<T_out>(src[srcOffset + srcIdx + c]);
-        }
+        int destOffset = b * (destWidth * destHeight);
+        int destIdx = (destY * destWidth + destX);
+        dest[destOffset + destIdx] = perform_cast<T_out>(src[srcOffset + srcIdx]);
       }
     }
   }
@@ -201,11 +222,9 @@ cudaError_t simple_make_full_batch(
     int src_full_height,
     int region_width,
     int region_height,
-    int channels,
     const U* d_masks,
     int mask_width,
     int mask_height,
-    int mask_channels,
     int src_roi_x,
     int src_roi_y,
     int destOffsetX,
@@ -228,12 +247,14 @@ cudaError_t simple_make_full_batch(
   // Fill the destination canvases with default values.
   // -------------------------------------------------------
   // For images: fill with 0.
-  fillKernelBatched<T_out><<<gridDimCanvas, blockDim, 0, stream>>>(
-      d_full_imgs, canvas_w, canvas_h, channels, static_cast<T_out>(0), batchSize);
+  cudaMemsetAsync(d_full_imgs, 0, canvas_w * canvas_h * sizeof(T_out) * batchSize, stream);
+  // fillKernelBatched<T_out><<<gridDimCanvas, blockDim, 0, stream>>>(
+  //     d_full_imgs, canvas_w, canvas_h, all_zero<T_out>(), batchSize);
   // For masks (if provided): fill with 1.
   if (d_masks && d_full_masks) {
-    fillKernelBatched<U><<<gridDimCanvas, blockDim, 0, stream>>>(
-        d_full_masks, canvas_w, canvas_h, mask_channels, static_cast<U>(1), batchSize);
+    cudaMemsetAsync(d_full_masks, 0, mask_width * mask_height * sizeof(unsigned char) * batchSize, stream);
+    // fillKernelBatched<U><<<gridDimCanvas, blockDim, 0, stream>>>(
+    //     d_full_masks, canvas_w, canvas_h, static_cast<U>(1), batchSize);
   }
 
   // -------------------------------------------------------
@@ -257,7 +278,6 @@ cudaError_t simple_make_full_batch(
       canvas_h,
       destOffsetX,
       destOffsetY,
-      channels,
       batchSize);
 
   // Copy the ROI for the masks (if provided).
@@ -275,7 +295,6 @@ cudaError_t simple_make_full_batch(
         canvas_h,
         destOffsetX,
         destOffsetY,
-        mask_channels,
         batchSize);
   }
   return cudaGetLastError();
@@ -321,7 +340,6 @@ cudaError_t copyRoiBatchedInterface(
     int destHeight,
     int offsetX,
     int offsetY,
-    int channels,
     int batchSize,
     cudaStream_t stream) {
   dim3 blockDim(16, 16, 1);
@@ -339,7 +357,6 @@ cudaError_t copyRoiBatchedInterface(
       destHeight,
       offsetX,
       offsetY,
-      channels,
       batchSize);
   return cudaGetLastError();
 }
@@ -348,9 +365,8 @@ cudaError_t copyRoiBatchedInterface(
 // Explicit Template Instantiations
 ////////////////////////////////////////////////////////////////////////////////
 
-#define INSTANTIATE_FILL_KERNEL_BATCHED(T)       \
-  template __global__ void fillKernelBatched<T>( \
-      T * dest, int destWidth, int destHeight, int channels, T value, int batchSize);
+// #define INSTANTIATE_FILL_KERNEL_BATCHED(T) \
+//   template __global__ void fillKernelBatched<T>(T * dest, int destWidth, int destHeight, T value, int batchSize);
 
 #define INSTANTIATE_COPY_ROI_KERNEL_BATCHED(Tin, Tout)      \
   template __global__ void copyRoiKernelBatched<Tin, Tout>( \
@@ -366,7 +382,6 @@ cudaError_t copyRoiBatchedInterface(
       int destHeight,                                       \
       int offsetX,                                          \
       int offsetY,                                          \
-      int channels,                                         \
       int batchSize);
 
 #define INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(Tin, Tout, U)     \
@@ -376,9 +391,7 @@ cudaError_t copyRoiBatchedInterface(
       int,                                                   \
       int,                                                   \
       int,                                                   \
-      int,                                                   \
       const U* d_masks,                                      \
-      int,                                                   \
       int,                                                   \
       int,                                                   \
       int,                                                   \
@@ -407,17 +420,16 @@ cudaError_t copyRoiBatchedInterface(
       int destHeight,                                      \
       int offsetX,                                         \
       int offsetY,                                         \
-      int channels,                                        \
       int batchSize,                                       \
       cudaStream_t stream);
 
 // --- Device kernels ---
 
 // fillKernelBatched instantiations:
-INSTANTIATE_FILL_KERNEL_BATCHED(float)
-INSTANTIATE_FILL_KERNEL_BATCHED(float3)
-INSTANTIATE_FILL_KERNEL_BATCHED(__half)
-INSTANTIATE_FILL_KERNEL_BATCHED(__nv_bfloat16)
+// INSTANTIATE_FILL_KERNEL_BATCHED(float)
+// INSTANTIATE_FILL_KERNEL_BATCHED(float3)
+// INSTANTIATE_FILL_KERNEL_BATCHED(__half)
+// INSTANTIATE_FILL_KERNEL_BATCHED(__nv_bfloat16)
 
 // copyRoiKernelBatched instantiations:
 
@@ -436,13 +448,14 @@ INSTANTIATE_COPY_ROI_KERNEL_BATCHED(__half, float)
 // --- Host functions ---
 
 // simple_make_full_batch instantiations:
-INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(unsigned char, float, unsigned char)
-INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(unsigned char, __half, unsigned char)
-INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(unsigned char, __nv_bfloat16, unsigned char)
-INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float, float, unsigned char)
-INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(unsigned char, unsigned char, unsigned char)
-INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(__half, __half, unsigned char)
-INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(__nv_bfloat16, __nv_bfloat16, unsigned char)
+// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(unsigned char, float, unsigned char)
+// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(unsigned char, __half, unsigned char)
+// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(unsigned char, __nv_bfloat16, unsigned char)
+// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float, float, unsigned char)
+// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(unsigned char, unsigned char, unsigned char)
+// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(__half, __half, unsigned char)
+// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(__nv_bfloat16, __nv_bfloat16, unsigned char)
+INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(uchar3, float3, unsigned char)
 
 // copyRoiBatchedInterface instantiations:
 
@@ -453,6 +466,7 @@ INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(half3, uchar3)
 INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(unsigned char, __nv_bfloat16)
 INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(float, float)
 INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(float3, float3)
+INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(float4, float4)
 INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(float3, uchar3)
 INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(uchar3, uchar3)
 INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(__half, __half)
