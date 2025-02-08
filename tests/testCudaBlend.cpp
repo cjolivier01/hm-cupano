@@ -152,8 +152,8 @@ int main(int argc, char** argv) {
   // Configurable parameter: number of pyramid levels.
 #if 1
 #if 1
-  // using T_pipeline = uchar3;
-  using T_pipeline = float3;
+  using T_pipeline = uchar3;
+  //using T_pipeline = float3;
 
   using T_compute = float3;
   // using T_compute = half3;
@@ -166,23 +166,23 @@ int main(int argc, char** argv) {
   using T_compute = __half;
 #endif
 
-  constexpr int kBatchSize = 1;
-  // constexpr int kBatchSize = 2;
+  // constexpr int kBatchSize = 1;
+  constexpr int kBatchSize = 2;
 
   hm::pano::cuda::CudaStitchPano<T_pipeline, T_compute> pano(
       kBatchSize, num_levels, control_masks, /*match_exposure=*/adjust_images);
 
   std::cout << "Canvas size: " << pano.canvas_width() << " x " << pano.canvas_height() << std::endl;
 
-  const int CV_T_PIPELINE = cudaPixelTypeToCvType(CudaTypeToPixelType<T_pipeline>::value);
+  const int cvPipelineType = cudaPixelTypeToCvType(CudaTypeToPixelType<T_pipeline>::value);
 
-  if (sample_img_left.type() != CV_T_PIPELINE) {
+  if (sample_img_left.type() != cvPipelineType) {
     if (std::is_floating_point<BaseScalar_t<T_pipeline>>()) {
-      sample_img_left.convertTo(sample_img_left, CV_T_PIPELINE, 1.0 / 255.0);
-      sample_img_right.convertTo(sample_img_right, CV_T_PIPELINE, 1.0 / 255.0);
+      sample_img_left.convertTo(sample_img_left, cvPipelineType, 1.0 / 255.0);
+      sample_img_right.convertTo(sample_img_right, cvPipelineType, 1.0 / 255.0);
     } else {
-      sample_img_left.convertTo(sample_img_left, CV_T_PIPELINE, 1.0 / 255.0);
-      sample_img_right.convertTo(sample_img_right, CV_T_PIPELINE, 1.0 / 255.0);
+      sample_img_left.convertTo(sample_img_left, cvPipelineType, 1.0 / 255.0);
+      sample_img_right.convertTo(sample_img_right, cvPipelineType, 1.0 / 255.0);
     }
   }
 
