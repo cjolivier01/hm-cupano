@@ -51,8 +51,9 @@
       "cwd": "${workspaceFolder}",
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
       "args": [
+        "--game-id=mlk-heat-1",
         "--show",
-        "--game-id=stitch-fix",
+        "--adjust=1",
         "--output=${workspaceRoot}/output.png",
       ],
       "sourceMap": {
@@ -66,7 +67,7 @@
         "DISPLAY": ":1",
         "CUDA_LAUNCH_BLOCKING": "1",
       },
-      "preLaunchTask": "JU Build All",
+      "preLaunchTask": "Build All",
     },
     {
       "name": "(CUDA) cudaBlend",
@@ -75,11 +76,11 @@
       "cwd": "${workspaceFolder}",
       "debuggerPath": "/usr/local/cuda/bin/cuda-gdb",
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
-      "args": "--game-id=stitch-fix --output=${workspaceRoot}/output.png",
+      "args": "--game-id=mlk-heat-1 --show --output=${workspaceRoot}/output.png",
       "initCommands": [
         "directory ${workspaceFolder}",
       ],
-      "preLaunchTask": "JU Build All",
+      "preLaunchTask": "Build All",
     },
   ]
 }
