@@ -85,9 +85,9 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
 
 constexpr inline float3 neg(const float3& f) {
   return float3{
-      .x = f.x,
-      .y = f.y,
-      .z = f.z,
+      .x = -f.x,
+      .y = -f.y,
+      .z = -f.z,
   };
 }
 
@@ -362,9 +362,11 @@ template <typename T_pipeline, typename T_compute>
 std::optional<float3> CudaStitchPano<T_pipeline, T_compute>::compute_image_adjustment(
     const CudaMat<T_pipeline>& inputImage1,
     const CudaMat<T_pipeline>& inputImage2) {
+  cv::Mat tmp1 = inputImage1.download();
+  cv::Mat tmp2 = inputImage2.download();
   std::optional<cv::Scalar> adjustment_result = match_seam_images(
-      inputImage1.download(),
-      inputImage2.download(),
+      tmp1,
+      tmp2,
       *whole_seam_mask_image_,
       /*N=*/6,
       canvas_manager_->canvas_positions()[0],
@@ -386,7 +388,14 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     const CudaMat<T_pipeline>& inputImage2,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
-  return process(inputImage1, inputImage2, *stitch_context_, *canvas_manager_, std::nullopt, stream, std::move(canvas));
+  if (match_exposure_ && !image_adjustment_.has_value()) {
+    image_adjustment_ = compute_image_adjustment(inputImage1, inputImage2);
+    if (!image_adjustment_.has_value()) {
+      return CudaStatus(cudaError_t::cudaErrorAssert, "Unable to compute image adjustment");
+    }
+  }
+  return process(
+      inputImage1, inputImage2, *stitch_context_, *canvas_manager_, image_adjustment_, stream, std::move(canvas));
 }
 
 } // namespace cuda
