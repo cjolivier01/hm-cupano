@@ -50,6 +50,7 @@ int main(int argc, char** argv) {
   std::string directory;
   std::string output;
   int device_id = 0;
+  int batch_size = 1;
 
 #ifdef __aarch64__
   int num_levels = 0;
@@ -68,6 +69,7 @@ int main(int argc, char** argv) {
       {"directory", required_argument, 0, 'd'}, // --directory <value>
       {"output", required_argument, 0, 'o'}, // --output <value>
       {"cuda-device", required_argument, 0, 'c'}, // --cuda-device <value>
+      {"batch-size", required_argument, 0, 'b'}, // --batch-size <value>
       {0, 0, 0, 0} // End-of-array marker
   };
 
@@ -84,6 +86,9 @@ int main(int argc, char** argv) {
     switch (opt) {
       case 'l': // --levels
         num_levels = std::atoi(optarg);
+        break;
+      case 'b':
+        batch_size = std::atoi(optarg);
         break;
       case 'a': // --adjust
         adjust_images = !!std::atoi(optarg);
@@ -153,7 +158,7 @@ int main(int argc, char** argv) {
 #if 1
 #if 1
   using T_pipeline = uchar3;
-  //using T_pipeline = float3;
+  // using T_pipeline = float3;
 
   using T_compute = float3;
   // using T_compute = half3;
@@ -166,11 +171,8 @@ int main(int argc, char** argv) {
   using T_compute = __half;
 #endif
 
-  // constexpr int kBatchSize = 1;
-  constexpr int kBatchSize = 2;
-
   hm::pano::cuda::CudaStitchPano<T_pipeline, T_compute> pano(
-      kBatchSize, num_levels, control_masks, /*match_exposure=*/adjust_images);
+      batch_size, num_levels, control_masks, /*match_exposure=*/adjust_images);
 
   std::cout << "Canvas size: " << pano.canvas_width() << " x " << pano.canvas_height() << std::endl;
 
@@ -186,8 +188,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  CudaMat<T_pipeline> inputImage1(as_batch(sample_img_left, kBatchSize));
-  CudaMat<T_pipeline> inputImage2(as_batch(sample_img_right, kBatchSize));
+  CudaMat<T_pipeline> inputImage1(as_batch(sample_img_left, batch_size));
+  CudaMat<T_pipeline> inputImage2(as_batch(sample_img_right, batch_size));
 
   auto canvas = std::make_unique<CudaMat<T_pipeline>>(pano.batch_size(), pano.canvas_width(), pano.canvas_height());
 
