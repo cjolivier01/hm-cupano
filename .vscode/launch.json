@@ -75,7 +75,7 @@
       "cwd": "${workspaceFolder}",
       "debuggerPath": "/usr/local/cuda/bin/cuda-gdb",
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
-      "args": "--game-id=stitch-fix --output=${workspaceRoot}/output.png",
+      "args": "--game-id=mlk-heat-1 --show --output=${workspaceRoot}/output.png",
       "initCommands": [
         "directory ${workspaceFolder}",
       ],

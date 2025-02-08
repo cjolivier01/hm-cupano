@@ -164,7 +164,8 @@ int main(int argc, char** argv) {
   constexpr int kBatchSize = 1;
   // constexpr int kBatchSize = 2;
 
-  hm::pano::cuda::CudaStitchPano<T_pipeline, T_compute> pano(kBatchSize, numLevels, control_masks);
+  hm::pano::cuda::CudaStitchPano<T_pipeline, T_compute> pano(
+      kBatchSize, numLevels, control_masks, /*match_exposure=*/true);
 
   std::cout << "Canvas size: " << pano.canvas_width() << " x " << pano.canvas_height() << std::endl;
 
@@ -191,8 +192,7 @@ int main(int argc, char** argv) {
 
   auto canvas = std::make_unique<CudaMat<T_pipeline>>(pano.batch_size(), pano.canvas_width(), pano.canvas_height());
 
-  auto blendedCanvasResult = pano.process(
-      inputImage1, inputImage2, stream, std::move(canvas));
+  auto blendedCanvasResult = pano.process(inputImage1, inputImage2, stream, std::move(canvas));
   if (!blendedCanvasResult.ok()) {
     std::cerr << blendedCanvasResult.status().message() << std::endl;
     return blendedCanvasResult.status().code();
