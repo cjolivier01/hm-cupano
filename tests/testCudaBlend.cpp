@@ -146,14 +146,14 @@ int main(int argc, char** argv) {
 #else
   // int numLevels = 6;
   // int numLevels = 2;
-  // int numLevels = 6;
-  int numLevels = 0;
+  int numLevels = 6;
+  //int numLevels = 0;
 #endif
 
 #if 1
 #if 1
-  using T_pipeline = uchar3;
-  // using T_pipeline = float3;
+  //using T_pipeline = uchar3;
+  using T_pipeline = float3;
 
   using T_compute = float3;
   // using T_compute = half3;
