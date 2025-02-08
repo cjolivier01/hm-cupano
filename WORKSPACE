@@ -50,6 +50,7 @@ http_archive(
     name = "pybind11",
     urls = ["https://github.com/pybind/pybind11/archive/refs/tags/v2.10.4.tar.gz"],
     strip_prefix = "pybind11-2.10.4",
+    build_file = "//buildfiles/third_party:pybind11.BUILD",
 )
 
 new_local_repository(
