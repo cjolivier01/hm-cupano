@@ -200,6 +200,8 @@ int main(int argc, char** argv) {
   }
   canvas = blendedCanvasResult.ConsumeValueOrDie();
 
+  cudaStreamSynchronize(stream);
+
   if (!output.empty()) {
     cv::imwrite(output, canvas->download());
   }
