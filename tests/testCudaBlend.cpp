@@ -14,6 +14,7 @@
 #include <cmath>
 #include <iostream>
 #include <optional>
+#include <type_traits>
 
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
@@ -176,8 +177,13 @@ int main(int argc, char** argv) {
   const int CV_T_PIPELINE = cudaPixelTypeToCvType(CudaTypeToPixelType<T_pipeline>::value);
 
   if (sample_img_left.type() != CV_T_PIPELINE) {
-    sample_img_left.convertTo(sample_img_left, CV_T_PIPELINE, 1.0 / 255.0);
-    sample_img_right.convertTo(sample_img_right, CV_T_PIPELINE, 1.0 / 255.0);
+    if (std::is_floating_point<BaseScalar_t<T_pipeline>>()) {
+      sample_img_left.convertTo(sample_img_left, CV_T_PIPELINE, 1.0 / 255.0);
+      sample_img_right.convertTo(sample_img_right, CV_T_PIPELINE, 1.0 / 255.0);
+    } else {
+      sample_img_left.convertTo(sample_img_left, CV_T_PIPELINE, 1.0 / 255.0);
+      sample_img_right.convertTo(sample_img_right, CV_T_PIPELINE, 1.0 / 255.0);
+    }
   }
 
   CudaMat<T_pipeline> inputImage1(as_batch(sample_img_left, kBatchSize));
