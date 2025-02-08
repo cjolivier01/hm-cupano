@@ -147,12 +147,12 @@ int main(int argc, char** argv) {
   // int numLevels = 6;
   // int numLevels = 2;
   int numLevels = 6;
-  //int numLevels = 0;
+  // int numLevels = 0;
 #endif
 
 #if 1
 #if 1
-  //using T_pipeline = uchar3;
+  // using T_pipeline = uchar3;
   using T_pipeline = float3;
 
   using T_compute = float3;
@@ -177,8 +177,8 @@ int main(int argc, char** argv) {
   const int CV_T_PIPELINE = cudaPixelTypeToCvType(CudaTypeToPixelType<T_pipeline>::value);
 
   if (sample_img_left.type() != CV_T_PIPELINE) {
-    sample_img_left.convertTo(sample_img_left, CV_T_PIPELINE);
-    sample_img_right.convertTo(sample_img_right, CV_T_PIPELINE);
+    sample_img_left.convertTo(sample_img_left, CV_T_PIPELINE, 1.0 / 255.0);
+    sample_img_right.convertTo(sample_img_right, CV_T_PIPELINE, 1.0 / 255.0);
   }
 
   CudaMat<T_pipeline> inputImage1(as_batch(sample_img_left, kBatchSize));
