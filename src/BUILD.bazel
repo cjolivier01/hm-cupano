@@ -22,14 +22,10 @@ cc_library(
         "cudaMat.inl",
         "showImage.h",
     ],
-    copts = [
-        # "-DWITH_JETSON_UTILS=1",
-    ],
     includes = ["."],
     visibility = ["//visibility:public"],
     deps = [
         ":cuda_blend_cuda_lib",
-        # "//image:image_format",
         "@opencv_linux//:opencv",
     ],
 )
