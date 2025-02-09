@@ -1,3 +1,6 @@
+#include "cudaMakeFull.h"
+#include "cudaTypes.h"
+
 #include <cuda_runtime.h>
 #include <cassert>
 
@@ -9,20 +12,10 @@
 // Templated Device Kernels
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef HALF3_DEFINED
-#define HALF3_DEFINED
-/**
- * @brief 3-element vector of __half values.
- */
-struct half3 {
-  __half x, y, z;
-};
-#endif
-
 namespace {
 
-template <typename F>
-__device__ inline unsigned char round_to_uchar(const F& x) {
+template <typename F_dest, typename F>
+__device__ inline F_dest round_to_uchar(const F& x) {
   F x_rounded = x + F(0.5); // Add 0.5 in the type's precision
   if (x_rounded <= F(0.0)) {
     return 0;
@@ -30,7 +23,7 @@ __device__ inline unsigned char round_to_uchar(const F& x) {
   if (x_rounded >= F(255.0)) {
     return 255;
   }
-  return static_cast<unsigned char>(x_rounded); // Cast result to unsigned char
+  return static_cast<F_dest>(x_rounded); // Cast result to unsigned char
 }
 
 template <typename T_dest, typename T_src>
@@ -40,82 +33,33 @@ __device__ inline T_dest perform_cast(const T_src& src) {
   return static_cast<T_dest>(src);
 }
 
-template <>
-__device__ inline uchar3 perform_cast(const float3& src) {
-  return uchar3{
-      .x = static_cast<unsigned char>(round_to_uchar(src.x)),
-      .y = static_cast<unsigned char>(round_to_uchar(src.y)),
-      .z = static_cast<unsigned char>(round_to_uchar(src.z)),
-  };
-}
+#define DECLARE_PERFORM_CAST_UCHAR_3(_src$)                                                  \
+  template <>                                                                                \
+  __device__ inline uchar3 perform_cast(const _src$& src) {                                  \
+    return uchar3{                                                                           \
+        .x = static_cast<BaseScalar_t<uchar3>>(round_to_uchar<BaseScalar_t<uchar3>>(src.x)), \
+        .y = static_cast<BaseScalar_t<uchar3>>(round_to_uchar<BaseScalar_t<uchar3>>(src.y)), \
+        .z = static_cast<BaseScalar_t<uchar3>>(round_to_uchar<BaseScalar_t<uchar3>>(src.z)), \
+    };                                                                                       \
+  }
 
-template <>
-__device__ inline uchar3 perform_cast(const half3& src) {
-  return uchar3{
-      .x = static_cast<unsigned char>(round_to_uchar(src.x)),
-      .y = static_cast<unsigned char>(round_to_uchar(src.y)),
-      .z = static_cast<unsigned char>(round_to_uchar(src.z)),
-  };
-}
+DECLARE_PERFORM_CAST_UCHAR_3(float3)
+DECLARE_PERFORM_CAST_UCHAR_3(half3)
 
-template <>
-__device__ inline half3 perform_cast(const uchar3& src) {
-  return half3{
-      .x = static_cast<__half>(src.x),
-      .y = static_cast<__half>(src.y),
-      .z = static_cast<__half>(src.z),
-  };
-}
+#define DECLARE_PERFORM_CAST_3(_src$, _dest$)               \
+  template <>                                               \
+  __device__ inline _dest$ perform_cast(const _src$& src) { \
+    return _dest${                                          \
+        .x = static_cast<BaseScalar_t<_dest$>>(src.x),      \
+        .y = static_cast<BaseScalar_t<_dest$>>(src.y),      \
+        .z = static_cast<BaseScalar_t<_dest$>>(src.z),      \
+    };                                                      \
+  }
 
-template <>
-__device__ inline float3 perform_cast(const uchar3& src) {
-  return float3{
-      .x = static_cast<float>(src.x),
-      .y = static_cast<float>(src.y),
-      .z = static_cast<float>(src.z),
-  };
-}
-
-// template <typename T>
-// __device__ inline T all_zero() {
-//   return 0;
-// }
-
-// template <>
-// __device__ inline uchar3 all_zero() {
-//   return uchar3{0, 0, 0};
-// }
-
-// template <>
-// __device__ inline float3 all_zero() {
-//   return float3{0, 0, 0};
-// }
+DECLARE_PERFORM_CAST_3(uchar3, float3)
+DECLARE_PERFORM_CAST_3(uchar3, half3)
 
 } // namespace
-/**
- * @brief Templated batched kernel to fill an image (or batch of images) with a constant value.
- *
- * Each image in the batch is assumed to be stored in row–major order.
- *
- * @tparam T Numeric type (e.g. float, __half, __nv_bfloat16, unsigned char, etc.)
- * @param dest Pointer to destination images in device memory.
- * @param destWidth Width of each destination image.
- * @param destHeight Height of each destination image.
- * @param channels Number of channels per pixel.
- * @param value Constant value to fill.
- * @param batchSize Number of images in the batch.
- */
-// template <typename T>
-// __global__ void fillKernelBatched(T* dest, int destWidth, int destHeight, T value, int batchSize) {
-//   int x = blockIdx.x * blockDim.x + threadIdx.x;
-//   int y = blockIdx.y * blockDim.y + threadIdx.y;
-//   int b = blockIdx.z;
-//   if (b < batchSize && x < destWidth && y < destHeight) {
-//     int offset = b * (destWidth * destHeight);
-//     int idx = (y * destWidth + x);
-//     dest[offset + idx] = value;
-//   }
-// }
 
 /**
  * @brief Templated batched kernel to copy a region of interest (ROI) from a source image
@@ -138,7 +82,6 @@ __device__ inline float3 perform_cast(const uchar3& src) {
  * @param destHeight Height of each destination image.
  * @param offsetX X-coordinate in the destination image where the ROI is pasted.
  * @param offsetY Y-coordinate in the destination image where the ROI is pasted.
- * @param channels Number of channels per pixel.
  * @param batchSize Number of images in the batch.
  */
 template <typename T_in, typename T_out>
@@ -198,11 +141,9 @@ __global__ void copyRoiKernelBatched(
  * @param src_full_height Full height of each source image.
  * @param region_width Width of the ROI to copy from each source image.
  * @param region_height Height of the ROI to copy from each source image.
- * @param channels Number of channels in the source images.
  * @param d_masks Pointer to the batch of source masks in device memory (or nullptr if not provided).
  * @param mask_width Width of each source mask.
  * @param mask_height Height of each source mask.
- * @param mask_channels Number of channels in the source masks.
  * @param src_roi_x X-coordinate of the top-left corner of the ROI in the source images/masks.
  * @param src_roi_y Y-coordinate of the top-left corner of the ROI in the source images/masks.
  * @param x Reference to destination X-offset for the ROI in the destination canvases (may be adjusted).
@@ -321,7 +262,6 @@ cudaError_t simple_make_full_batch(
  * @param destHeight Height of each destination image.
  * @param offsetX X-coordinate in the destination image where the ROI is pasted.
  * @param offsetY Y-coordinate in the destination image where the ROI is pasted.
- * @param channels Number of channels per pixel.
  * @param batchSize Number of images in the batch.
  * @param stream CUDA stream to use for the kernel launch.
  * @return cudaError_t The CUDA error code after kernel launch.
@@ -423,38 +363,13 @@ cudaError_t copyRoiBatchedInterface(
       int batchSize,                                       \
       cudaStream_t stream);
 
-// --- Device kernels ---
-
-// fillKernelBatched instantiations:
-// INSTANTIATE_FILL_KERNEL_BATCHED(float)
-// INSTANTIATE_FILL_KERNEL_BATCHED(float3)
-// INSTANTIATE_FILL_KERNEL_BATCHED(__half)
-// INSTANTIATE_FILL_KERNEL_BATCHED(__nv_bfloat16)
-
-// copyRoiKernelBatched instantiations:
-
 // Same–type instantiations:
 INSTANTIATE_COPY_ROI_KERNEL_BATCHED(float3, float3)
 INSTANTIATE_COPY_ROI_KERNEL_BATCHED(uchar3, uchar3)
 INSTANTIATE_COPY_ROI_KERNEL_BATCHED(uchar3, half3)
 
-// Conversion instantiations:
-// INSTANTIATE_COPY_ROI_KERNEL_BATCHED(float, __half)
-// INSTANTIATE_COPY_ROI_KERNEL_BATCHED(__half, float)
-
 // --- Host functions ---
-
-// simple_make_full_batch instantiations:
-// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(unsigned char, float, unsigned char)
-// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(unsigned char, __half, unsigned char)
-// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(unsigned char, __nv_bfloat16, unsigned char)
-// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float, float, unsigned char)
-// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(unsigned char, unsigned char, unsigned char)
-// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(__half, __half, unsigned char)
-// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(__nv_bfloat16, __nv_bfloat16, unsigned char)
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(uchar3, float3, unsigned char)
-
-// copyRoiBatchedInterface instantiations:
 
 // Same–type instantiations:
 INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(half3, uchar3)
@@ -462,7 +377,3 @@ INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(float3, float3)
 INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(float4, float4)
 INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(float3, uchar3)
 INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(uchar3, uchar3)
-
-// Conversion instantiations:
-// INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(float, __half)
-// INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(__half, float)
