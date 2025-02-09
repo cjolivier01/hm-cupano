@@ -1,7 +1,0 @@
-#load("@pybind11//bazel:pybind11.bzl", "pybind_extension")
-
-# pybind_extension(
-#     name = "hello_ext",
-#     srcs = ["hello_world.cpp"],
-#     deps = ["@pybind11//:pybind11"],
-# )
