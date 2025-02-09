@@ -413,7 +413,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
         canvas->height(),
         /*offsetX=*/canvas_manager._x2 - canvas_manager.overlap_padding(),
         /*offsetY=*/0,
-        /*channels=*/1, // <-- 1 when using stuff like float3
         /*batchSize=*/stitch_context.batch_size(),
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);

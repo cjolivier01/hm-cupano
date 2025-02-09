@@ -147,9 +147,15 @@ int main(int argc, char** argv) {
   std::string sample_img_right_path = directory + "/right.png";
 
   cv::Mat sample_img_left = cv::imread(sample_img_left_path, cv::IMREAD_COLOR);
-  assert(!sample_img_left.empty());
+  if (sample_img_left.empty()) {
+    std::cerr << "Unable to load image: " << sample_img_left_path << std::endl;
+    return 1;
+  }
   cv::Mat sample_img_right = cv::imread(sample_img_right_path, cv::IMREAD_COLOR);
-  assert(!sample_img_right.empty());
+  if (sample_img_left.empty()) {
+    std::cerr << "Unable to load image: " << sample_img_left_path << std::endl;
+    return 1;
+  }
 
   hm::pano::ControlMasks control_masks;
   control_masks.load(directory);

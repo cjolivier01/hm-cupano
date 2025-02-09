@@ -23,7 +23,6 @@
  * @param destHeight Height of each destination image.
  * @param offsetX X-coordinate in the destination image where the ROI is pasted.
  * @param offsetY Y-coordinate in the destination image where the ROI is pasted.
- * @param channels Number of channels per pixel.
  * @param batchSize Number of images in the batch.
  * @param stream CUDA stream to use for the kernel launch.
  * @return cudaError_t The CUDA error code after kernel launch.
@@ -42,7 +41,6 @@ cudaError_t copyRoiBatchedInterface(
     int destHeight,
     int offsetX,
     int offsetY,
-    int channels,
     int batchSize,
     cudaStream_t stream = 0);
 
@@ -60,11 +58,9 @@ cudaError_t copyRoiBatchedInterface(
  * @param src_full_height Full height of each source image.
  * @param region_width Width of the ROI to copy from each source image.
  * @param region_height Height of the ROI to copy from each source image.
- * @param channels Number of channels in the source images.
  * @param d_masks Pointer to the batch of source masks in device memory (or nullptr if not provided).
  * @param mask_width Width of each source mask.
  * @param mask_height Height of each source mask.
- * @param mask_channels Number of channels in the source masks.
  * @param src_roi_x X-coordinate of the top-left corner of the ROI in the source images/masks.
  * @param src_roi_y Y-coordinate of the top-left corner of the ROI in the source images/masks.
  * @param x Reference to destination X-offset for the ROI in the destination canvases (may be adjusted).
