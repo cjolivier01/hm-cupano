@@ -54,8 +54,8 @@
         //"--game-id=stitch-fix",
         //"--game-id=mlk-heat-1",
         "--game-id=pdp",
-        "--show",
-        "--adjust=1",
+        //"--show",
+        //"--adjust=1",
         "--levels=6",
         "--output=${workspaceRoot}/output.png",
       ],
@@ -65,11 +65,11 @@
         "external/deepstream/sources": "${env:HOME}/src/hstream/external/deepstream/sources",
         "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils",
       },
-      //"stopOnEntry": true,
       "env": {
         "DISPLAY": ":1",
         "CUDA_LAUNCH_BLOCKING": "1",
       },
+      //"stopOnEntry": true,
       "preLaunchTask": "Build All",
     },
     {
@@ -79,11 +79,17 @@
       "cwd": "${workspaceFolder}",
       "debuggerPath": "/usr/local/cuda/bin/cuda-gdb",
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
-      "args": "--game-id=mlk-heat-1 --show --output=${workspaceRoot}/output.png",
+      "args": "--game-id=pdp",
       "initCommands": [
         "directory ${workspaceFolder}",
       ],
       "preLaunchTask": "Build All",
+      "environment": [
+        {
+          "name": "CUDA_LAUNCH_BLOCKING",
+          "value": "1"
+        }
+      ],
     },
   ]
 }
