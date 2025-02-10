@@ -145,7 +145,7 @@ ControlMasks::ControlMasks(std::string game_dir) {
 
 bool ControlMasks::is_valid() const {
   return !img1_col.empty() && !img1_row.empty() && !img2_col.empty() && !img2_row.empty() &&
-      whole_seam_mask_image.empty() && positions.size() == 2;
+      !whole_seam_mask_image.empty() && positions.size() == 2;
 }
 
 bool ControlMasks::load(std::string game_dir) {

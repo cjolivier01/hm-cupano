@@ -2,6 +2,8 @@
 #include <cuda_runtime.h>
 #include <cassert>
 
+namespace hm {
+
 #ifdef WITH_JETSON_UTILS
 /**
  * @brief Converts an OpenCV cv::Mat to the corresponding jetson‑utils imageFormat.
@@ -227,3 +229,4 @@ size_t cudaPixelElementSize(CudaPixelType fmt) {
       return 0;
   }
 }
+} // namespace hm

@@ -12,6 +12,7 @@
 #include "imageFormat.h" // Assumed to define the jetson‑utils imageFormat enum (e.g. IMAGE_BGR8, etc.)
 #endif
 
+namespace hm {
 /**
  * @file cudaMat.h
  * @brief Utilities for converting between OpenCV cv::Mat, jetson‑utils image formats,
@@ -378,6 +379,8 @@ class CudaMat {
 
   CudaMat(int B, int W, int H, int C = 1);
 
+  CudaMat(void* dataptr, int B, int W, int H, int C = 1);
+
   /**
    * @brief Destructor.
    *
@@ -391,7 +394,7 @@ class CudaMat {
    * @returns true if this surface is value (has memory allocated)
    */
   constexpr bool is_valid() const {
-    return d_data != nullptr;
+    return d_data_ != nullptr;
   }
 
   /**
@@ -435,13 +438,14 @@ class CudaMat {
   const BaseScalar_t<T>* data_raw() const;
 
  private:
-  T* d_data{nullptr}; ///< Pointer to device memory.
+  T* d_data_{nullptr}; ///< Pointer to device memory.
   size_t size{0}; ///< Total size (in bytes) allocated on the device.
   int rows_{0}, cols_{0}; ///< Image dimensions.
   CudaPixelType type_{CUDA_PIXEL_UNKNOWN}; ///< CUDA pixel type for the image.
   int batch_size_{0}; ///< Number of images in the batch.
   bool owns_{true};
 };
+} // namespace hm
 
 // Include inline implementations for template methods.
 #include "cudaMat.inl"

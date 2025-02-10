@@ -27,8 +27,10 @@ struct SpatialTiff {
  * pixel coordinates (for example, as row/col transformations), plus a seam mask
  * image and position metadata for georeferencing or alignment.
  */
-struct ControlMasks {
+class ControlMasks {
 
+public:
+  ControlMasks() = default;
   ControlMasks(std::string game_dir);
 
   /**
@@ -41,7 +43,6 @@ struct ControlMasks {
 
   bool is_valid() const ;
 
- public:
   /// Column mapping for image1 (e.g., from row/col transformations).
   cv::Mat img1_col;
   /// Row mapping for image1.

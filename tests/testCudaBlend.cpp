@@ -182,7 +182,7 @@ int main(int argc, char** argv) {
 
   std::cout << "Canvas size: " << pano.canvas_width() << " x " << pano.canvas_height() << std::endl;
 
-  const int cvPipelineType = cudaPixelTypeToCvType(CudaTypeToPixelType<T_pipeline>::value);
+  const int cvPipelineType = cudaPixelTypeToCvType(hm::CudaTypeToPixelType<T_pipeline>::value);
 
   if (sample_img_left.type() != cvPipelineType) {
     if (std::is_floating_point<BaseScalar_t<T_pipeline>>()) {
@@ -194,10 +194,10 @@ int main(int argc, char** argv) {
     }
   }
 
-  CudaMat<T_pipeline> inputImage1(as_batch(sample_img_left, batch_size));
-  CudaMat<T_pipeline> inputImage2(as_batch(sample_img_right, batch_size));
+  hm::CudaMat<T_pipeline> inputImage1(as_batch(sample_img_left, batch_size));
+  hm::CudaMat<T_pipeline> inputImage2(as_batch(sample_img_right, batch_size));
 
-  auto canvas = std::make_unique<CudaMat<T_pipeline>>(pano.batch_size(), pano.canvas_width(), pano.canvas_height());
+  auto canvas = std::make_unique<hm::CudaMat<T_pipeline>>(pano.batch_size(), pano.canvas_width(), pano.canvas_height());
 
   auto blendedCanvasResult = pano.process(inputImage1, inputImage2, stream, std::move(canvas));
   if (!blendedCanvasResult.ok()) {

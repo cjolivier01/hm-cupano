@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cuda_runtime.h>
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -14,8 +15,6 @@ class CudaStatus {
   CudaStatus() : code_(cudaSuccess), message_("OK") {}
 
   // Constructor that takes only a cudaError_t code.
-  // If the code is not cudaSuccess, message is set to cudaGetErrorString(code).
-  // Otherwise, message is set to "OK".
   CudaStatus(cudaError_t code) : code_(code) {
     if (code_ != cudaSuccess) {
       message_ = std::string(cudaGetErrorString(code_));
@@ -25,8 +24,6 @@ class CudaStatus {
   }
 
   // Constructs an error status with a cudaError_t code and an additional message.
-  // If the code is not cudaSuccess, the provided message is appended to the
-  // string returned by cudaGetErrorString(code).
   CudaStatus(cudaError_t code, std::string message) : code_(code) {
     if (code_ != cudaSuccess) {
       message_ = std::string(cudaGetErrorString(code_)) + ": " + std::move(message);
@@ -60,6 +57,12 @@ class CudaStatus {
       code_ = o.code();
       message_ = o.message();
     }
+  }
+
+  // Overload the ostream << operator.
+  friend std::ostream& operator<<(std::ostream& os, const CudaStatus& status) {
+    os << "Code: " << status.code_ << ", Message: " << status.message_;
+    return os;
   }
 
  private:

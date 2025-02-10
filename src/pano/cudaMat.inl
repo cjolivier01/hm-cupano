@@ -4,6 +4,8 @@
 #include <cassert>
 #include "cudaMat.h"
 
+namespace hm {
+
 // Helper: Returns the number of channels expected for a given CUDA pixel type.
 static inline int cudaPixelTypeChannels(CudaPixelType fmt) {
   switch (fmt) {
@@ -65,10 +67,10 @@ CudaMat<T>::CudaMat(const cv::Mat& mat, bool copy) : rows_(mat.rows), cols_(mat.
   // Verify that the cv::Mat's element size matches what we expect.
   assert(mat.elemSize() == expectedElemSize);
   size = mat.total() * expectedElemSize;
-  cudaMalloc(&d_data, size);
+  cudaMalloc(&d_data_, size);
   assert(mat.isContinuous());
   if (copy) {
-    cudaMemcpy(d_data, mat.data, size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_data_, mat.data, size, cudaMemcpyHostToDevice);
   }
 }
 
@@ -93,9 +95,9 @@ CudaMat<T>::CudaMat(const std::vector<cv::Mat>& mat_batch, bool copy)
   assert(first.elemSize() == expectedElemSize);
   size_t size_each = first.total() * expectedElemSize;
   size = size_each * batch_size_;
-  cudaError_t cuerr = cudaMalloc(&d_data, size);
+  cudaError_t cuerr = cudaMalloc(&d_data_, size);
   if (cuerr == cudaError_t::cudaSuccess && copy) {
-    uint8_t* p = reinterpret_cast<uint8_t*>(d_data);
+    uint8_t* p = reinterpret_cast<uint8_t*>(d_data_);
     for (const cv::Mat& mat : mat_batch) {
       assert(mat.isContinuous());
       // It is assumed that each mat in the batch has the same dimensions and type.
@@ -128,7 +130,7 @@ CudaMat<T>::CudaMat(int B, int W, int H, int C, CudaPixelType type) : batch_size
   // Ensure that the template type T matches the expected element size.
   assert(sizeof(T) == elemSize);
   size = static_cast<size_t>(B * W * H) * elemSize;
-  cudaMalloc(&d_data, size);
+  cudaMalloc(&d_data_, size);
 }
 
 template <typename T>
@@ -138,12 +140,23 @@ CudaMat<T>::CudaMat(int B, int W, int H, int C)
       cols_(W),
       type_(CudaTypeToPixelType<T>::value) // automatically inferred from T
 {
-  int expectedChannels = cudaPixelTypeChannels(type_);
-  assert(expectedChannels == C * sizeof(T) / sizeof(typename BaseScalar<T>::type));
+  assert(cudaPixelTypeChannels(type_) == C * sizeof(T) / sizeof(typename BaseScalar<T>::type));
   size_t elemSize = cudaPixelElementSize(type_);
   assert(sizeof(T) == elemSize);
   size = static_cast<size_t>(B * W * H) * elemSize;
-  cudaMalloc(&d_data, size);
+  cudaMalloc(&d_data_, size);
+}
+
+template <typename T>
+CudaMat<T>::CudaMat(void* d_data, int B, int W, int H, int C)
+    : d_data_(d_data_),
+      batch_size_(B),
+      rows_(H),
+      cols_(W),
+      type_(CudaTypeToPixelType<T>::value), // automatically inferred from T
+      owns_(false) {
+  assert(cudaPixelTypeChannels(type_) == C * sizeof(T) / sizeof(typename BaseScalar<T>::type));
+  assert(sizeof(T) == cudaPixelElementSize(type_));
 }
 
 /**
@@ -155,8 +168,8 @@ CudaMat<T>::CudaMat(int B, int W, int H, int C)
  */
 template <typename T>
 CudaMat<T>::~CudaMat() {
-  if (d_data && owns_) {
-    cudaFree(d_data);
+  if (d_data_ && owns_) {
+    cudaFree(d_data_);
   }
 }
 
@@ -177,7 +190,7 @@ cv::Mat CudaMat<T>::download(int batch_item) const {
   cv::Mat mat(rows_, cols_, cvType);
   size_t elemSize = cudaPixelElementSize(type_);
   size_t size_each = static_cast<size_t>(rows_ * cols_) * elemSize;
-  const uint8_t* src_ptr = reinterpret_cast<const uint8_t*>(d_data) + batch_item * size_each;
+  const uint8_t* src_ptr = reinterpret_cast<const uint8_t*>(d_data_) + batch_item * size_each;
   cudaMemcpy(mat.data, src_ptr, size_each, cudaMemcpyDeviceToHost);
   return mat;
 }
@@ -190,7 +203,7 @@ cv::Mat CudaMat<T>::download(int batch_item) const {
  */
 template <typename T>
 T* CudaMat<T>::data() {
-  return d_data;
+  return d_data_;
 }
 
 /**
@@ -201,7 +214,7 @@ T* CudaMat<T>::data() {
  */
 template <typename T>
 const T* CudaMat<T>::data() const {
-  return d_data;
+  return d_data_;
 }
 
 /**
@@ -252,10 +265,12 @@ constexpr int CudaMat<T>::batch_size() const {
 
 template <typename T>
 BaseScalar_t<T>* CudaMat<T>::data_raw() {
-  return reinterpret_cast<BaseScalar_t<T>*>(d_data);
+  return reinterpret_cast<BaseScalar_t<T>*>(d_data_);
 }
 
 template <typename T>
 const BaseScalar_t<T>* CudaMat<T>::data_raw() const {
-  return reinterpret_cast<const BaseScalar_t<T>*>(d_data);
+  return reinterpret_cast<const BaseScalar_t<T>*>(d_data_);
 }
+
+} // namespace hm
