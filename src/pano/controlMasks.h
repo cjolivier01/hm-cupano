@@ -28,6 +28,9 @@ struct SpatialTiff {
  * image and position metadata for georeferencing or alignment.
  */
 struct ControlMasks {
+
+  ControlMasks(std::string game_dir);
+
   /**
    * @brief Loads the required images and position data from a directory.
    *
@@ -35,6 +38,8 @@ struct ControlMasks {
    * @return true if all images loaded successfully, false otherwise.
    */
   bool load(std::string game_dir);
+
+  bool is_valid() const ;
 
  public:
   /// Column mapping for image1 (e.g., from row/col transformations).

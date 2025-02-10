@@ -1,6 +1,5 @@
 #pragma once
 
-#include "cudaImageAdjust.h"
 #include "cudaMakeFull.h"
 #include "cudaPano.h"
 #include "cudaRemap.h"
@@ -17,6 +16,10 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
     const ControlMasks& control_masks,
     bool match_exposure)
     : match_exposure_(match_exposure) {
+  if (!control_masks.is_valid()) {
+    status_ = CudaStatus(cudaError_t::cudaErrorFileNotFound, "Stitching masks were not able to be loaded");
+    return;
+  }
   stitch_context_ = std::make_unique<StitchingContext<T_pipeline, T_compute>>(
       /*batch_size=*/batch_size, /*is_hard_seam=*/num_levels == 0);
   assert(!control_masks.positions.empty());
@@ -452,6 +455,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     const CudaMat<T_pipeline>& inputImage2,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
+  CUDA_RETURN_IF_ERROR(status_);
   if (match_exposure_ && !image_adjustment_.has_value()) {
     image_adjustment_ = compute_image_adjustment(inputImage1, inputImage2);
     if (!image_adjustment_.has_value()) {
