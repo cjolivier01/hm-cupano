@@ -142,8 +142,9 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           tmp::neg(*image_adjustment),
           stream);
     } else {
+      const T_pipeline *d_in_data = inputImage1.data();
       cuerr = batched_remap_kernel_ex_offset(
-          inputImage1.data(),
+          d_in_data, //inputImage1.data(),
           inputImage1.width(),
           inputImage1.height(),
           canvas->data(),

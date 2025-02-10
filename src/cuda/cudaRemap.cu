@@ -11,6 +11,23 @@ namespace {
 
 constexpr unsigned short kUnmappedPositionValue = std::numeric_limits<unsigned short>::max();
 
+template <typename T_in, typename T_out>
+T_out __device__ cast_to(const T_in& in) {
+  return static_cast<T_out>(in);
+}
+
+template <>
+float3 __device__ cast_to(const uchar3& in) {
+  return float3{
+    .x=static_cast<float>(in.x), .y=static_cast<float>(in.y), .z=static_cast<float>(in.z),
+  };
+}
+
+// template <typename T_in, typename T_out>
+// T_out __device__ cast_to(const T_in& in) {
+//   return static_cast<T_out>(in);
+// }
+
 //------------------------------------------------------------------------------
 // Templated Remap Kernel for a Single Image (unchanged)
 //------------------------------------------------------------------------------
@@ -253,9 +270,12 @@ __global__ void BatchedRemapKernelExOffset(
 
   if (srcX < srcW && srcY < srcH) {
     int srcIdx = srcY * srcW + srcX;
-    destImage[destIdx] = static_cast<T_out>(srcImage[srcIdx]);
+    printf("srcImage=%p (szin=%lu, szout=%lu)\n", srcImage, sizeof(T_in), sizeof(T_out));
+    auto val = srcImage[srcIdx];
+    destImage[destIdx] = cast_to<T_in, T_out>(val);
+    //destImage[destIdx] = static_cast<T_out>(srcImage[srcIdx]);
   } else {
-    destImage[destIdx] = deflt;
+    destImage[destIdx] = cast_to<T_in, T_out>(deflt);
   }
 }
 
@@ -552,7 +572,7 @@ cudaError_t batched_remap_kernel_offset(
 }
 
 //------------------------------------------------------------------------------
-// NEW: Host Function: Batched Remap EX with Offset (Single-channel)
+// Host Function: Batched Remap EX with Offset (Single-channel)
 //------------------------------------------------------------------------------
 template <typename T_in, typename T_out>
 cudaError_t batched_remap_kernel_ex_offset(
@@ -864,9 +884,10 @@ INSTANTIATE_BATCHED_REMAP_KERNEL_OFFSET(__half, __half)
 
 // For batched_remap_kernel_ex_offset
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(float3, float3)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(uchar3, float3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(uchar3, uchar3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(float, float)
-INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(__half, __half)
+//INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(__half, __half)
 
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(float3, float3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(uchar3, uchar3)
