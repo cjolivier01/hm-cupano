@@ -32,7 +32,7 @@ cc_library(
 )
 
 cc_library(
-    name = "pano",
+    name = "canvas",
     srcs = [
         "canvasManager.cpp",
         "controlMasks.cpp",
@@ -67,7 +67,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":cuda_matrix",
-        ":pano",
+        ":canvas",
     ],
 )
 
