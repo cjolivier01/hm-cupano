@@ -81,6 +81,10 @@ class CudaStitchPano {
     return stitch_context_->batch_size();
   }
 
+  const CudaStatus status() const {
+    return status_;
+  }
+
   CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process(
       const CudaMat<T_pipeline>& inputImage1,
       const CudaMat<T_pipeline>& inputImage2,
@@ -108,6 +112,7 @@ class CudaStitchPano {
   bool match_exposure_;
   std::optional<float3> image_adjustment_;
   std::optional<cv::Mat> whole_seam_mask_image_;
+  CudaStatus status_;
 };
 
 } // namespace cuda

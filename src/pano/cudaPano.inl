@@ -157,7 +157,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stream);
     }
     CUDA_RETURN_IF_ERROR(cuerr);
-    //SHOW_SCALED(canvas, 0.5);
+    // SHOW_SCALED(canvas, 0.5);
 #endif
 
 #if 1
@@ -289,9 +289,9 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stream);
     }
     CUDA_RETURN_IF_ERROR(cuerr);
-    //SHOW_SCALED(&inputImage2, 0.5);
-    //SHOW_SCALED(canvas, 0.5);
-    // SHOW_SMALL(canvas);
+    // SHOW_SCALED(&inputImage2, 0.5);
+    // SHOW_SCALED(canvas, 0.5);
+    //  SHOW_SMALL(canvas);
 #endif
 
 #if 1
@@ -458,8 +458,12 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
       return CudaStatus(cudaError_t::cudaErrorAssert, "Unable to compute image adjustment");
     }
   }
-  return process(
+  auto result = process(
       inputImage1, inputImage2, *stitch_context_, *canvas_manager_, image_adjustment_, stream, std::move(canvas));
+  if (!result.ok()) {
+    status_.Update(result.status());
+  }
+  return result;
 }
 
 } // namespace cuda

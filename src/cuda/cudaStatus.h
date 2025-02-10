@@ -1,5 +1,4 @@
-#ifndef CUDA_STATUS_H_
-#define CUDA_STATUS_H_
+#pragma once
 
 #include <cuda_runtime.h>
 #include <stdexcept>
@@ -54,6 +53,13 @@ class CudaStatus {
   // Convenience function for an OK status.
   static CudaStatus OK() {
     return CudaStatus();
+  }
+
+  void Update(const CudaStatus& o) {
+    if (ok() && !o.ok()) {
+      code_ = o.code();
+      message_ = o.message();
+    }
   }
 
  private:
@@ -208,5 +214,3 @@ class CudaStatusOr {
     }                                      \
     lhs = std::move(_result.ValueOrDie()); \
   } while (0)
-
-#endif // CUDA_STATUS_H_
