@@ -370,6 +370,9 @@ INSTANTIATE_COPY_ROI_KERNEL_BATCHED(uchar3, half3)
 
 // --- Host functions ---
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(uchar3, float3, unsigned char)
+INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float3, float3, unsigned char)
+// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(uchar4, float4, unsigned char)
+// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float4, float4, unsigned char)
 
 // Same–type instantiations:
 INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(half3, uchar3)
