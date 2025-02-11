@@ -4,7 +4,7 @@
 #include <unordered_set>
 
 #include <opencv2/opencv.hpp>
-#include <opencv4/opencv2/highgui.hpp>
+#include <opencv2/highgui.hpp>
 
 #include <fcntl.h>
 #include <stdio.h>
