@@ -149,7 +149,7 @@ CudaMat<T>::CudaMat(int B, int W, int H, int C)
 
 template <typename T>
 CudaMat<T>::CudaMat(void* d_data, int B, int W, int H, int C)
-    : d_data_(d_data_),
+    : d_data_(static_cast<T*>(d_data)),
       batch_size_(B),
       rows_(H),
       cols_(W),
