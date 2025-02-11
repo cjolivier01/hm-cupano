@@ -240,6 +240,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           /*offsetY=*/canvas_manager._y1,
           stream);
     }
+    CUDA_RETURN_IF_ERROR(cuerr);
     // SHOW_SMALL(&inputImage1);
     // SHOW_IMAGE(canvas);
 #endif
@@ -377,6 +378,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           /*offsetY=*/canvas_manager._y2,
           stream);
     }
+    CUDA_RETURN_IF_ERROR(cuerr);
     // SHOW_SCALED(canvas, 0.5);
     // SHOW_SMALL(stitch_context.cudaBlendHardSeam);
 #endif
