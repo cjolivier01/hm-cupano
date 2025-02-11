@@ -379,7 +379,7 @@ class CudaMat {
 
   CudaMat(int B, int W, int H, int C = 1);
 
-  CudaMat(void* dataptr, int B, int W, int H, int C = 1);
+  CudaMat(T* dataptr, int B, int W, int H, int C = 1);
 
   /**
    * @brief Destructor.
