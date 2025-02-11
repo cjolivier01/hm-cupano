@@ -111,7 +111,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   assert(canvas);
 
   auto roi_width = [](const cv::Rect2i& roi) { return roi.width; };
-
   if (!stitch_context.is_hard_seam()) {
     //
     // SOFT SEAM LEFT

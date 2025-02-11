@@ -270,9 +270,9 @@ __global__ void BatchedRemapKernelExOffset(
 
   if (srcX < srcW && srcY < srcH) {
     int srcIdx = srcY * srcW + srcX;
-    printf("srcImage=%p (szin=%lu, szout=%lu)\n", srcImage, sizeof(T_in), sizeof(T_out));
-    auto val = srcImage[srcIdx];
-    destImage[destIdx] = cast_to<T_in, T_out>(val);
+    // printf("srcImage=%p (szin=%lu, szout=%lu)\n", srcImage, sizeof(T_in), sizeof(T_out));
+    //auto val = srcImage[srcIdx];
+    destImage[destIdx] = cast_to<T_in, T_out>(srcImage[srcIdx]);
     //destImage[destIdx] = static_cast<T_out>(srcImage[srcIdx]);
   } else {
     destImage[destIdx] = cast_to<T_in, T_out>(deflt);

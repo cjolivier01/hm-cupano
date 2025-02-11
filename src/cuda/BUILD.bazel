@@ -23,7 +23,7 @@ cuda_library(
         # "-Xcompiler=-O0",
         # "-Xcompiler=-g",
         "-Wno-deprecated-gpu-targets",
-        "-G",
+        #"-G",
         "-g",
         "-keep",
         # "-O0",
