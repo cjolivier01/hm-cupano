@@ -45,6 +45,7 @@ cc_library(
     ],
     includes = ["."],
     linkopts = [
+      "-ltiff",
     ],
     visibility = ["//visibility:public"],
     deps = [
