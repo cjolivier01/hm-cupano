@@ -180,16 +180,18 @@ int main(int argc, char** argv) {
 
   const int cvPipelineType = cudaPixelTypeToCvType(hm::CudaTypeToPixelType<T_pipeline>::value);
 
-  cv::imshow("", sample_img_right);
-  cv::waitKey(0);
-
   if (sample_img_left.type() != cvPipelineType) {
     if (std::is_floating_point<BaseScalar_t<T_pipeline>>()) {
       sample_img_left.convertTo(sample_img_left, cvPipelineType, 1.0 / 255.0);
       sample_img_right.convertTo(sample_img_right, cvPipelineType, 1.0 / 255.0);
     } else {
-      sample_img_left.convertTo(sample_img_left, cvPipelineType, 1.0 / 255.0);
-      sample_img_right.convertTo(sample_img_right, cvPipelineType, 1.0 / 255.0);
+      if (sizeof(T_pipeline) / sizeof(BaseScalar_t<T_pipeline>) == 4) {
+        cv::cvtColor(sample_img_left, sample_img_left, cv::COLOR_BGR2BGRA);
+        cv::cvtColor(sample_img_right, sample_img_right, cv::COLOR_BGR2BGRA);
+      } else {
+        // sample_img_left.convertTo(sample_img_left, cvPipelineType, 1.0 / 255.0);
+        // sample_img_right.convertTo(sample_img_right, cvPipelineType, 1.0 / 255.0);
+      }
     }
   }
 
