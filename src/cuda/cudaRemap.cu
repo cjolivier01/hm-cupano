@@ -19,8 +19,19 @@ T_out __device__ cast_to(const T_in& in) {
 template <>
 float3 __device__ cast_to(const uchar3& in) {
   return float3{
-    .x=static_cast<float>(in.x), .y=static_cast<float>(in.y), .z=static_cast<float>(in.z),
+      .x = static_cast<float>(in.x),
+      .y = static_cast<float>(in.y),
+      .z = static_cast<float>(in.z),
   };
+}
+
+template <>
+float4 __device__ cast_to(const uchar4& in) {
+  return float4{
+      .x = static_cast<float>(in.x),
+      .y = static_cast<float>(in.y),
+      .z = static_cast<float>(in.z),
+      .w = static_cast<float>(in.w)};
 }
 
 // template <typename T_in, typename T_out>
@@ -31,93 +42,93 @@ float3 __device__ cast_to(const uchar3& in) {
 //------------------------------------------------------------------------------
 // Templated Remap Kernel for a Single Image (unchanged)
 //------------------------------------------------------------------------------
-template <typename T_in, typename T_out>
-__global__ void remapKernel(
-    const T_in* src,
-    int srcW,
-    int srcH,
-    T_out* dest,
-    int destW,
-    int destH,
-    const unsigned short* mapX,
-    const unsigned short* mapY,
-    T_out defR,
-    T_out defG,
-    T_out defB) {
-  // Compute destination pixel coordinates.
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= destW || y >= destH)
-    return;
+// template <typename T_in, typename T_out>
+// __global__ void remapKernel(
+//     const T_in* src,
+//     int srcW,
+//     int srcH,
+//     T_out* dest,
+//     int destW,
+//     int destH,
+//     const unsigned short* mapX,
+//     const unsigned short* mapY,
+//     T_out defR,
+//     T_out defG,
+//     T_out defB) {
+//   // Compute destination pixel coordinates.
+//   int x = blockIdx.x * blockDim.x + threadIdx.x;
+//   int y = blockIdx.y * blockDim.y + threadIdx.y;
+//   if (x >= destW || y >= destH)
+//     return;
 
-  int destIdx = y * destW + x;
+//   int destIdx = y * destW + x;
 
-  // Get mapping coordinates and cast them to int.
-  int srcX = static_cast<int>(mapX[destIdx]);
-  int srcY = static_cast<int>(mapY[destIdx]);
+//   // Get mapping coordinates and cast them to int.
+//   int srcX = static_cast<int>(mapX[destIdx]);
+//   int srcY = static_cast<int>(mapY[destIdx]);
 
-  if (srcX < srcW && srcY < srcH) {
-    int srcIdx = (srcY * srcW + srcX) * 3;
-    dest[destIdx * 3 + 0] = static_cast<T_out>(src[srcIdx + 0]);
-    dest[destIdx * 3 + 1] = static_cast<T_out>(src[srcIdx + 1]);
-    dest[destIdx * 3 + 2] = static_cast<T_out>(src[srcIdx + 2]);
-  } else {
-    dest[destIdx * 3 + 0] = defR;
-    dest[destIdx * 3 + 1] = defG;
-    dest[destIdx * 3 + 2] = defB;
-  }
-}
+//   if (srcX < srcW && srcY < srcH) {
+//     int srcIdx = (srcY * srcW + srcX) * 3;
+//     dest[destIdx * 3 + 0] = static_cast<T_out>(src[srcIdx + 0]);
+//     dest[destIdx * 3 + 1] = static_cast<T_out>(src[srcIdx + 1]);
+//     dest[destIdx * 3 + 2] = static_cast<T_out>(src[srcIdx + 2]);
+//   } else {
+//     dest[destIdx * 3 + 0] = defR;
+//     dest[destIdx * 3 + 1] = defG;
+//     dest[destIdx * 3 + 2] = defB;
+//   }
+// }
 
 //------------------------------------------------------------------------------
 // Templated Batched Remap Kernel for RGB Images (unchanged)
 //------------------------------------------------------------------------------
-template <typename T_in, typename T_out>
-__global__ void BatchedRemapKernel(
-    const T_in* src,
-    int srcW,
-    int srcH,
-    T_out* dest,
-    int destW,
-    int destH,
-    const unsigned short* mapX,
-    const unsigned short* mapY,
-    T_out defR,
-    T_out defG,
-    T_out defB,
-    int batchSize) {
-  int b = blockIdx.z;
-  if (b >= batchSize)
-    return;
+// template <typename T_in, typename T_out>
+// __global__ void BatchedRemapKernel(
+//     const T_in* src,
+//     int srcW,
+//     int srcH,
+//     T_out* dest,
+//     int destW,
+//     int destH,
+//     const unsigned short* mapX,
+//     const unsigned short* mapY,
+//     T_out defR,
+//     T_out defG,
+//     T_out defB,
+//     int batchSize) {
+//   int b = blockIdx.z;
+//   if (b >= batchSize)
+//     return;
 
-  int srcImageSize = srcW * srcH * 3;
-  int destImageSize = destW * destH * 3;
-  int mapSize = destW * destH; // mapping arrays match destination size
+//   int srcImageSize = srcW * srcH * 3;
+//   int destImageSize = destW * destH * 3;
+//   int mapSize = destW * destH; // mapping arrays match destination size
 
-  const T_in* srcImage = src + b * srcImageSize;
-  T_out* destImage = dest + b * destImageSize;
-  const unsigned short* mapXImage = mapX + b * mapSize;
-  const unsigned short* mapYImage = mapY + b * mapSize;
+//   const T_in* srcImage = src + b * srcImageSize;
+//   T_out* destImage = dest + b * destImageSize;
+//   const unsigned short* mapXImage = mapX + b * mapSize;
+//   const unsigned short* mapYImage = mapY + b * mapSize;
 
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= destW || y >= destH)
-    return;
+//   int x = blockIdx.x * blockDim.x + threadIdx.x;
+//   int y = blockIdx.y * blockDim.y + threadIdx.y;
+//   if (x >= destW || y >= destH)
+//     return;
 
-  int destIdx = y * destW + x;
-  int srcX = static_cast<int>(mapXImage[destIdx]);
-  int srcY = static_cast<int>(mapYImage[destIdx]);
+//   int destIdx = y * destW + x;
+//   int srcX = static_cast<int>(mapXImage[destIdx]);
+//   int srcY = static_cast<int>(mapYImage[destIdx]);
 
-  if (srcX < srcW && srcY < srcH) {
-    int srcIdx = (srcY * srcW + srcX) * 3;
-    destImage[destIdx * 3 + 0] = static_cast<T_out>(srcImage[srcIdx + 0]);
-    destImage[destIdx * 3 + 1] = static_cast<T_out>(srcImage[srcIdx + 1]);
-    destImage[destIdx * 3 + 2] = static_cast<T_out>(srcImage[srcIdx + 2]);
-  } else {
-    destImage[destIdx * 3 + 0] = defR;
-    destImage[destIdx * 3 + 1] = defG;
-    destImage[destIdx * 3 + 2] = defB;
-  }
-}
+//   if (srcX < srcW && srcY < srcH) {
+//     int srcIdx = (srcY * srcW + srcX) * 3;
+//     destImage[destIdx * 3 + 0] = static_cast<T_out>(srcImage[srcIdx + 0]);
+//     destImage[destIdx * 3 + 1] = static_cast<T_out>(srcImage[srcIdx + 1]);
+//     destImage[destIdx * 3 + 2] = static_cast<T_out>(srcImage[srcIdx + 2]);
+//   } else {
+//     destImage[destIdx * 3 + 0] = defR;
+//     destImage[destIdx * 3 + 1] = defG;
+//     destImage[destIdx * 3 + 2] = defB;
+//   }
+// }
 
 //------------------------------------------------------------------------------
 // Templated Batched Remap Kernel EX (unchanged)
@@ -271,9 +282,9 @@ __global__ void BatchedRemapKernelExOffset(
   if (srcX < srcW && srcY < srcH) {
     int srcIdx = srcY * srcW + srcX;
     // printf("srcImage=%p (szin=%lu, szout=%lu)\n", srcImage, sizeof(T_in), sizeof(T_out));
-    //auto val = srcImage[srcIdx];
+    // auto val = srcImage[srcIdx];
     destImage[destIdx] = cast_to<T_in, T_out>(srcImage[srcIdx]);
-    //destImage[destIdx] = static_cast<T_out>(srcImage[srcIdx]);
+    // destImage[destIdx] = static_cast<T_out>(srcImage[srcIdx]);
   } else {
     destImage[destIdx] = cast_to<T_in, T_out>(deflt);
   }
@@ -458,51 +469,51 @@ __global__ void BatchedRemapKernelExOffsetWithDestMapAdjust(
 //------------------------------------------------------------------------------
 // Host Function: Remap a Single Image (unchanged)
 //------------------------------------------------------------------------------
-template <typename T_in, typename T_out>
-cudaError_t remap_kernel(
-    const T_in* d_src,
-    int srcW,
-    int srcH,
-    T_out* d_dest,
-    int destW,
-    int destH,
-    const unsigned short* d_mapX,
-    const unsigned short* d_mapY,
-    T_out defR,
-    T_out defG,
-    T_out defB,
-    cudaStream_t stream) {
-  dim3 blockDim(16, 16);
-  dim3 gridDim((destW + blockDim.x - 1) / blockDim.x, (destH + blockDim.y - 1) / blockDim.y);
-  remapKernel<T_in, T_out>
-      <<<gridDim, blockDim, 0, stream>>>(d_src, srcW, srcH, d_dest, destW, destH, d_mapX, d_mapY, defR, defG, defB);
-  return cudaGetLastError();
-}
+// template <typename T_in, typename T_out>
+// cudaError_t remap_kernel(
+//     const T_in* d_src,
+//     int srcW,
+//     int srcH,
+//     T_out* d_dest,
+//     int destW,
+//     int destH,
+//     const unsigned short* d_mapX,
+//     const unsigned short* d_mapY,
+//     T_out defR,
+//     T_out defG,
+//     T_out defB,
+//     cudaStream_t stream) {
+//   dim3 blockDim(16, 16);
+//   dim3 gridDim((destW + blockDim.x - 1) / blockDim.x, (destH + blockDim.y - 1) / blockDim.y);
+//   remapKernel<T_in, T_out>
+//       <<<gridDim, blockDim, 0, stream>>>(d_src, srcW, srcH, d_dest, destW, destH, d_mapX, d_mapY, defR, defG, defB);
+//   return cudaGetLastError();
+// }
 
 //------------------------------------------------------------------------------
 // Host Function: Batched Remap (unchanged)
 //------------------------------------------------------------------------------
-template <typename T_in, typename T_out>
-cudaError_t batched_remap_kernel(
-    const T_in* d_src,
-    int srcW,
-    int srcH,
-    T_out* d_dest,
-    int destW,
-    int destH,
-    const unsigned short* d_mapX,
-    const unsigned short* d_mapY,
-    T_in defR,
-    T_in defG,
-    T_in defB,
-    int batchSize,
-    cudaStream_t stream) {
-  dim3 blockDim(16, 16, 1);
-  dim3 gridDim((destW + blockDim.x - 1) / blockDim.x, (destH + blockDim.y - 1) / blockDim.y, batchSize);
-  BatchedRemapKernel<T_in, T_out><<<gridDim, blockDim, 0, stream>>>(
-      d_src, srcW, srcH, d_dest, destW, destH, d_mapX, d_mapY, defR, defG, defB, batchSize);
-  return cudaGetLastError();
-}
+// template <typename T_in, typename T_out>
+// cudaError_t batched_remap_kernel(
+//     const T_in* d_src,
+//     int srcW,
+//     int srcH,
+//     T_out* d_dest,
+//     int destW,
+//     int destH,
+//     const unsigned short* d_mapX,
+//     const unsigned short* d_mapY,
+//     T_in defR,
+//     T_in defG,
+//     T_in defB,
+//     int batchSize,
+//     cudaStream_t stream) {
+//   dim3 blockDim(16, 16, 1);
+//   dim3 gridDim((destW + blockDim.x - 1) / blockDim.x, (destH + blockDim.y - 1) / blockDim.y, batchSize);
+//   BatchedRemapKernel<T_in, T_out><<<gridDim, blockDim, 0, stream>>>(
+//       d_src, srcW, srcH, d_dest, destW, destH, d_mapX, d_mapY, defR, defG, defB, batchSize);
+//   return cudaGetLastError();
+// }
 
 //------------------------------------------------------------------------------
 // Host Function: Batched Remap EX (unchanged)
@@ -887,17 +898,22 @@ INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(float3, float3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(uchar3, float3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(uchar3, uchar3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(float, float)
-//INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(__half, __half)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(float4, float4)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(uchar4, float4)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(uchar4, uchar4)
+// INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(__half, __half)
 
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(float3, float3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(uchar3, uchar3)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(float4, float4)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(uchar4, uchar4)
 
 // For batched_remap_kernel
-INSTANTIATE_BATCHED_REMAP_KERNEL(float, float)
-INSTANTIATE_BATCHED_REMAP_KERNEL(float, __half)
-INSTANTIATE_BATCHED_REMAP_KERNEL(__half, float)
-INSTANTIATE_BATCHED_REMAP_KERNEL(__half, __half)
-INSTANTIATE_BATCHED_REMAP_KERNEL(uchar1, uchar1)
+// INSTANTIATE_BATCHED_REMAP_KERNEL(float, float)
+// INSTANTIATE_BATCHED_REMAP_KERNEL(float, __half)
+// INSTANTIATE_BATCHED_REMAP_KERNEL(__half, float)
+// INSTANTIATE_BATCHED_REMAP_KERNEL(__half, __half)
+// INSTANTIATE_BATCHED_REMAP_KERNEL(uchar1, uchar1)
 
 // For batched_remap_kernel_ex
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX(float3, float3)
@@ -907,9 +923,13 @@ INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(float, float)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(float3, float3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(uchar1, uchar1)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(uchar3, uchar3)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(float4, float4)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(uchar4, uchar4)
 
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP_ADJUST(float3, float3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP_ADJUST(uchar3, uchar3)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP_ADJUST(float4, float4)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP_ADJUST(uchar4, uchar4)
 
 // Instantiate for __half input and __half output:
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(__half, __half)

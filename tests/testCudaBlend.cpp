@@ -163,9 +163,9 @@ int main(int argc, char** argv) {
   // Configurable parameter: number of pyramid levels.
 #if 1
 #if 1
-  using T_pipeline = uchar3;
+  using T_pipeline = uchar4;
   // using T_pipeline = float3;
-
+  // using T_compute = float4;
   using T_compute = float3;
   // using T_compute = half3;
 #else

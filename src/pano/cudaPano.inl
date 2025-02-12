@@ -115,7 +115,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     //
     // SOFT SEAM LEFT
     //
-#if 1
+#if 0
     //
     // Image 1
     //
@@ -165,7 +165,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     //SHOW_SCALED(canvas, 0.15);
 #endif
 
-#if 1
+#if 0
     //
     // Now copy the blending portion of remapped image 1 from the canvas onto the blend image
     //
@@ -253,7 +253,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     //
     // SOFT SEAM RIGHT
     //
-#if 1
+    assert(false);
+#if 0
     //
     // Remap image 2 directly onto the canvas (will overwrite the overlappign portion of image 1)
     //
@@ -300,7 +301,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     //  SHOW_SMALL(canvas);
 #endif
 
-#if 1
+#if 0
     //
     // Now copy the blending portion of remapped image 2 from the canvas onto the blend image
     //
@@ -386,7 +387,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   }
   if (!stitch_context.is_hard_seam()) {
     CudaMat<T_compute>& cudaBlendedFull = *stitch_context.cudaFull1;
-#if 1
+#if 0
     //
     // BLEND THE IMAGES (overlapping portions + some padding)
     //
@@ -402,7 +403,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     // SHOW_IMAGE(&cudaBlendedFull);
 #endif
 
-#if 1
+#if 0
     //
     // Copy the blended portion (overlapping portion + some padding) onto
     // the canvas over some of the remapped image 1 and image 2

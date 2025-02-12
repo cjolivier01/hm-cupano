@@ -59,6 +59,34 @@ DECLARE_PERFORM_CAST_UCHAR_3(half3)
 DECLARE_PERFORM_CAST_3(uchar3, float3)
 DECLARE_PERFORM_CAST_3(uchar3, half3)
 
+#define DECLARE_PERFORM_CAST_UCHAR_4(_src$)                                                  \
+  template <>                                                                                \
+  __device__ inline uchar4 perform_cast(const _src$& src) {                                  \
+    return uchar4{                                                                           \
+        .x = static_cast<BaseScalar_t<uchar4>>(round_to_uchar<BaseScalar_t<uchar4>>(src.x)), \
+        .y = static_cast<BaseScalar_t<uchar4>>(round_to_uchar<BaseScalar_t<uchar4>>(src.y)), \
+        .z = static_cast<BaseScalar_t<uchar4>>(round_to_uchar<BaseScalar_t<uchar4>>(src.z)), \
+        .w = static_cast<BaseScalar_t<uchar4>>(round_to_uchar<BaseScalar_t<uchar4>>(src.w)), \
+    };                                                                                       \
+  }
+//DECLARE_PERFORM_CAST_UCHAR_4(float4)
+//DECLARE_PERFORM_CAST_UCHAR_4(half4)
+
+#define DECLARE_PERFORM_CAST_4(_src$, _dest$)               \
+  template <>                                               \
+  __device__ inline _dest$ perform_cast(const _src$& src) { \
+    return _dest${                                          \
+        .x = static_cast<BaseScalar_t<_dest$>>(src.x),      \
+        .y = static_cast<BaseScalar_t<_dest$>>(src.y),      \
+        .z = static_cast<BaseScalar_t<_dest$>>(src.z),      \
+        .w = static_cast<BaseScalar_t<_dest$>>(src.w),      \
+    };                                                      \
+  }
+
+DECLARE_PERFORM_CAST_4(uchar4, float4)
+//DECLARE_PERFORM_CAST_4(uchar4, half4)
+
+
 } // namespace
 
 /**
@@ -371,12 +399,13 @@ INSTANTIATE_COPY_ROI_KERNEL_BATCHED(uchar3, half3)
 // --- Host functions ---
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(uchar3, float3, unsigned char)
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float3, float3, unsigned char)
-// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(uchar4, float4, unsigned char)
-// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float4, float4, unsigned char)
+INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(uchar4, float4, unsigned char)
+INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float4, float4, unsigned char)
 
 // Same–type instantiations:
 INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(half3, uchar3)
 INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(float3, float3)
 INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(float4, float4)
 INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(float3, uchar3)
+// INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(float3, uchar3)
 INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(uchar3, uchar3)
