@@ -20,10 +20,10 @@
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 
-#include <opencv4/opencv2/core/hal/interface.h>
-#include <opencv4/opencv2/highgui.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/highgui.hpp>
 
-#include <opencv4/opencv2/imgcodecs.hpp>
+#include <opencv2/imgcodecs.hpp>
 
 #include <fcntl.h>
 #include <getopt.h>
