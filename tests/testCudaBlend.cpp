@@ -1,6 +1,4 @@
-#include "canvasManager.h"
 #include "controlMasks.h"
-#include "cudaBlend.h"
 #include "cudaMat.h"
 #include "cudaPano.h"
 #include "cudaStatus.h"
@@ -9,11 +7,9 @@
 #include <cuda_runtime.h> // for CUDA vector types
 #include <opencv2/opencv.hpp>
 
-#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <iostream>
-#include <optional>
 #include <type_traits>
 
 #include <cuda_bf16.h>
