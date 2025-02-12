@@ -199,6 +199,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     // HARD SEAM LEFT
     //
 #if 1
+    //SHOW_SMALL(&inputImage1);
     if (image_adjustment.has_value()) {
       cuerr = batched_remap_kernel_ex_offset_with_dest_map_adjust(
           inputImage1.data(),
@@ -242,8 +243,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stream);
     }
     CUDA_RETURN_IF_ERROR(cuerr);
-    // SHOW_SMALL(&inputImage1);
-    // SHOW_IMAGE(canvas);
+    //SHOW_SMALL(&inputImage1);
+    SHOW_IMAGE(canvas);
 #endif
   }
   //

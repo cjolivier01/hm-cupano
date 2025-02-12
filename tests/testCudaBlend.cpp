@@ -180,6 +180,9 @@ int main(int argc, char** argv) {
 
   const int cvPipelineType = cudaPixelTypeToCvType(hm::CudaTypeToPixelType<T_pipeline>::value);
 
+  cv::imshow("", sample_img_right);
+  cv::waitKey(0);
+
   if (sample_img_left.type() != cvPipelineType) {
     if (std::is_floating_point<BaseScalar_t<T_pipeline>>()) {
       sample_img_left.convertTo(sample_img_left, cvPipelineType, 1.0 / 255.0);
@@ -189,6 +192,9 @@ int main(int argc, char** argv) {
       sample_img_right.convertTo(sample_img_right, cvPipelineType, 1.0 / 255.0);
     }
   }
+
+  // cv::imshow("", sample_img_right);
+  // cv::waitKey(0);
 
   hm::CudaMat<T_pipeline> inputImage1(as_batch(sample_img_left, batch_size));
   hm::CudaMat<T_pipeline> inputImage2(as_batch(sample_img_right, batch_size));
