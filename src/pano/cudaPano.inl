@@ -98,12 +98,12 @@ constexpr inline float3 neg(const float3& f) {
 } // namespace tmp
 
 template <typename T_pipeline, typename T_compute>
-CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_compute>::process(
+CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_compute>::process_impl(
     const CudaMat<T_pipeline>& inputImage1,
     const CudaMat<T_pipeline>& inputImage2,
     StitchingContext<T_pipeline, T_compute>& stitch_context,
     const CanvasManager& canvas_manager,
-    const std::optional<T_compute>& image_adjustment,
+    const std::optional<float3>& image_adjustment,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
   CudaStatus cuerr;
@@ -194,6 +194,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     // HARD SEAM LEFT
     //
 #if 0
+    // __asm__("int3");
     if (image_adjustment.has_value()) {
       cuerr = batched_remap_kernel_ex_offset_with_dest_map_adjust(
           inputImage1.data(),
@@ -238,7 +239,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     }
     CUDA_RETURN_IF_ERROR(cuerr);
     //SHOW_SMALL(&inputImage1);
-    // SHOW_IMAGE(canvas);
+    SHOW_IMAGE(canvas);
 #endif
   }
   //
@@ -458,7 +459,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
       return CudaStatus(cudaError_t::cudaErrorAssert, "Unable to compute image adjustment");
     }
   }
-  auto result = process(
+  auto result = process_impl(
       inputImage1, inputImage2, *stitch_context_, *canvas_manager_, image_adjustment_, stream, std::move(canvas));
   if (!result.ok()) {
     status_.Update(result.status());

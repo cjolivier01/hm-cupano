@@ -166,7 +166,7 @@ CudaMat<T>::CudaMat(const SurfaceInfo& surface_info, int B) : type_(CudaTypeToPi
   rows_ = surface_info.height;
   cols_ = surface_info.width;
   pitch_ = surface_info.pitch;
-  d_data_ = surface_info.data_ptr;
+  d_data_ = static_cast<T*>(surface_info.data_ptr);
   batch_size_ = B;
   owns_ = false;
 }
