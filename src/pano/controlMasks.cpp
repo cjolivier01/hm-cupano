@@ -164,10 +164,10 @@ bool ControlMasks::load(std::string game_dir) {
 
   // Load column/row transformations for the first image.
   img1_col = cv::imread(mapping_0_x, cv::IMREAD_ANYDEPTH);
-  assert(img1_col.type() == CV_16U);
   if (img1_col.empty()) {
     return false;
   }
+  assert(img1_col.type() == CV_16U);
   img1_row = cv::imread(mapping_0_y, cv::IMREAD_ANYDEPTH);
   if (img1_row.empty()) {
     return false;
