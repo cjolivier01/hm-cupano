@@ -2,6 +2,16 @@
 
 #include <cuda_runtime.h>
 
+#include <cstdint>
+
+template <typename T>
+struct CudaSurface {
+  T* d_ptr;
+  std::uint32_t width;
+  std::uint32_t height;
+  std::uint32_t pitch;
+};
+
 /**
  * @brief Batched remap host function.
  *
@@ -52,14 +62,28 @@ cudaError_t batched_remap_kernel_ex(
     int batchSize,
     cudaStream_t stream = 0);
 
+// template <typename T_in, typename T_out>
+// cudaError_t batched_remap_kernel_ex_offset(
+//     const T_in* d_src,
+//     int srcW,
+//     int srcH,
+//     T_out* d_dest,
+//     int destW,
+//     int destH,
+//     const unsigned short* d_mapX,
+//     const unsigned short* d_mapY,
+//     T_in deflt,
+//     int batchSize,
+//     int remapW,
+//     int remapH,
+//     int offsetX,
+//     int offsetY,
+//     cudaStream_t stream = 0);
+
 template <typename T_in, typename T_out>
 cudaError_t batched_remap_kernel_ex_offset(
-    const T_in* d_src,
-    int srcW,
-    int srcH,
-    T_out* d_dest,
-    int destW,
-    int destH,
+    const CudaSurface<T_in> src,
+    CudaSurface<T_out> dest,
     const unsigned short* d_mapX,
     const unsigned short* d_mapY,
     T_in deflt,

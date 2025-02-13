@@ -5,6 +5,7 @@
 #include "cudaImageAdjust.h"
 #include "cudaRemap.h" // Assumed to declare these host functions
 
+#include <cstdint>
 #include <limits>
 
 namespace {
@@ -233,17 +234,31 @@ __global__ void BatchedRemapKernelOffset(
   }
 }
 
+template <typename T>
+__device__ T* advance_bytes(T* current, ptrdiff_t diff) {
+  return reinterpret_cast<T*>(reinterpret_cast<unsigned char*>(current) + diff);
+}
+
+template <typename T>
+__device__ const T* advance_bytes(const T* current, ptrdiff_t diff) {
+  return reinterpret_cast<const T*>(reinterpret_cast<const unsigned char*>(current) + diff);
+}
+
 //------------------------------------------------------------------------------
 // NEW: Templated Batched Remap Kernel EX with Offset (Single-channel)
 //------------------------------------------------------------------------------
 template <typename T_in, typename T_out>
 __global__ void BatchedRemapKernelExOffset(
-    const T_in* src,
-    int srcW,
-    int srcH,
-    T_out* dest,
-    int destW,
-    int destH,
+    // const T_in* src,
+    // int srcW,
+    // int srcH,
+    // int srcPitch,
+    // T_out* dest,
+    // int destW,
+    // int destH,
+    // int destPitch,
+    const CudaSurface<T_in> src,
+    CudaSurface<T_out> dest,
     const unsigned short* mapX, // mapping arrays of size (remapW x remapH)
     const unsigned short* mapY,
     T_in deflt,
@@ -256,12 +271,6 @@ __global__ void BatchedRemapKernelExOffset(
   if (b >= batchSize)
     return;
 
-  int srcImageSize = srcW * srcH;
-  int destImageSize = destW * destH;
-
-  const T_in* srcImage = src + b * srcImageSize;
-  T_out* destImage = dest + b * destImageSize;
-
   // Coordinates within the remap region.
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -270,23 +279,38 @@ __global__ void BatchedRemapKernelExOffset(
 
   int destX = offsetX + x;
   int destY = offsetY + y;
-  if (destX < 0 || destX >= destW || destY < 0 || destY >= destH)
+  if (destX < 0 || destX >= dest.width || destY < 0 || destY >= dest.height)
     return;
 
-  int destIdx = destY * destW + destX;
+  // int srcImageSize = srcW * srcH;
+  // int destImageSize = destW * destH;
+
+  // TODO: lots of these calculations dont need ot be done every time
+  int destImageSizeBytes = dest.height * dest.pitch;
+
+  // const T_in* srcImage = src + b * srcImageSize;
+  // T_out* destImage = dest + b * destImageSize;
+
+  T_out* destImage = advance_bytes(dest.d_ptr, b * destImageSizeBytes);
+
+  // int destIdx = destY * destW + destX;
+  T_out* dest_pos = advance_bytes(destImage, destY * dest.pitch) + destX;
+
   int mapIdx = y * remapW + x;
 
   int srcX = static_cast<int>(mapX[mapIdx]);
   int srcY = static_cast<int>(mapY[mapIdx]);
 
-  if (srcX < srcW && srcY < srcH) {
-    int srcIdx = srcY * srcW + srcX;
-    // printf("srcImage=%p (szin=%lu, szout=%lu)\n", srcImage, sizeof(T_in), sizeof(T_out));
-    // auto val = srcImage[srcIdx];
-    destImage[destIdx] = cast_to<T_in, T_out>(srcImage[srcIdx]);
-    // destImage[destIdx] = static_cast<T_out>(srcImage[srcIdx]);
+  if (srcX < src.width && srcY < src.height) {
+    // int srcIdx = srcY * srcW + srcX;
+    int srcImageSizeBytes = src.height * src.pitch;
+    const T_in* srcImage = advance_bytes(src.d_ptr, b * srcImageSizeBytes);
+    const T_in* src_pos = advance_bytes(srcImage, srcY * src.pitch) + srcX;
+    // destImage[destIdx] = cast_to<T_in, T_out>(srcImage[srcIdx]);
+    *dest_pos = cast_to<T_in, T_out>(*src_pos);
   } else {
-    destImage[destIdx] = cast_to<T_in, T_out>(deflt);
+    // destImage[destIdx] = cast_to<T_in, T_out>(deflt);
+    *dest_pos = cast_to<T_in, T_out>(deflt);
   }
 }
 
@@ -541,14 +565,17 @@ cudaError_t batched_remap_kernel_ex(
 //------------------------------------------------------------------------------
 // NEW: Host Function: Batched Remap with Offset (RGB)
 //------------------------------------------------------------------------------
+
 template <typename T_in, typename T_out>
 cudaError_t batched_remap_kernel_offset(
     const T_in* d_src,
     int srcW,
     int srcH,
+    // int srcPitch,
     T_out* d_dest,
     int destW,
     int destH,
+    // int destPitch,
     const unsigned short* d_mapX,
     const unsigned short* d_mapY,
     T_in defR,
@@ -585,14 +612,11 @@ cudaError_t batched_remap_kernel_offset(
 //------------------------------------------------------------------------------
 // Host Function: Batched Remap EX with Offset (Single-channel)
 //------------------------------------------------------------------------------
+
 template <typename T_in, typename T_out>
 cudaError_t batched_remap_kernel_ex_offset(
-    const T_in* d_src,
-    int srcW,
-    int srcH,
-    T_out* d_dest,
-    int destW,
-    int destH,
+    const CudaSurface<T_in> src,
+    CudaSurface<T_out> dest,
     const unsigned short* d_mapX,
     const unsigned short* d_mapY,
     T_in deflt,
@@ -605,7 +629,24 @@ cudaError_t batched_remap_kernel_ex_offset(
   dim3 blockDim(16, 16, 1);
   dim3 gridDim((remapW + blockDim.x - 1) / blockDim.x, (remapH + blockDim.y - 1) / blockDim.y, batchSize);
   BatchedRemapKernelExOffset<T_in, T_out><<<gridDim, blockDim, 0, stream>>>(
-      d_src, srcW, srcH, d_dest, destW, destH, d_mapX, d_mapY, deflt, batchSize, remapW, remapH, offsetX, offsetY);
+      // d_src,
+      // srcW,
+      // srcH,
+      // srcPitch,
+      // d_dest,
+      // destW,
+      // destH,
+      // destPitch,
+      src,
+      dest,
+      d_mapX,
+      d_mapY,
+      deflt,
+      batchSize,
+      remapW,
+      remapH,
+      offsetX,
+      offsetY);
   return cudaGetLastError();
 }
 
@@ -761,12 +802,8 @@ cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust(
 // Macro for instantiating batched_remap_kernel_ex_offset<T_in, T_out>
 #define INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(Tin, Tout)     \
   template cudaError_t batched_remap_kernel_ex_offset<Tin, Tout>( \
-      const Tin* d_src,                                           \
-      int srcW,                                                   \
-      int srcH,                                                   \
-      Tout* d_dest,                                               \
-      int destW,                                                  \
-      int destH,                                                  \
+      const CudaSurface<Tin> src,                                 \
+      CudaSurface<Tout> dest,                                     \
       const unsigned short* d_mapX,                               \
       const unsigned short* d_mapY,                               \
       Tin deflt,                                                  \
