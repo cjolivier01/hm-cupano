@@ -157,7 +157,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     }
     CUDA_RETURN_IF_ERROR(cuerr);
     //SHOW_SCALED(&inputImage1, 0.2);
-    SHOW_SCALED(canvas, 0.15);
+    //SHOW_SCALED(canvas, 0.15);
 #endif
 
 #if 0
@@ -248,8 +248,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     //
     // SOFT SEAM RIGHT
     //
-    assert(false);
-#if 0
+#if 1
     //
     // Remap image 2 directly onto the canvas (will overwrite the overlappign portion of image 1)
     //
@@ -274,12 +273,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stream);
     } else {
       cuerr = batched_remap_kernel_ex_offset(
-          inputImage2.data(),
-          inputImage2.width(),
-          inputImage2.height(),
-          canvas->data(),
-          canvas->width(),
-          canvas->height(),
+          inputImage2.surface(),
+          canvas->surface(),
           stitch_context.remap_2_x->data(),
           stitch_context.remap_2_y->data(),
           {0, 0, 0},
