@@ -121,6 +121,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     //
     // Remap image 1 onto the canvas
     //
+    SHOW_SCALED(&inputImage1, 0.2);
     if (image_adjustment.has_value()) {
       cuerr = batched_remap_kernel_ex_offset_adjust(
           inputImage1.data(),
@@ -157,7 +158,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     }
     CUDA_RETURN_IF_ERROR(cuerr);
     //SHOW_SCALED(&inputImage1, 0.2);
-    //SHOW_SCALED(canvas, 0.15);
+    SHOW_SCALED(canvas, 0.15);
 #endif
 
 #if 0

@@ -199,11 +199,18 @@ cv::Mat CudaMat<T>::download(int batch_item) const {
   assert(batch_item >= 0 && batch_item < batch_size_);
   // Convert our stored CudaPixelType to an OpenCV type.
   int cvType = cudaPixelTypeToCvType(type_);
-  cv::Mat mat(rows_, cols_, cvType);
+  assert(pitch() % sizeof(T) == 0);
+  int pitch_cols = pitch() / sizeof(T);
+  assert(pitch_cols >= cols_);
+
+  cv::Mat mat(rows_, pitch_cols, cvType);
   size_t elemSize = cudaPixelElementSize(type_);
   size_t size_each = static_cast<size_t>(rows_ * cols_) * elemSize;
   const uint8_t* src_ptr = reinterpret_cast<const uint8_t*>(d_data_) + batch_item * size_each;
   cudaMemcpy(mat.data, src_ptr, size_each, cudaMemcpyDeviceToHost);
+  if(pitch_cols != cols_) {
+    mat = mat(cv::Rect(0, 0, cols_, rows_));
+  }
   return mat;
 }
 
