@@ -110,6 +110,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
 
   assert(canvas);
 
+  // assert(false);
+
   auto roi_width = [](const cv::Rect2i& roi) { return roi.width; };
   if (!stitch_context.is_hard_seam()) {
     //
@@ -122,7 +124,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     // Remap image 1 onto the canvas
     //
     // SHOW_SCALED(&inputImage1, 0.2);
-    SHOW_SCALED(canvas, 0.2);
+    // SHOW_SCALED(canvas, 0.2);
     if (image_adjustment.has_value()) {
       cuerr = batched_remap_kernel_ex_offset_adjust(
           inputImage1.data(),
@@ -157,12 +159,13 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           /*offsetY=*/canvas_manager._y1,
           stream);
     }
+    std::cerr << "..." << std::endl;
     CUDA_RETURN_IF_ERROR(cuerr);
     //SHOW_SCALED(&inputImage1, 0.2);
     SHOW_SCALED(canvas, 0.15);
 #endif
 
-#if 0
+#if 1
     //
     // Now copy the blending portion of remapped image 1 from the canvas onto the blend image
     //
@@ -195,7 +198,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     //
     // HARD SEAM LEFT
     //
-#if 0
+#if 1
     // __asm__("int3");
     if (image_adjustment.has_value()) {
       cuerr = batched_remap_kernel_ex_offset_with_dest_map_adjust(
@@ -241,7 +244,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     }
     CUDA_RETURN_IF_ERROR(cuerr);
     //SHOW_SMALL(&inputImage1);
-    SHOW_IMAGE(canvas);
+    //SHOW_IMAGE(canvas);
 #endif
   }
   //
@@ -294,7 +297,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     //  SHOW_SMALL(canvas);
 #endif
 
-#if 0
+#if 1
     //
     // Now copy the blending portion of remapped image 2 from the canvas onto the blend image
     //
@@ -328,7 +331,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     //
     // HARD SEAM RIGHT
     //
-#if 0
+#if 1
     assert(canvas_manager._x2 + stitch_context.remap_2_x->width() <= canvas->width());
     assert(canvas_manager._y2 + stitch_context.remap_2_x->height() <= canvas->height());
     if (image_adjustment.has_value()) {
@@ -380,7 +383,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   }
   if (!stitch_context.is_hard_seam()) {
     CudaMat<T_compute>& cudaBlendedFull = *stitch_context.cudaFull1;
-#if 0
+#if 1
     //
     // BLEND THE IMAGES (overlapping portions + some padding)
     //
@@ -396,7 +399,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     // SHOW_IMAGE(&cudaBlendedFull);
 #endif
 
-#if 0
+#if 1
     //
     // Copy the blended portion (overlapping portion + some padding) onto
     // the canvas over some of the remapped image 1 and image 2

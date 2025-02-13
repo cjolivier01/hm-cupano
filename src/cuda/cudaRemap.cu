@@ -249,14 +249,6 @@ __device__ const T* advance_bytes(const T* current, ptrdiff_t diff) {
 //------------------------------------------------------------------------------
 template <typename T_in, typename T_out>
 __global__ void BatchedRemapKernelExOffset(
-    // const T_in* src,
-    // int srcW,
-    // int srcH,
-    // int srcPitch,
-    // T_out* dest,
-    // int destW,
-    // int destH,
-    // int destPitch,
     const CudaSurface<T_in> src,
     CudaSurface<T_out> dest,
     const unsigned short* mapX, // mapping arrays of size (remapW x remapH)
@@ -629,14 +621,6 @@ cudaError_t batched_remap_kernel_ex_offset(
   dim3 blockDim(16, 16, 1);
   dim3 gridDim((remapW + blockDim.x - 1) / blockDim.x, (remapH + blockDim.y - 1) / blockDim.y, batchSize);
   BatchedRemapKernelExOffset<T_in, T_out><<<gridDim, blockDim, 0, stream>>>(
-      // d_src,
-      // srcW,
-      // srcH,
-      // srcPitch,
-      // d_dest,
-      // destW,
-      // destH,
-      // destPitch,
       src,
       dest,
       d_mapX,
