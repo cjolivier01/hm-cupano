@@ -141,15 +141,10 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           tmp::neg(*image_adjustment),
           stream);
     } else {
-      const T_pipeline *d_in_data = inputImage1.data();
+      //const T_pipeline *d_in_data = inputImage1.data();
       cuerr = batched_remap_kernel_ex_offset(
-          d_in_data, //inputImage1.data(),      
-          
-          inputImage1.width(),
-          inputImage1.height(),
-          canvas->data(),
-          canvas->width(),
-          canvas->height(),
+          inputImage1.surface(),
+          canvas->surface(),
           stitch_context.remap_1_x->data(),
           stitch_context.remap_1_y->data(),
           {0, 0, 0},
@@ -162,7 +157,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     }
     CUDA_RETURN_IF_ERROR(cuerr);
     //SHOW_SCALED(&inputImage1, 0.2);
-    //SHOW_SCALED(canvas, 0.15);
+    SHOW_SCALED(canvas, 0.15);
 #endif
 
 #if 0
@@ -335,7 +330,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     //
     // HARD SEAM RIGHT
     //
-#if 1
+#if 0
     assert(canvas_manager._x2 + stitch_context.remap_2_x->width() <= canvas->width());
     assert(canvas_manager._y2 + stitch_context.remap_2_x->height() <= canvas->height());
     if (image_adjustment.has_value()) {

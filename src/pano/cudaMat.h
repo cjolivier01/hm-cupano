@@ -442,6 +442,15 @@ class CudaMat {
     return pitch() * height() * batch_size();
   }
 
+  CudaSurface<T> surface() const {
+    return CudaSurface<T>{
+      .d_ptr=d_data_,
+      .width=cols_,
+      .height=rows_,
+      .pitch=pitch(),
+    };
+  }
+
   /**
    * @brief Returns a pointer to the raw underlying data.
    *

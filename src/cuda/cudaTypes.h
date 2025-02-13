@@ -1,8 +1,10 @@
 #pragma once
 
-#include <cuda_runtime.h>
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
+#include <cuda_runtime.h>
+
+#include <cstdint>
 
 /*----------------------------------------------------------------------------
   Additional vector types for half (float16), USHORT, and bfloat16.
@@ -174,3 +176,10 @@ struct BaseScalar<bfloat16_4> {
 template <typename T>
 using BaseScalar_t = typename BaseScalar<T>::type;
 
+template <typename T>
+struct CudaSurface {
+  T* d_ptr;
+  std::uint32_t width;
+  std::uint32_t height;
+  std::uint32_t pitch;
+};

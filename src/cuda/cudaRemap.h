@@ -1,16 +1,8 @@
 #pragma once
 
+#include "cudaTypes.h"
+
 #include <cuda_runtime.h>
-
-#include <cstdint>
-
-template <typename T>
-struct CudaSurface {
-  T* d_ptr;
-  std::uint32_t width;
-  std::uint32_t height;
-  std::uint32_t pitch;
-};
 
 /**
  * @brief Batched remap host function.
