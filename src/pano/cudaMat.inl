@@ -66,11 +66,11 @@ CudaMat<T>::CudaMat(const cv::Mat& mat, bool copy) : rows_(mat.rows), cols_(mat.
   size_t expectedElemSize = cudaPixelElementSize(type_);
   // Verify that the cv::Mat's element size matches what we expect.
   assert(mat.elemSize() == expectedElemSize);
-  size = mat.total() * expectedElemSize;
-  cudaMalloc(&d_data_, size);
+  size_t total_size = mat.total() * expectedElemSize;
+  cudaMalloc(&d_data_, total_size);
   assert(mat.isContinuous());
   if (copy) {
-    cudaMemcpy(d_data_, mat.data, size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_data_, mat.data, total_size, cudaMemcpyHostToDevice);
   }
 }
 
@@ -94,8 +94,8 @@ CudaMat<T>::CudaMat(const std::vector<cv::Mat>& mat_batch, bool copy)
   size_t expectedElemSize = cudaPixelElementSize(type_);
   assert(first.elemSize() == expectedElemSize);
   size_t size_each = first.total() * expectedElemSize;
-  size = size_each * batch_size_;
-  cudaError_t cuerr = cudaMalloc(&d_data_, size);
+  size_t total_size = size_each * batch_size_;
+  cudaError_t cuerr = cudaMalloc(&d_data_, total_size);
   if (cuerr == cudaError_t::cudaSuccess && copy) {
     uint8_t* p = reinterpret_cast<uint8_t*>(d_data_);
     for (const cv::Mat& mat : mat_batch) {
@@ -143,8 +143,8 @@ CudaMat<T>::CudaMat(int B, int W, int H, int C)
   assert(cudaPixelTypeChannels(type_) == C * sizeof(T) / sizeof(typename BaseScalar<T>::type));
   size_t elemSize = cudaPixelElementSize(type_);
   assert(sizeof(T) == elemSize);
-  size = static_cast<size_t>(B * W * H) * elemSize;
-  cudaMalloc(&d_data_, size);
+  size_t total_size = static_cast<size_t>(B * W * H) * elemSize;
+  cudaMalloc(&d_data_, total_size);
 }
 
 template <typename T>
@@ -157,6 +157,18 @@ CudaMat<T>::CudaMat(T* d_data, int B, int W, int H, int C)
       owns_(false) {
   assert(cudaPixelTypeChannels(type_) == C * sizeof(T) / sizeof(typename BaseScalar<T>::type));
   assert(sizeof(T) == cudaPixelElementSize(type_));
+}
+
+template <typename T>
+CudaMat<T>::CudaMat(const SurfaceInfo& surface_info, int B) : type_(CudaTypeToPixelType<T>::value) {
+  assert(surface_info.data_ptr && surface_info.width && surface_info.height && B);
+  assert(!surface_info.pitch || surface_info.pitch >= sizeof(T) * surface_info.width);
+  rows_ = surface_info.height;
+  cols_ = surface_info.width;
+  pitch_ = surface_info.pitch;
+  d_data_ = surface_info.data_ptr;
+  batch_size_ = B;
+  owns_ = false;
 }
 
 /**

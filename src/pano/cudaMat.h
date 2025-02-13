@@ -326,6 +326,14 @@ struct CudaTypeToPixelType<bfloat16_4> {
   Template Class: CudaMat
 -----------------------------------------------------------------------------*/
 
+struct SurfaceInfo {
+  int width{0};
+  int height{0};
+  int pitch{0};
+  mutable void *data_ptr{nullptr};
+};
+
+
 /**
  * @brief Templated class to manage CUDA device memory for one or more images.
  *
@@ -381,6 +389,8 @@ class CudaMat {
 
   CudaMat(T* dataptr, int B, int W, int H, int C = 1);
 
+  CudaMat(const SurfaceInfo& surface_info, int B);
+
   /**
    * @brief Destructor.
    *
@@ -420,6 +430,18 @@ class CudaMat {
   /// @brief Returns the number of images in the batch.
   constexpr int batch_size() const;
 
+  constexpr int channels() const {
+    return sizeof(T)/sizeof(BaseScalar_t<T>);
+  } 
+
+  constexpr int pitch() const { 
+    return pitch_ ? pitch_ : sizeof(T) * width();
+  }
+
+  constexpr size_t size() const {
+    return pitch() * height() * batch_size();
+  }
+
   /**
    * @brief Returns a pointer to the raw underlying data.
    *
@@ -439,8 +461,8 @@ class CudaMat {
 
  private:
   T* d_data_{nullptr}; ///< Pointer to device memory.
-  size_t size{0}; ///< Total size (in bytes) allocated on the device.
   int rows_{0}, cols_{0}; ///< Image dimensions.
+  int pitch_{0};
   CudaPixelType type_{CUDA_PIXEL_UNKNOWN}; ///< CUDA pixel type for the image.
   int batch_size_{0}; ///< Number of images in the batch.
   bool owns_{true};
