@@ -367,12 +367,8 @@ __global__ void BatchedRemapKernelExOffsetAdjust(
 //------------------------------------------------------------------------------
 template <typename T_in, typename T_out>
 __global__ void BatchedRemapKernelExOffsetWithDestMap(
-    const T_in* src,
-    int srcW,
-    int srcH,
-    T_out* dest,
-    int destW,
-    int destH,
+    const CudaSurface<T_in> src,
+    CudaSurface<T_out> dest,
     const unsigned short* mapX, // mapping arrays of size (remapW x remapH)
     const unsigned short* mapY,
     T_in deflt,
@@ -387,12 +383,6 @@ __global__ void BatchedRemapKernelExOffsetWithDestMap(
   if (b >= batchSize)
     return;
 
-  int srcImageSize = srcW * srcH;
-  int destImageSize = destW * destH;
-
-  const T_in* srcImage = src + b * srcImageSize;
-  T_out* destImage = dest + b * destImageSize;
-
   // Coordinates within the remap region.
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -401,23 +391,27 @@ __global__ void BatchedRemapKernelExOffsetWithDestMap(
 
   int destX = offsetX + x;
   int destY = offsetY + y;
-  if (destX < 0 || destX >= destW || destY < 0 || destY >= destH)
+  if (destX < 0 || destX >= dest.width || destY < 0 || destY >= dest.height)
     return;
 
-  int destIdx = destY * destW + destX;
-  int mapIdx = y * remapW + x;
-
-  int checkIdx = (offsetY + y) * destW + (offsetX + x);
+  // No pitch on the mask right now
+  int checkIdx = (offsetY + y) * dest.width + (offsetX + x);
 
   if (dest_image_map[checkIdx] == this_image_index) {
+    int destImageSizeBytes = dest.width * dest.pitch;
+    T_out* destImage = advance_bytes(dest.d_ptr, b * destImageSizeBytes);
+    T_out* dest_pos = advance_bytes(destImage, destY * dest.pitch) + destX;
+
+    int mapIdx = y * remapW + x;
     int srcX = static_cast<int>(mapX[mapIdx]);
     int srcY = static_cast<int>(mapY[mapIdx]);
 
-    if (srcX < srcW && srcY < srcH) {
-      int srcIdx = srcY * srcW + srcX;
-      destImage[destIdx] = static_cast<T_out>(srcImage[srcIdx]);
+    if (srcX < src.width && srcY < src.height) {
+      int srcImageSizeBytes = src.width * src.pitch;
+      const T_in* src_pos = advance_bytes(src.d_ptr, srcImageSizeBytes * b + srcY * src.pitch) + srcX;
+      *dest_pos = static_cast<T_out>(*src_pos);
     } else {
-      destImage[destIdx] = deflt;
+      *dest_pos = deflt;
     }
   }
 }
@@ -481,55 +475,6 @@ __global__ void BatchedRemapKernelExOffsetWithDestMapAdjust(
 }
 
 } // anonymous namespace
-
-//------------------------------------------------------------------------------
-// Host Function: Remap a Single Image (unchanged)
-//------------------------------------------------------------------------------
-// template <typename T_in, typename T_out>
-// cudaError_t remap_kernel(
-//     const T_in* d_src,
-//     int srcW,
-//     int srcH,
-//     T_out* d_dest,
-//     int destW,
-//     int destH,
-//     const unsigned short* d_mapX,
-//     const unsigned short* d_mapY,
-//     T_out defR,
-//     T_out defG,
-//     T_out defB,
-//     cudaStream_t stream) {
-//   dim3 blockDim(16, 16);
-//   dim3 gridDim((destW + blockDim.x - 1) / blockDim.x, (destH + blockDim.y - 1) / blockDim.y);
-//   remapKernel<T_in, T_out>
-//       <<<gridDim, blockDim, 0, stream>>>(d_src, srcW, srcH, d_dest, destW, destH, d_mapX, d_mapY, defR, defG, defB);
-//   return cudaGetLastError();
-// }
-
-//------------------------------------------------------------------------------
-// Host Function: Batched Remap (unchanged)
-//------------------------------------------------------------------------------
-// template <typename T_in, typename T_out>
-// cudaError_t batched_remap_kernel(
-//     const T_in* d_src,
-//     int srcW,
-//     int srcH,
-//     T_out* d_dest,
-//     int destW,
-//     int destH,
-//     const unsigned short* d_mapX,
-//     const unsigned short* d_mapY,
-//     T_in defR,
-//     T_in defG,
-//     T_in defB,
-//     int batchSize,
-//     cudaStream_t stream) {
-//   dim3 blockDim(16, 16, 1);
-//   dim3 gridDim((destW + blockDim.x - 1) / blockDim.x, (destH + blockDim.y - 1) / blockDim.y, batchSize);
-//   BatchedRemapKernel<T_in, T_out><<<gridDim, blockDim, 0, stream>>>(
-//       d_src, srcW, srcH, d_dest, destW, destH, d_mapX, d_mapY, defR, defG, defB, batchSize);
-//   return cudaGetLastError();
-// }
 
 //------------------------------------------------------------------------------
 // Host Function: Batched Remap EX (unchanged)
@@ -607,8 +552,8 @@ cudaError_t batched_remap_kernel_offset(
 
 template <typename T_in, typename T_out>
 cudaError_t batched_remap_kernel_ex_offset(
-    const CudaSurface<T_in> src,
-    CudaSurface<T_out> dest,
+    const CudaSurface<T_in>& src,
+    const CudaSurface<T_out>& dest,
     const unsigned short* d_mapX,
     const unsigned short* d_mapY,
     T_in deflt,
@@ -620,17 +565,8 @@ cudaError_t batched_remap_kernel_ex_offset(
     cudaStream_t stream) {
   dim3 blockDim(16, 16, 1);
   dim3 gridDim((remapW + blockDim.x - 1) / blockDim.x, (remapH + blockDim.y - 1) / blockDim.y, batchSize);
-  BatchedRemapKernelExOffset<T_in, T_out><<<gridDim, blockDim, 0, stream>>>(
-      src,
-      dest,
-      d_mapX,
-      d_mapY,
-      deflt,
-      batchSize,
-      remapW,
-      remapH,
-      offsetX,
-      offsetY);
+  BatchedRemapKernelExOffset<T_in, T_out>
+      <<<gridDim, blockDim, 0, stream>>>(src, dest, d_mapX, d_mapY, deflt, batchSize, remapW, remapH, offsetX, offsetY);
   return cudaGetLastError();
 }
 
@@ -680,12 +616,8 @@ cudaError_t batched_remap_kernel_ex_offset_adjust(
 //------------------------------------------------------------------------------
 template <typename T_in, typename T_out>
 cudaError_t batched_remap_kernel_ex_offset_with_dest_map(
-    const T_in* d_src,
-    int srcW,
-    int srcH,
-    T_out* d_dest,
-    int destW,
-    int destH,
+    const CudaSurface<T_in>& src,
+    const CudaSurface<T_out>& dest,
     const unsigned short* d_mapX,
     const unsigned short* d_mapY,
     T_in deflt,
@@ -700,22 +632,7 @@ cudaError_t batched_remap_kernel_ex_offset_with_dest_map(
   dim3 blockDim(16, 16, 1);
   dim3 gridDim((remapW + blockDim.x - 1) / blockDim.x, (remapH + blockDim.y - 1) / blockDim.y, batchSize);
   BatchedRemapKernelExOffsetWithDestMap<T_in, T_out><<<gridDim, blockDim, 0, stream>>>(
-      d_src,
-      srcW,
-      srcH,
-      d_dest,
-      destW,
-      destH,
-      d_mapX,
-      d_mapY,
-      deflt,
-      this_image_index,
-      dest_image_map,
-      batchSize,
-      remapW,
-      remapH,
-      offsetX,
-      offsetY);
+      src, dest, d_mapX, d_mapY, deflt, this_image_index, dest_image_map, batchSize, remapW, remapH, offsetX, offsetY);
   return cudaGetLastError();
 }
 
@@ -763,148 +680,144 @@ cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust(
 }
 
 // Macro for instantiating batched_remap_kernel_offset<T_in, T_out>
-#define INSTANTIATE_BATCHED_REMAP_KERNEL_OFFSET(Tin, Tout)     \
-  template cudaError_t batched_remap_kernel_offset<Tin, Tout>( \
-      const Tin* d_src,                                        \
-      int srcW,                                                \
-      int srcH,                                                \
-      Tout* d_dest,                                            \
-      int destW,                                               \
-      int destH,                                               \
-      const unsigned short* d_mapX,                            \
-      const unsigned short* d_mapY,                            \
-      Tin defR,                                                \
-      Tin defG,                                                \
-      Tin defB,                                                \
-      int batchSize,                                           \
-      int remapW,                                              \
-      int remapH,                                              \
-      int offsetX,                                             \
-      int offsetY,                                             \
+#define INSTANTIATE_BATCHED_REMAP_KERNEL_OFFSET(T_in, T_out)     \
+  template cudaError_t batched_remap_kernel_offset<T_in, T_out>( \
+      const T_in* d_src,                                         \
+      int srcW,                                                  \
+      int srcH,                                                  \
+      T_out* d_dest,                                             \
+      int destW,                                                 \
+      int destH,                                                 \
+      const unsigned short* d_mapX,                              \
+      const unsigned short* d_mapY,                              \
+      T_in defR,                                                 \
+      T_in defG,                                                 \
+      T_in defB,                                                 \
+      int batchSize,                                             \
+      int remapW,                                                \
+      int remapH,                                                \
+      int offsetX,                                               \
+      int offsetY,                                               \
       cudaStream_t stream);
 
 // Macro for instantiating batched_remap_kernel_ex_offset<T_in, T_out>
-#define INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(Tin, Tout)     \
-  template cudaError_t batched_remap_kernel_ex_offset<Tin, Tout>( \
-      const CudaSurface<Tin> src,                                 \
-      CudaSurface<Tout> dest,                                     \
-      const unsigned short* d_mapX,                               \
-      const unsigned short* d_mapY,                               \
-      Tin deflt,                                                  \
-      int batchSize,                                              \
-      int remapW,                                                 \
-      int remapH,                                                 \
-      int offsetX,                                                \
-      int offsetY,                                                \
+#define INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(T_in, T_out)     \
+  template cudaError_t batched_remap_kernel_ex_offset<T_in, T_out>( \
+      const CudaSurface<T_in>& src,                                  \
+      const CudaSurface<T_out>& dest,                                      \
+      const unsigned short* d_mapX,                                 \
+      const unsigned short* d_mapY,                                 \
+      T_in deflt,                                                   \
+      int batchSize,                                                \
+      int remapW,                                                   \
+      int remapH,                                                   \
+      int offsetX,                                                  \
+      int offsetY,                                                  \
       cudaStream_t stream);
 
-#define INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(Tin, Tout)     \
-  template cudaError_t batched_remap_kernel_ex_offset_adjust<Tin, Tout>( \
-      const Tin* d_src,                                                  \
-      int srcW,                                                          \
-      int srcH,                                                          \
-      Tout* d_dest,                                                      \
-      int destW,                                                         \
-      int destH,                                                         \
-      const unsigned short* d_mapX,                                      \
-      const unsigned short* d_mapY,                                      \
-      Tin deflt,                                                         \
-      int batchSize,                                                     \
-      int remapW,                                                        \
-      int remapH,                                                        \
-      int offsetX,                                                       \
-      int offsetY,                                                       \
-      bool no_unmapped_write,                                            \
-      float3 adjustment,                                                 \
+#define INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(T_in, T_out)     \
+  template cudaError_t batched_remap_kernel_ex_offset_adjust<T_in, T_out>( \
+      const T_in* d_src,                                                   \
+      int srcW,                                                            \
+      int srcH,                                                            \
+      T_out* d_dest,                                                       \
+      int destW,                                                           \
+      int destH,                                                           \
+      const unsigned short* d_mapX,                                        \
+      const unsigned short* d_mapY,                                        \
+      T_in deflt,                                                          \
+      int batchSize,                                                       \
+      int remapW,                                                          \
+      int remapH,                                                          \
+      int offsetX,                                                         \
+      int offsetY,                                                         \
+      bool no_unmapped_write,                                              \
+      float3 adjustment,                                                   \
       cudaStream_t stream);
 
 // Macro for instantiating batched_remap_kernel<T_in, T_out>
-#define INSTANTIATE_BATCHED_REMAP_KERNEL(Tin, Tout)     \
-  template cudaError_t batched_remap_kernel<Tin, Tout>( \
-      const Tin* d_src,                                 \
-      int srcW,                                         \
-      int srcH,                                         \
-      Tout* d_dest,                                     \
-      int destW,                                        \
-      int destH,                                        \
-      const unsigned short* d_mapX,                     \
-      const unsigned short* d_mapY,                     \
-      Tin defR,                                         \
-      Tin defG,                                         \
-      Tin defB,                                         \
-      int batchSize,                                    \
+#define INSTANTIATE_BATCHED_REMAP_KERNEL(T_in, T_out)     \
+  template cudaError_t batched_remap_kernel<T_in, T_out>( \
+      const T_in* d_src,                                  \
+      int srcW,                                           \
+      int srcH,                                           \
+      T_out* d_dest,                                      \
+      int destW,                                          \
+      int destH,                                          \
+      const unsigned short* d_mapX,                       \
+      const unsigned short* d_mapY,                       \
+      T_in defR,                                          \
+      T_in defG,                                          \
+      T_in defB,                                          \
+      int batchSize,                                      \
       cudaStream_t stream);
 
 // Macro for instantiating batched_remap_kernel_ex<T_in, T_out>
-#define INSTANTIATE_BATCHED_REMAP_KERNEL_EX(Tin, Tout)     \
-  template cudaError_t batched_remap_kernel_ex<Tin, Tout>( \
-      const Tin* d_src,                                    \
-      int srcW,                                            \
-      int srcH,                                            \
-      Tout* d_dest,                                        \
-      int destW,                                           \
-      int destH,                                           \
-      const unsigned short* d_mapX,                        \
-      const unsigned short* d_mapY,                        \
-      Tin deflt,                                           \
-      int batchSize,                                       \
+#define INSTANTIATE_BATCHED_REMAP_KERNEL_EX(T_in, T_out)     \
+  template cudaError_t batched_remap_kernel_ex<T_in, T_out>( \
+      const T_in* d_src,                                     \
+      int srcW,                                              \
+      int srcH,                                              \
+      T_out* d_dest,                                         \
+      int destW,                                             \
+      int destH,                                             \
+      const unsigned short* d_mapX,                          \
+      const unsigned short* d_mapY,                          \
+      T_in deflt,                                            \
+      int batchSize,                                         \
       cudaStream_t stream);
 
-#define INSTANTIATE_BATCHED_REMAP_KERNEL_EX_ADJUST(Tin, Tout)     \
-  template cudaError_t batched_remap_kernel_ex_adjust<Tin, Tout>( \
-      const Tin* d_src,                                           \
-      int srcW,                                                   \
-      int srcH,                                                   \
-      Tout* d_dest,                                               \
-      int destW,                                                  \
-      int destH,                                                  \
-      const unsigned short* d_mapX,                               \
-      const unsigned short* d_mapY,                               \
-      Tin deflt,                                                  \
-      int batchSize,                                              \
+#define INSTANTIATE_BATCHED_REMAP_KERNEL_EX_ADJUST(T_in, T_out)     \
+  template cudaError_t batched_remap_kernel_ex_adjust<T_in, T_out>( \
+      const T_in* d_src,                                            \
+      int srcW,                                                     \
+      int srcH,                                                     \
+      T_out* d_dest,                                                \
+      int destW,                                                    \
+      int destH,                                                    \
+      const unsigned short* d_mapX,                                 \
+      const unsigned short* d_mapY,                                 \
+      T_in deflt,                                                   \
+      int batchSize,                                                \
       float3 adjustment cudaStream_t stream);
 
 // Macro for instantiating batched_remap_kernel_ex_offset_with_dest_map<T_in, T_out>
-#define INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(Tin, Tout)     \
-  template cudaError_t batched_remap_kernel_ex_offset_with_dest_map<Tin, Tout>( \
-      const Tin* d_src,                                                         \
-      int srcW,                                                                 \
-      int srcH,                                                                 \
-      Tout* d_dest,                                                             \
-      int destW,                                                                \
-      int destH,                                                                \
-      const unsigned short* d_mapX,                                             \
-      const unsigned short* d_mapY,                                             \
-      Tin deflt,                                                                \
-      int this_image_index,                                                     \
-      const unsigned char* dest_image_map,                                      \
-      int batchSize,                                                            \
-      int remapW,                                                               \
-      int remapH,                                                               \
-      int offsetX,                                                              \
-      int offsetY,                                                              \
+#define INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(T_in, T_out)     \
+  template cudaError_t batched_remap_kernel_ex_offset_with_dest_map<T_in, T_out>( \
+      const CudaSurface<T_in>& src,                                               \
+      const CudaSurface<T_out>& dest,                                              \
+      const unsigned short* d_mapX,                                               \
+      const unsigned short* d_mapY,                                               \
+      T_in deflt,                                                                 \
+      int this_image_index,                                                       \
+      const unsigned char* dest_image_map,                                        \
+      int batchSize,                                                              \
+      int remapW,                                                                 \
+      int remapH,                                                                 \
+      int offsetX,                                                                \
+      int offsetY,                                                                \
       cudaStream_t stream);
 
 // Macro for instantiating batched_remap_kernel_ex_offset_with_dest_map_adjust<T_in, T_out>
-#define INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP_ADJUST(Tin, Tout)     \
-  template cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust<Tin, Tout>( \
-      const Tin* d_src,                                                                \
-      int srcW,                                                                        \
-      int srcH,                                                                        \
-      Tout* d_dest,                                                                    \
-      int destW,                                                                       \
-      int destH,                                                                       \
-      const unsigned short* d_mapX,                                                    \
-      const unsigned short* d_mapY,                                                    \
-      Tin deflt,                                                                       \
-      int this_image_index,                                                            \
-      const unsigned char* dest_image_map,                                             \
-      int batchSize,                                                                   \
-      int remapW,                                                                      \
-      int remapH,                                                                      \
-      int offsetX,                                                                     \
-      int offsetY,                                                                     \
-      float3 adjustment,                                                               \
+#define INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP_ADJUST(T_in, T_out)     \
+  template cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust<T_in, T_out>( \
+      const T_in* d_src,                                                                 \
+      int srcW,                                                                          \
+      int srcH,                                                                          \
+      T_out* d_dest,                                                                     \
+      int destW,                                                                         \
+      int destH,                                                                         \
+      const unsigned short* d_mapX,                                                      \
+      const unsigned short* d_mapY,                                                      \
+      T_in deflt,                                                                        \
+      int this_image_index,                                                              \
+      const unsigned char* dest_image_map,                                               \
+      int batchSize,                                                                     \
+      int remapW,                                                                        \
+      int remapH,                                                                        \
+      int offsetX,                                                                       \
+      int offsetY,                                                                       \
+      float3 adjustment,                                                                 \
       cudaStream_t stream);
 
 // For batched_remap_kernel_offset

@@ -451,6 +451,10 @@ class CudaMat {
     };
   }
 
+  operator CudaSurface<T>() const {
+    return surface();
+  }
+
   /**
    * @brief Returns a pointer to the raw underlying data.
    *
