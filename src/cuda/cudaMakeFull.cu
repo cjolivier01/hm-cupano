@@ -327,7 +327,7 @@ cudaError_t copy_roi_batched(
       CudaSurface<T_out> dest,                              \
       cudaStream_t stream);
 
-#define INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(T_in, T_out) \
+#define INSTANTIATE_COPY_ROI_BATCHED(T_in, T_out) \
   template cudaError_t copy_roi_batched<T_in, T_out>(       \
       const CudaSurface<T_in>& src,                         \
       int regionWidth,                                      \
@@ -351,12 +351,13 @@ INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float3, float3)
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(uchar4, float4)
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(uchar4, float3)
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float4, float4)
+//INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float4, uchar4)
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float3, uchar4)
 
 // Same–type instantiations:
-INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(half3, uchar3)
-INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(float3, float3)
-INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(float4, float4)
-INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(float3, uchar3)
-INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(float3, uchar4)
-INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(uchar3, uchar3)
+INSTANTIATE_COPY_ROI_BATCHED(half3, uchar3)
+INSTANTIATE_COPY_ROI_BATCHED(float3, float3)
+INSTANTIATE_COPY_ROI_BATCHED(float4, float4)
+INSTANTIATE_COPY_ROI_BATCHED(float3, uchar3)
+INSTANTIATE_COPY_ROI_BATCHED(float3, uchar4)
+INSTANTIATE_COPY_ROI_BATCHED(uchar3, uchar3)
