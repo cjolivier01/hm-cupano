@@ -2,6 +2,8 @@
 
 #include <cuda_runtime.h>
 
+#include "cudaTypes.h"
+
 /**
  * @brief Interface function for launching the batched ROI copy kernel for images,
  *        with separate input and output types.
@@ -29,16 +31,12 @@
  */
 template <typename T_in, typename T_out>
 cudaError_t copy_roi_batched(
-    const T_in* d_src,
-    int full_src_width,
-    int full_src_height,
+    const CudaSurface<T_in>& src,
     int regionWidth,
     int regionHeight,
     int srcROI_x,
     int srcROI_y,
-    T_out* d_dest,
-    int destWidth,
-    int destHeight,
+    CudaSurface<T_out> dest,
     int offsetX,
     int offsetY,
     int batchSize,
@@ -73,24 +71,16 @@ cudaError_t copy_roi_batched(
  * @param stream CUDA stream to use for kernel launches.
  * @return cudaError_t The CUDA error code after kernel launches.
  */
-template <typename T_in, typename T_out, typename U>
+template <typename T_in, typename T_out>
 cudaError_t simple_make_full_batch(
-    const T_in* d_imgs,
-    int src_full_width,
-    int src_full_height,
+    const CudaSurface<T_in>& src,
     int region_width,
     int region_height,
-    const U* d_masks,
-    int mask_width,
-    int mask_height,
     int src_roi_x,
     int src_roi_y,
     int destOffsetX,
     int destOffsetY,
-    int canvas_w,
-    int canvas_h,
     bool adjust_origin,
     int batchSize,
-    T_out* d_full_imgs,
-    U* d_full_masks,
+    CudaSurface<T_out> dest,
     cudaStream_t stream = 0);

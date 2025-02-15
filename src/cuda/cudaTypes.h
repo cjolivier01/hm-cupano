@@ -183,3 +183,29 @@ struct CudaSurface {
   std::uint32_t height;
   std::uint32_t pitch;
 };
+
+// Utility functions for dealing with pitch advances
+template <typename T>
+inline __device__ T* advance_bytes(T* current, ptrdiff_t diff) {
+  return reinterpret_cast<T*>(reinterpret_cast<unsigned char*>(current) + diff);
+}
+
+template <typename T>
+inline __device__ const T* advance_bytes(const T* current, ptrdiff_t diff) {
+  return reinterpret_cast<const T*>(reinterpret_cast<const unsigned char*>(current) + diff);
+}
+
+template <typename T>
+inline __device__ T* surface_ptr(CudaSurface<T>& surf, int batch_nr, int xpos, int ypos) {
+  return advance_bytes(surf.d_ptr, ypos * surf.pitch) + xpos;
+}
+
+template <typename T>
+inline __device__ const T* surface_ptr(const CudaSurface<T>& surf, int batch_nr, int xpos, int ypos) {
+  return advance_bytes(surf.d_ptr, ypos * surf.pitch) + xpos;
+}
+
+template <typename T>
+inline size_t total_size(const CudaSurface<T>& surface, int batch_size = 1) {
+  return surface.pitch * surface.height * batch_size;
+}

@@ -56,7 +56,7 @@
         //"--game-id=pdp",
         "--show",
         "--adjust=1",
-        "--levels=0",
+        "--levels=6",
         // "--levels=0",
         "--output=${workspaceRoot}/output.png",
       ],

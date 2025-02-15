@@ -13,12 +13,12 @@ namespace {
 constexpr unsigned short kUnmappedPositionValue = std::numeric_limits<unsigned short>::max();
 
 template <typename T_in, typename T_out>
-T_out __device__ cast_to(const T_in& in) {
+inline T_out __device__ cast_to(const T_in& in) {
   return static_cast<T_out>(in);
 }
 
 template <>
-float3 __device__ cast_to(const uchar3& in) {
+inline float3 __device__ cast_to(const uchar3& in) {
   return float3{
       .x = static_cast<float>(in.x),
       .y = static_cast<float>(in.y),
@@ -27,109 +27,13 @@ float3 __device__ cast_to(const uchar3& in) {
 }
 
 template <>
-float4 __device__ cast_to(const uchar4& in) {
+inline float4 __device__ cast_to(const uchar4& in) {
   return float4{
       .x = static_cast<float>(in.x),
       .y = static_cast<float>(in.y),
       .z = static_cast<float>(in.z),
       .w = static_cast<float>(in.w)};
 }
-
-// template <typename T_in, typename T_out>
-// T_out __device__ cast_to(const T_in& in) {
-//   return static_cast<T_out>(in);
-// }
-
-//------------------------------------------------------------------------------
-// Templated Remap Kernel for a Single Image (unchanged)
-//------------------------------------------------------------------------------
-// template <typename T_in, typename T_out>
-// __global__ void remapKernel(
-//     const T_in* src,
-//     int srcW,
-//     int srcH,
-//     T_out* dest,
-//     int destW,
-//     int destH,
-//     const unsigned short* mapX,
-//     const unsigned short* mapY,
-//     T_out defR,
-//     T_out defG,
-//     T_out defB) {
-//   // Compute destination pixel coordinates.
-//   int x = blockIdx.x * blockDim.x + threadIdx.x;
-//   int y = blockIdx.y * blockDim.y + threadIdx.y;
-//   if (x >= destW || y >= destH)
-//     return;
-
-//   int destIdx = y * destW + x;
-
-//   // Get mapping coordinates and cast them to int.
-//   int srcX = static_cast<int>(mapX[destIdx]);
-//   int srcY = static_cast<int>(mapY[destIdx]);
-
-//   if (srcX < srcW && srcY < srcH) {
-//     int srcIdx = (srcY * srcW + srcX) * 3;
-//     dest[destIdx * 3 + 0] = static_cast<T_out>(src[srcIdx + 0]);
-//     dest[destIdx * 3 + 1] = static_cast<T_out>(src[srcIdx + 1]);
-//     dest[destIdx * 3 + 2] = static_cast<T_out>(src[srcIdx + 2]);
-//   } else {
-//     dest[destIdx * 3 + 0] = defR;
-//     dest[destIdx * 3 + 1] = defG;
-//     dest[destIdx * 3 + 2] = defB;
-//   }
-// }
-
-//------------------------------------------------------------------------------
-// Templated Batched Remap Kernel for RGB Images (unchanged)
-//------------------------------------------------------------------------------
-// template <typename T_in, typename T_out>
-// __global__ void BatchedRemapKernel(
-//     const T_in* src,
-//     int srcW,
-//     int srcH,
-//     T_out* dest,
-//     int destW,
-//     int destH,
-//     const unsigned short* mapX,
-//     const unsigned short* mapY,
-//     T_out defR,
-//     T_out defG,
-//     T_out defB,
-//     int batchSize) {
-//   int b = blockIdx.z;
-//   if (b >= batchSize)
-//     return;
-
-//   int srcImageSize = srcW * srcH * 3;
-//   int destImageSize = destW * destH * 3;
-//   int mapSize = destW * destH; // mapping arrays match destination size
-
-//   const T_in* srcImage = src + b * srcImageSize;
-//   T_out* destImage = dest + b * destImageSize;
-//   const unsigned short* mapXImage = mapX + b * mapSize;
-//   const unsigned short* mapYImage = mapY + b * mapSize;
-
-//   int x = blockIdx.x * blockDim.x + threadIdx.x;
-//   int y = blockIdx.y * blockDim.y + threadIdx.y;
-//   if (x >= destW || y >= destH)
-//     return;
-
-//   int destIdx = y * destW + x;
-//   int srcX = static_cast<int>(mapXImage[destIdx]);
-//   int srcY = static_cast<int>(mapYImage[destIdx]);
-
-//   if (srcX < srcW && srcY < srcH) {
-//     int srcIdx = (srcY * srcW + srcX) * 3;
-//     destImage[destIdx * 3 + 0] = static_cast<T_out>(srcImage[srcIdx + 0]);
-//     destImage[destIdx * 3 + 1] = static_cast<T_out>(srcImage[srcIdx + 1]);
-//     destImage[destIdx * 3 + 2] = static_cast<T_out>(srcImage[srcIdx + 2]);
-//   } else {
-//     destImage[destIdx * 3 + 0] = defR;
-//     destImage[destIdx * 3 + 1] = defG;
-//     destImage[destIdx * 3 + 2] = defB;
-//   }
-// }
 
 //------------------------------------------------------------------------------
 // Templated Batched Remap Kernel EX (unchanged)
@@ -234,16 +138,6 @@ __global__ void BatchedRemapKernelOffset(
   }
 }
 
-template <typename T>
-__device__ T* advance_bytes(T* current, ptrdiff_t diff) {
-  return reinterpret_cast<T*>(reinterpret_cast<unsigned char*>(current) + diff);
-}
-
-template <typename T>
-__device__ const T* advance_bytes(const T* current, ptrdiff_t diff) {
-  return reinterpret_cast<const T*>(reinterpret_cast<const unsigned char*>(current) + diff);
-}
-
 //------------------------------------------------------------------------------
 // NEW: Templated Batched Remap Kernel EX with Offset (Single-channel)
 //------------------------------------------------------------------------------
@@ -311,43 +205,6 @@ __global__ void BatchedRemapKernelExOffsetAdjust(
     int offsetY,
     bool no_unmapped_write,
     float3 adjustment) {
-  // int b = blockIdx.z;
-  // if (b >= batchSize)
-  //   return;
-
-  // int srcImageSize = srcW * srcH;
-  // int destImageSize = destW * destH;
-
-  // const T_in* srcImage = src + b * srcImageSize;
-  // T_out* destImage = dest + b * destImageSize;
-
-  // // Coordinates within the remap region.
-  // int x = blockIdx.x * blockDim.x + threadIdx.x;
-  // int y = blockIdx.y * blockDim.y + threadIdx.y;
-  // if (x >= remapW || y >= remapH)
-  //   return;
-
-  // int destX = offsetX + x;
-  // int destY = offsetY + y;
-  // if (destX < 0 || destX >= destW || destY < 0 || destY >= destH)
-  //   return;
-
-  // int destIdx = destY * destW + destX;
-  // int mapIdx = y * remapW + x;
-
-  // int srcX = static_cast<int>(mapX[mapIdx]);
-  // int srcY = static_cast<int>(mapY[mapIdx]);
-
-  // if (srcX < srcW && srcY < srcH) {
-  //   int srcIdx = srcY * srcW + srcX;
-  //   destImage[destIdx] = PixelAdjuster<T_out>::adjust(static_cast<T_out>(srcImage[srcIdx]), adjustment);
-  // } else {
-  //   // We trust that srcY will also be kUnmappedPositionValue
-  //   if (!no_unmapped_write || srcX != kUnmappedPositionValue) {
-  //     destImage[destIdx] = deflt;
-  //   }
-  // }
-
   int b = blockIdx.z;
   if (b >= batchSize)
     return;
