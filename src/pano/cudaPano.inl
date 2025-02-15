@@ -386,12 +386,12 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     // SHOW_IMAGE(&cudaBlendedFull);
 #endif
 
-#if 0
+#if 1
     //
     // Copy the blended portion (overlapping portion + some padding) onto
     // the canvas over some of the remapped image 1 and image 2
     //
-    cuerr = copyRoiBatchedInterface(
+    cuerr = copy_roi_batched(
         cudaBlendedFull.data(),
         cudaBlendedFull.width(),
         cudaBlendedFull.height(),

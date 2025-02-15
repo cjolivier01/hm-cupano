@@ -295,7 +295,7 @@ cudaError_t simple_make_full_batch(
  * @return cudaError_t The CUDA error code after kernel launch.
  */
 template <typename T_in, typename T_out>
-cudaError_t copyRoiBatchedInterface(
+cudaError_t copy_roi_batched(
     const T_in* d_src,
     int full_src_width,
     int full_src_height,
@@ -375,7 +375,7 @@ cudaError_t copyRoiBatchedInterface(
       cudaStream_t stream);
 
 #define INSTANTIATE_COPY_ROI_BATCHED_INTERFACE(Tin, Tout)  \
-  template cudaError_t copyRoiBatchedInterface<Tin, Tout>( \
+  template cudaError_t copy_roi_batched<Tin, Tout>( \
       const Tin* d_src,                                    \
       int full_src_width,                                  \
       int full_src_height,                                 \
