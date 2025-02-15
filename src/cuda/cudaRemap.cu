@@ -258,7 +258,8 @@ __global__ void BatchedRemapKernelExOffset(
     int remapW,
     int remapH,
     int offsetX,
-    int offsetY) {
+    int offsetY,
+    bool no_unmapped_write) {
   int b = blockIdx.z;
   if (b >= batchSize)
     return;
@@ -290,18 +291,16 @@ __global__ void BatchedRemapKernelExOffset(
     const T_in* src_pos = advance_bytes(srcImage, srcY * src.pitch) + srcX;
     *dest_pos = cast_to<T_in, T_out>(*src_pos);
   } else {
-    *dest_pos = cast_to<T_in, T_out>(deflt);
+    if (!no_unmapped_write || srcX != kUnmappedPositionValue) {
+      *dest_pos = cast_to<T_in, T_out>(deflt);
+    }
   }
 }
 
 template <typename T_in, typename T_out>
 __global__ void BatchedRemapKernelExOffsetAdjust(
-    const T_in* src,
-    int srcW,
-    int srcH,
-    T_out* dest,
-    int destW,
-    int destH,
+    const CudaSurface<T_in> src,
+    CudaSurface<T_out> dest,
     const unsigned short* mapX, // mapping arrays of size (remapW x remapH)
     const unsigned short* mapY,
     T_in deflt,
@@ -312,15 +311,46 @@ __global__ void BatchedRemapKernelExOffsetAdjust(
     int offsetY,
     bool no_unmapped_write,
     float3 adjustment) {
+  // int b = blockIdx.z;
+  // if (b >= batchSize)
+  //   return;
+
+  // int srcImageSize = srcW * srcH;
+  // int destImageSize = destW * destH;
+
+  // const T_in* srcImage = src + b * srcImageSize;
+  // T_out* destImage = dest + b * destImageSize;
+
+  // // Coordinates within the remap region.
+  // int x = blockIdx.x * blockDim.x + threadIdx.x;
+  // int y = blockIdx.y * blockDim.y + threadIdx.y;
+  // if (x >= remapW || y >= remapH)
+  //   return;
+
+  // int destX = offsetX + x;
+  // int destY = offsetY + y;
+  // if (destX < 0 || destX >= destW || destY < 0 || destY >= destH)
+  //   return;
+
+  // int destIdx = destY * destW + destX;
+  // int mapIdx = y * remapW + x;
+
+  // int srcX = static_cast<int>(mapX[mapIdx]);
+  // int srcY = static_cast<int>(mapY[mapIdx]);
+
+  // if (srcX < srcW && srcY < srcH) {
+  //   int srcIdx = srcY * srcW + srcX;
+  //   destImage[destIdx] = PixelAdjuster<T_out>::adjust(static_cast<T_out>(srcImage[srcIdx]), adjustment);
+  // } else {
+  //   // We trust that srcY will also be kUnmappedPositionValue
+  //   if (!no_unmapped_write || srcX != kUnmappedPositionValue) {
+  //     destImage[destIdx] = deflt;
+  //   }
+  // }
+
   int b = blockIdx.z;
   if (b >= batchSize)
     return;
-
-  int srcImageSize = srcW * srcH;
-  int destImageSize = destW * destH;
-
-  const T_in* srcImage = src + b * srcImageSize;
-  T_out* destImage = dest + b * destImageSize;
 
   // Coordinates within the remap region.
   int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -330,22 +360,28 @@ __global__ void BatchedRemapKernelExOffsetAdjust(
 
   int destX = offsetX + x;
   int destY = offsetY + y;
-  if (destX < 0 || destX >= destW || destY < 0 || destY >= destH)
+  if (destX < 0 || destX >= dest.width || destY < 0 || destY >= dest.height)
     return;
 
-  int destIdx = destY * destW + destX;
+  int destImageSizeBytes = dest.height * dest.pitch;
+
+  T_out* destImage = advance_bytes(dest.d_ptr, b * destImageSizeBytes);
+  T_out* dest_pos = advance_bytes(destImage, destY * dest.pitch) + destX;
+
   int mapIdx = y * remapW + x;
 
   int srcX = static_cast<int>(mapX[mapIdx]);
   int srcY = static_cast<int>(mapY[mapIdx]);
 
-  if (srcX < srcW && srcY < srcH) {
-    int srcIdx = srcY * srcW + srcX;
-    destImage[destIdx] = PixelAdjuster<T_out>::adjust(static_cast<T_out>(srcImage[srcIdx]), adjustment);
+  if (srcX < src.width && srcY < src.height) {
+    int srcImageSizeBytes = src.height * src.pitch;
+    const T_in* srcImage = advance_bytes(src.d_ptr, b * srcImageSizeBytes);
+    const T_in* src_pos = advance_bytes(srcImage, srcY * src.pitch) + srcX;
+    // *dest_pos = cast_to<T_in, T_out>(*src_pos);
+    *dest_pos = PixelAdjuster<T_out>::adjust(static_cast<T_out>(*src_pos), adjustment);
   } else {
-    // We trust that srcY will also be kUnmappedPositionValue
     if (!no_unmapped_write || srcX != kUnmappedPositionValue) {
-      destImage[destIdx] = deflt;
+      *dest_pos = cast_to<T_in, T_out>(deflt);
     }
   }
 }
@@ -550,22 +586,19 @@ cudaError_t batched_remap_kernel_ex_offset(
     int remapH,
     int offsetX,
     int offsetY,
+    bool no_unmapped_write,
     cudaStream_t stream) {
   dim3 blockDim(16, 16, 1);
   dim3 gridDim((remapW + blockDim.x - 1) / blockDim.x, (remapH + blockDim.y - 1) / blockDim.y, batchSize);
-  BatchedRemapKernelExOffset<T_in, T_out>
-      <<<gridDim, blockDim, 0, stream>>>(src, dest, d_mapX, d_mapY, deflt, batchSize, remapW, remapH, offsetX, offsetY);
+  BatchedRemapKernelExOffset<T_in, T_out><<<gridDim, blockDim, 0, stream>>>(
+      src, dest, d_mapX, d_mapY, deflt, batchSize, remapW, remapH, offsetX, offsetY, no_unmapped_write);
   return cudaGetLastError();
 }
 
 template <typename T_in, typename T_out>
 cudaError_t batched_remap_kernel_ex_offset_adjust(
-    const T_in* d_src,
-    int srcW,
-    int srcH,
-    T_out* d_dest,
-    int destW,
-    int destH,
+    const CudaSurface<T_in>& src,
+    const CudaSurface<T_out>& dest,
     const unsigned short* d_mapX,
     const unsigned short* d_mapY,
     T_in deflt,
@@ -580,22 +613,7 @@ cudaError_t batched_remap_kernel_ex_offset_adjust(
   dim3 blockDim(16, 16, 1);
   dim3 gridDim((remapW + blockDim.x - 1) / blockDim.x, (remapH + blockDim.y - 1) / blockDim.y, batchSize);
   BatchedRemapKernelExOffsetAdjust<T_in, T_out><<<gridDim, blockDim, 0, stream>>>(
-      d_src,
-      srcW,
-      srcH,
-      d_dest,
-      destW,
-      destH,
-      d_mapX,
-      d_mapY,
-      deflt,
-      batchSize,
-      remapW,
-      remapH,
-      offsetX,
-      offsetY,
-      no_unmapped_write,
-      adjustment);
+      src, dest, d_mapX, d_mapY, deflt, batchSize, remapW, remapH, offsetX, offsetY, no_unmapped_write, adjustment);
   return cudaGetLastError();
 }
 
@@ -691,8 +709,8 @@ cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust(
 // Macro for instantiating batched_remap_kernel_ex_offset<T_in, T_out>
 #define INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(T_in, T_out)     \
   template cudaError_t batched_remap_kernel_ex_offset<T_in, T_out>( \
-      const CudaSurface<T_in>& src,                                  \
-      const CudaSurface<T_out>& dest,                                      \
+      const CudaSurface<T_in>& src,                                 \
+      const CudaSurface<T_out>& dest,                               \
       const unsigned short* d_mapX,                                 \
       const unsigned short* d_mapY,                                 \
       T_in deflt,                                                   \
@@ -701,16 +719,13 @@ cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust(
       int remapH,                                                   \
       int offsetX,                                                  \
       int offsetY,                                                  \
+      bool no_unmapped_write,                                       \
       cudaStream_t stream);
 
 #define INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(T_in, T_out)     \
   template cudaError_t batched_remap_kernel_ex_offset_adjust<T_in, T_out>( \
-      const T_in* d_src,                                                   \
-      int srcW,                                                            \
-      int srcH,                                                            \
-      T_out* d_dest,                                                       \
-      int destW,                                                           \
-      int destH,                                                           \
+      const CudaSurface<T_in>& src,                                        \
+      const CudaSurface<T_out>& dest,                                      \
       const unsigned short* d_mapX,                                        \
       const unsigned short* d_mapY,                                        \
       T_in deflt,                                                          \
@@ -773,7 +788,7 @@ cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust(
 #define INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(T_in, T_out)     \
   template cudaError_t batched_remap_kernel_ex_offset_with_dest_map<T_in, T_out>( \
       const CudaSurface<T_in>& src,                                               \
-      const CudaSurface<T_out>& dest,                                              \
+      const CudaSurface<T_out>& dest,                                             \
       const unsigned short* d_mapX,                                               \
       const unsigned short* d_mapY,                                               \
       T_in deflt,                                                                 \
