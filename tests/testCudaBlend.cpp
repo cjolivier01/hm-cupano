@@ -216,8 +216,6 @@ int main(int argc, char** argv) {
     cv::imwrite(output, canvas->download());
   }
   if (show) {
-    // SHOW_SMALL(canvas);
-    // SHOW_IMAGE(canvas);
     SHOW_SCALED(canvas, 0.25);
     usleep(10000);
   }
