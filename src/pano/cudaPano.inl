@@ -154,7 +154,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           /*offsetY=*/canvas_manager._y1,
           stream);
     }
-    std::cerr << "..." << std::endl;
     CUDA_RETURN_IF_ERROR(cuerr);
     // SHOW_SCALED(&inputImage1, 0.2);
     // SHOW_SCALED(canvas, 0.15);
