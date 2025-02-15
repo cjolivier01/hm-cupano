@@ -274,18 +274,9 @@ __global__ void BatchedRemapKernelExOffset(
   if (destX < 0 || destX >= dest.width || destY < 0 || destY >= dest.height)
     return;
 
-  // int srcImageSize = srcW * srcH;
-  // int destImageSize = destW * destH;
-
-  // TODO: lots of these calculations dont need ot be done every time
   int destImageSizeBytes = dest.height * dest.pitch;
 
-  // const T_in* srcImage = src + b * srcImageSize;
-  // T_out* destImage = dest + b * destImageSize;
-
   T_out* destImage = advance_bytes(dest.d_ptr, b * destImageSizeBytes);
-
-  // int destIdx = destY * destW + destX;
   T_out* dest_pos = advance_bytes(destImage, destY * dest.pitch) + destX;
 
   int mapIdx = y * remapW + x;
@@ -294,14 +285,11 @@ __global__ void BatchedRemapKernelExOffset(
   int srcY = static_cast<int>(mapY[mapIdx]);
 
   if (srcX < src.width && srcY < src.height) {
-    // int srcIdx = srcY * srcW + srcX;
     int srcImageSizeBytes = src.height * src.pitch;
     const T_in* srcImage = advance_bytes(src.d_ptr, b * srcImageSizeBytes);
     const T_in* src_pos = advance_bytes(srcImage, srcY * src.pitch) + srcX;
-    // destImage[destIdx] = cast_to<T_in, T_out>(srcImage[srcIdx]);
     *dest_pos = cast_to<T_in, T_out>(*src_pos);
   } else {
-    // destImage[destIdx] = cast_to<T_in, T_out>(deflt);
     *dest_pos = cast_to<T_in, T_out>(deflt);
   }
 }
