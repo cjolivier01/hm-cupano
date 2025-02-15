@@ -121,12 +121,8 @@ cudaError_t batched_remap_kernel_ex_offset_with_dest_map(
 
 template <typename T_in, typename T_out>
 cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust(
-    const T_in* d_src,
-    int srcW,
-    int srcH,
-    T_out* d_dest,
-    int destW,
-    int destH,
+    const CudaSurface<T_in>& src,
+    const CudaSurface<T_out>& dest,
     const unsigned short* d_mapX,
     const unsigned short* d_mapY,
     T_in deflt,

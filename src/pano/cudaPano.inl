@@ -187,12 +187,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
 #if 1
     if (image_adjustment.has_value()) {
       cuerr = batched_remap_kernel_ex_offset_with_dest_map_adjust(
-          inputImage1.data(),
-          inputImage1.width(),
-          inputImage1.height(),
-          canvas->data(),
-          canvas->width(),
-          canvas->height(),
+          inputImage1.surface(),
+          canvas->surface(),
           stitch_context.remap_1_x->data(),
           stitch_context.remap_1_y->data(),
           {0, 0, 0},
@@ -226,6 +222,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     CUDA_RETURN_IF_ERROR(cuerr);
     // SHOW_SMALL(&inputImage1);
     // SHOW_IMAGE(canvas);
+    // SHOW_SCALED(canvas, 0.15);
 #endif
   }
   //
@@ -303,12 +300,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     assert(canvas_manager._y2 + stitch_context.remap_2_x->height() <= canvas->height());
     if (image_adjustment.has_value()) {
       cuerr = batched_remap_kernel_ex_offset_with_dest_map_adjust(
-          inputImage2.data(),
-          inputImage2.width(),
-          inputImage2.height(),
-          canvas->data(),
-          canvas->width(),
-          canvas->height(),
+          inputImage2.surface(),
+          canvas->surface(),
           stitch_context.remap_2_x->data(),
           stitch_context.remap_2_y->data(),
           {0, 0, 0},
