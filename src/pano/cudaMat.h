@@ -344,7 +344,7 @@ struct SurfaceInfo {
  *
  * @tparam T The CUDA pixel type stored in device memory (default is float3).
  */
-template <typename T = float3>
+template <typename T>
 class CudaMat {
  public:
   // Delete copy and move constructors.
