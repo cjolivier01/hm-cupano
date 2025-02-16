@@ -388,7 +388,7 @@ std::optional<float3> CudaStitchPano<T_pipeline, T_compute>::compute_image_adjus
       tmp1,
       tmp2,
       *whole_seam_mask_image_,
-      /*N=*/6,
+      /*N=*/10,
       canvas_manager_->canvas_positions()[0],
       canvas_manager_->canvas_positions()[1]);
   if (adjustment_result.has_value()) {
