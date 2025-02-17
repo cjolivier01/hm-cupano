@@ -165,27 +165,32 @@ bool ControlMasks::load(std::string game_dir) {
   // Load column/row transformations for the first image.
   img1_col = cv::imread(mapping_0_x, cv::IMREAD_ANYDEPTH);
   if (img1_col.empty()) {
+    std::cerr << "Unable to load seam or masking file: " << mapping_0_x << std::endl;
     return false;
   }
   assert(img1_col.type() == CV_16U);
   img1_row = cv::imread(mapping_0_y, cv::IMREAD_ANYDEPTH);
   if (img1_row.empty()) {
+    std::cerr << "Unable to load seam or masking file: " << mapping_0_y << std::endl;
     return false;
   }
 
   // Load column/row transformations for the second image.
   img2_col = cv::imread(mapping_1_x, cv::IMREAD_ANYDEPTH);
   if (img2_col.empty()) {
+    std::cerr << "Unable to load seam or masking file: " << mapping_1_x << std::endl;
     return false;
   }
   img2_row = cv::imread(mapping_1_y, cv::IMREAD_ANYDEPTH);
   if (img2_row.empty()) {
+    std::cerr << "Unable to load seam or masking file: " << mapping_1_y << std::endl;
     return false;
   }
 
   // Load and process the seam mask.
   whole_seam_mask_image = load_seam_mask(whole_seam_mask);
   if (whole_seam_mask_image.empty()) {
+    std::cerr << "Unable to load seam or masking file: " << whole_seam_mask << std::endl;
     return false;
   }
 
