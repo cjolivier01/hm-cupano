@@ -176,8 +176,14 @@ struct BaseScalar<bfloat16_4> {
 template <typename T>
 using BaseScalar_t = typename BaseScalar<T>::type;
 
+/**
+ * @brief Struct about the CUDA surface that is ismple enough
+ *        to be passed by value to a CUDA kernel
+ *
+ * @tparam T
+ */
 template <typename T>
-struct CudaSurface {
+struct CudaSurface final {
   T* d_ptr;
   std::uint32_t width;
   std::uint32_t height;
