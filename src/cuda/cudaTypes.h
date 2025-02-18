@@ -177,8 +177,8 @@ template <typename T>
 using BaseScalar_t = typename BaseScalar<T>::type;
 
 /**
- * @brief Struct about the CUDA surface that is ismple enough
- *        to be passed by value to a CUDA kernel
+ * @brief Struct about the CUDA surface that is simple and small enough
+ *        to be passed efficiently by value to a CUDA kernel
  *
  * @tparam T
  */
