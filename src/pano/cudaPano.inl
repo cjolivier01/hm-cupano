@@ -14,7 +14,8 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
     int batch_size,
     int num_levels,
     const ControlMasks& control_masks,
-    bool match_exposure)
+    bool match_exposure,
+    bool quiet)
     : match_exposure_(match_exposure) {
   if (!control_masks.is_valid()) {
     status_ = CudaStatus(cudaError_t::cudaErrorFileNotFound, "Stitching masks were not able to be loaded");
@@ -30,6 +31,10 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
   const int canvas_height = std::max(
       control_masks.positions[0].ypos + control_masks.img1_col.rows,
       control_masks.positions[1].ypos + control_masks.img2_col.rows);
+
+  if (!quiet) {
+    std::cout << "Stitched canvas size: " << canvas_width << " x " << canvas_height << std::endl;
+  }
 
   //
   // CanvasManager

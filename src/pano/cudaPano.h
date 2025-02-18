@@ -67,7 +67,12 @@ struct StitchingContext {
 template <typename T_pipeline, typename T_compute>
 class CudaStitchPano {
  public:
-  CudaStitchPano(int batch_size, int num_levels, const ControlMasks& control_masks, bool match_exposure = false);
+  CudaStitchPano(
+      int batch_size,
+      int num_levels,
+      const ControlMasks& control_masks,
+      bool match_exposure = false,
+      bool quiet = false);
 
   int canvas_width() const {
     return canvas_manager_->canvas_width();
@@ -92,7 +97,6 @@ class CudaStitchPano {
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
  protected:
-
   static CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process_impl(
       const CudaMat<T_pipeline>& inputImage1,
       const CudaMat<T_pipeline>& inputImage2,
