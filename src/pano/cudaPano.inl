@@ -114,8 +114,9 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   CudaStatus cuerr;
 
   assert(canvas);
-
-  // assert(false);
+  assert(inputImage1.batch_size() == stitch_context.batch_size());
+  assert(inputImage2.batch_size() == stitch_context.batch_size());
+  assert(canvas->batch_size() == stitch_context.batch_size());
 
   auto roi_width = [](const cv::Rect2i& roi) { return roi.width; };
   if (!stitch_context.is_hard_seam()) {
