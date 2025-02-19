@@ -52,13 +52,13 @@
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
       "args": [
         //"--game-id=stitch-fix",
-        "--game-id=mlk-heat-1",
+        //"--game-id=mlk-heat-1",
         //"--game-id=pdp",
         //"--show",
         "--adjust=1",
         "--levels=0",
+        // "--levels=6",
         "--perf",
-        // "--levels=0",
         "--output=${workspaceRoot}/output.png",
       ],
       "sourceMap": {
