@@ -33,9 +33,10 @@
       "request": "launch",
       "program": "${workspaceFolder}/scripts/create_control_points.py",
       "args": [
-        "${env:HOME}/Videos/stitch-fix/GX010100.MP4",
-        "${env:HOME}/Videos/stitch-fix/GX010019.MP4",
-        "${env:HOME}/Videos/stitch-fix/hm_project.pto",
+        // "--game-id=mlk-heat-1",
+        "--left=${env:HOME}/Videos/mlk-heat-1/GX010097.MP4",
+        "--right=${env:HOME}/Videos/mlk-heat-1/GX010016.MP4",
+        // "${env:HOME}/Videos/stitch-fix/hm_project.pto",
       ],
       "console": "integratedTerminal",
       "justMyCode": false,
