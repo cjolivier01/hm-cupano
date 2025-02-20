@@ -72,6 +72,9 @@ def get_video_fps_and_duration(video_path: str) -> Tuple[float, float]:
         A tuple (fps, duration) where duration is computed as frame_count / fps.
     """
     cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print(f"Could not open video: {video_path}")
+        exit(1)
     fps: float = cap.get(cv2.CAP_PROP_FPS)
     frame_count: int = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
@@ -469,6 +472,7 @@ def configure_stitching(
     skip_if_exists: bool = False,
     fov: float = 108,  # Default FOV (e.g., GoPro Wide)
     max_control_points: int = 240,
+    scale: float = None,
     device: Optional[torch.device] = None,
 ) -> bool:
     """
@@ -564,6 +568,11 @@ def configure_stitching(
             autooptimiser_out,
             hm_project,
         ]
+        if scale and scale != 1.0:
+            cmd += [
+                "-x",
+                str(scale),
+            ]
         os.system(" ".join(cmd))
 
         # Generate mapping files using nona.
@@ -616,6 +625,11 @@ def main() -> None:
     )
     parser.add_argument("--left", default=None, help="Path to left video file")
     parser.add_argument("--right", default=None, help="Path to left video file")
+    parser.add_argument(
+        "--scale",
+        default=None,
+        help="Scale of the final panorama (i.e. for downsizing)",
+    )
     args = parser.parse_args()
 
     if (not args.left or not args.right) and not args.game_id:
@@ -623,15 +637,19 @@ def main() -> None:
         exit(1)
 
     if (not args.left or not args.right) and args.game_id:
-        config_file: str = os.path.join(
-            os.environ["HOME"], "Videos", args.game_id, "config.yaml"
-        )
+        game_dir: str = os.path.join(os.environ["HOME"], "Videos", args.game_id)
+        config_file: str = os.path.join(game_dir, "config.yaml")
         if not os.path.exists(config_file):
             print(f"Could not config config file: {config_file}")
             exit(1)
-        config_yaml = yaml.load(config_file)
-        print(config_yaml)
-        assert False  # finish this bit
+        with open(config_file, "r") as file:
+            config_yaml = yaml.safe_load(file)
+        args.left = config_yaml["game"]["videos"]["left"][0]
+        if "/" not in args.left:
+            args.left = os.path.join(game_dir, args.left)
+        args.right = config_yaml["game"]["videos"]["right"][0]
+        if "/" not in args.right:
+            args.right = os.path.join(game_dir, args.right)
 
     # Determine frame offsets by synchronizing audio.
     lfo, rfo = synchronize_by_audio(args.left, args.right)
