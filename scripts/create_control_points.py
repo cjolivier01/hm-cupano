@@ -666,6 +666,7 @@ def main() -> None:
         frame2,
         directory=str(Path(args.left).parent),
         max_control_points=240,
+        scale=args.scale,
     )
 
 
