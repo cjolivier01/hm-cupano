@@ -7,7 +7,7 @@
 namespace hm {
 
 // Helper: Returns the number of channels expected for a given CUDA pixel type.
-static inline int cudaPixelTypeChannels(CudaPixelType fmt) {
+inline int cudaPixelTypeChannels(CudaPixelType fmt) {
   switch (fmt) {
     case CUDA_PIXEL_UCHAR1:
       return 1;
@@ -129,8 +129,8 @@ CudaMat<T>::CudaMat(int B, int W, int H, int C, CudaPixelType type) : batch_size
   size_t elemSize = cudaPixelElementSize(type_);
   // Ensure that the template type T matches the expected element size.
   assert(sizeof(T) == elemSize);
-  size = static_cast<size_t>(B * W * H) * elemSize;
-  cudaMalloc(&d_data_, size);
+  const size_t total_size = static_cast<size_t>(B * W * H) * elemSize;
+  cudaMalloc(&d_data_, total_size);
 }
 
 template <typename T>
@@ -208,7 +208,7 @@ cv::Mat CudaMat<T>::download(int batch_item) const {
   size_t size_each = static_cast<size_t>(rows_ * cols_) * elemSize;
   const uint8_t* src_ptr = reinterpret_cast<const uint8_t*>(d_data_) + batch_item * size_each;
   cudaMemcpy(mat.data, src_ptr, size_each, cudaMemcpyDeviceToHost);
-  if(pitch_cols != cols_) {
+  if (pitch_cols != cols_) {
     mat = mat(cv::Rect(0, 0, cols_, rows_));
   }
   return mat;
