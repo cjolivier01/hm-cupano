@@ -5,6 +5,7 @@ cc_binary(
     ],
     linkopts = [
         "-ltiff",
+        "-lopencv_imgproc",
     ],
     visibility = ["//visibility:public"],
     deps = [
