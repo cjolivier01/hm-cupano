@@ -7,6 +7,7 @@ cuda_library(
         "cudaImageAdjust.cu",
         "cudaMakeFull.cu",
         "cudaRemap.cu",
+        "cudaStabilize.cu",
     ],
     hdrs = [
         "cudaBlend.h",
