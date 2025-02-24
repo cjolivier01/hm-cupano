@@ -25,12 +25,8 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
       /*batch_size=*/batch_size, /*is_hard_seam=*/num_levels == 0);
   assert(!control_masks.positions.empty());
   // Compute canvas size
-  const int canvas_width = std::max(
-      control_masks.positions[0].xpos + control_masks.img1_col.cols,
-      control_masks.positions[1].xpos + control_masks.img2_col.cols);
-  const int canvas_height = std::max(
-      control_masks.positions[0].ypos + control_masks.img1_col.rows,
-      control_masks.positions[1].ypos + control_masks.img2_col.rows);
+  const int canvas_width = control_masks.canvas_width();
+  const int canvas_height = control_masks.canvas_height();
 
   if (!quiet) {
     std::cout << "Stitched canvas size: " << canvas_width << " x " << canvas_height << std::endl;

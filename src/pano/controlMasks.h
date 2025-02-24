@@ -41,7 +41,11 @@ public:
    */
   bool load(std::string game_dir);
 
-  bool is_valid() const ;
+  bool is_valid() const;
+
+  size_t canvas_width() const;
+
+  size_t canvas_height() const;
 
   /// Column mapping for image1 (e.g., from row/col transformations).
   cv::Mat img1_col;

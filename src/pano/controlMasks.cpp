@@ -148,6 +148,14 @@ bool ControlMasks::is_valid() const {
       !whole_seam_mask_image.empty() && positions.size() == 2;
 }
 
+size_t ControlMasks::canvas_width() const {
+  return std::max(positions.at(0).xpos + img1_col.cols, positions.at(1).xpos + img2_col.cols);
+}
+
+size_t ControlMasks::canvas_height() const {
+  return std::max(positions.at(0).ypos + img1_col.rows, positions.at(1).ypos + img2_col.rows);
+}
+
 bool ControlMasks::load(std::string game_dir) {
   if (!game_dir.empty() && game_dir.back() != '/') {
     game_dir += '/';
