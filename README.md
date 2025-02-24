@@ -42,12 +42,16 @@ Run the stitching test
 
 Left frame:
 ![alt text](./assets/left.png)
+
 Right frame:
 ![alt text](./assets/right.png)
-Key points (Superpoint)
+
+Key points
 ![alt text](./assets/keypoints.png)
-Keypoint Matches
+
+Matches
 ![alt text](./assets/matches.png)
+
 Stitched Panorama
 ![alt text](./assets/s.png)
 
