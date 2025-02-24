@@ -39,3 +39,15 @@ Run the stitching test
 ```
 ./bazel-bin/tests/test_cuda_blend --show --perf --output=myframe.png --directory=<directory where the video was/project files were saved>
 ```
+
+Left frame:
+![alt text](./assets/left.png)
+Right frame:
+![alt text](./assets/right.png)
+Key points (Superpoint)
+![alt text](./assets/keypoints.png)
+Keypoint Matches
+![alt text](./assets/matches.png)
+Stitched Panorama
+![alt text](./assets/s.png)
+
