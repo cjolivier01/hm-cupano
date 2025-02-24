@@ -46,12 +46,12 @@ Left frame:
 Right frame:
 ![alt text](./assets/right.png)
 
-Key points
+Key points (SuperPoint)
 ![alt text](./assets/keypoints.png)
 
-Matches
+Matches (LightGlue)
 ![alt text](./assets/matches.png)
 
-Stitched Panorama
+Stitched Panorama (CUDA Kernels, hard seam or laplacian blendinig + color correction)
 ![alt text](./assets/s.png)
 
