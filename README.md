@@ -52,6 +52,6 @@ Key points (SuperPoint)
 Matches (LightGlue)
 ![alt text](./assets/matches.png)
 
-Stitched Panorama (CUDA Kernels, hard seam or laplacian blendinig + color correction)
+Stitched Panorama (CUDA Kernels, hard seam or laplacian blending + color correction)
 ![alt text](./assets/s.png)
 
