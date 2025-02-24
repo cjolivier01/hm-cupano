@@ -6,7 +6,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "----------------- jetson-utils -----------------",
+      "name": "----------------- hm-cupano -----------------",
     },
     {
       //
@@ -33,9 +33,11 @@
       "request": "launch",
       "program": "${workspaceFolder}/scripts/create_control_points.py",
       "args": [
-        "${env:HOME}/Videos/stitch-fix/GX010100.MP4",
-        "${env:HOME}/Videos/stitch-fix/GX010019.MP4",
-        "${env:HOME}/Videos/stitch-fix/hm_project.pto",
+        "--game-id=mlk-heat-1",
+        //"--left=${env:HOME}/Videos/mlk-heat-1/GX010097.MP4",
+        //"--right=${env:HOME}/Videos/mlk-heat-1/GX010016.MP4",
+        // "${env:HOME}/Videos/stitch-fix/hm_project.pto",
+        "--scale=0.7",
       ],
       "console": "integratedTerminal",
       "justMyCode": false,
@@ -51,10 +53,15 @@
       "cwd": "${workspaceFolder}",
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
       "args": [
+        //"--game-id=stitch-fix",
         "--game-id=mlk-heat-1",
-        "--show",
+        // "--game-id=pdp",
+        // "--show",
         "--adjust=1",
-        "--output=${workspaceRoot}/output.png",
+        "--levels=0",
+        //"--levels=6",
+        "--perf",
+        //"--output=${workspaceRoot}/output.png",
       ],
       "sourceMap": {
         "/proc/self/cwd": "${workspaceFolder}",
@@ -62,11 +69,11 @@
         "external/deepstream/sources": "${env:HOME}/src/hstream/external/deepstream/sources",
         "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils",
       },
-      //"stopOnEntry": true,
       "env": {
         "DISPLAY": ":1",
         "CUDA_LAUNCH_BLOCKING": "1",
       },
+      //"stopOnEntry": true,
       "preLaunchTask": "Build All",
     },
     {
@@ -76,11 +83,17 @@
       "cwd": "${workspaceFolder}",
       "debuggerPath": "/usr/local/cuda/bin/cuda-gdb",
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
-      "args": "--game-id=mlk-heat-1 --show --output=${workspaceRoot}/output.png",
+      "args": "--game-id=pdp",
       "initCommands": [
         "directory ${workspaceFolder}",
       ],
       "preLaunchTask": "Build All",
+      "environment": [
+        {
+          "name": "CUDA_LAUNCH_BLOCKING",
+          "value": "1"
+        }
+      ],
     },
   ]
 }

@@ -1,0 +1,37 @@
+load("@rules_cuda//cuda:defs.bzl", "cuda_library")
+
+cuda_library(
+    name = "cuda_blend_cuda_lib",
+    srcs = [
+        "cudaBlend.cu",
+        "cudaImageAdjust.cu",
+        "cudaMakeFull.cu",
+        "cudaRemap.cu",
+        "cudaStabilize.cu",
+    ],
+    hdrs = [
+        "cudaBlend.h",
+        "cudaImageAdjust.h",
+        "cudaMakeFull.h",
+        "cudaRemap.h",
+        "cudaStatus.h",
+        "cudaTypes.h",
+    ],
+    copts = [
+        "-std=c++17",
+        "-Xcompiler=-fPIC",
+        # "-Xcompiler=-rdynamic",
+        #"-Xcompiler=-O0",
+        #"-Xcompiler=-g",
+        "-Wno-deprecated-gpu-targets",
+        #"-G",
+        #"-g",
+        "-keep",
+        #"-O0",
+    ],
+    includes = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@local_cuda//:cuda_runtime",
+    ],
+)

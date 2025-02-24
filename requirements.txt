@@ -3,4 +3,4 @@ kornia
 scipy
 ffmpegio
 opencv-python
-
+pyyaml

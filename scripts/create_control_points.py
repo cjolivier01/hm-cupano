@@ -18,6 +18,7 @@ import kornia.feature as KF
 import numpy as np
 import scipy.signal
 import torch
+import yaml
 from lightglue import LightGlue, SuperPoint, viz2d
 from lightglue.utils import load_image, rbd
 from scipy.signal import correlate
@@ -71,6 +72,9 @@ def get_video_fps_and_duration(video_path: str) -> Tuple[float, float]:
         A tuple (fps, duration) where duration is computed as frame_count / fps.
     """
     cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print(f"Could not open video: {video_path}")
+        exit(1)
     fps: float = cap.get(cv2.CAP_PROP_FPS)
     frame_count: int = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
@@ -468,6 +472,7 @@ def configure_stitching(
     skip_if_exists: bool = False,
     fov: float = 108,  # Default FOV (e.g., GoPro Wide)
     max_control_points: int = 240,
+    scale: float = None,
     device: Optional[torch.device] = None,
 ) -> bool:
     """
@@ -563,6 +568,11 @@ def configure_stitching(
             autooptimiser_out,
             hm_project,
         ]
+        if scale and scale != 1.0:
+            cmd += [
+                "-x",
+                str(scale),
+            ]
         os.system(" ".join(cmd))
 
         # Generate mapping files using nona.
@@ -608,26 +618,55 @@ def main() -> None:
             "compute control points using LightGlue and SuperPoint, and update a Hugin PTO file."
         )
     )
-    parser.add_argument("video1", help="Path to first video file")
-    parser.add_argument("video2", help="Path to second video file")
-    parser.add_argument("pto_file", help="Path to the Hugin PTO file to update")
+    parser.add_argument(
+        "--game-id",
+        default=None,
+        help="Game ID (everything being in $HOME/Videos/game-id)",
+    )
+    parser.add_argument("--left", default=None, help="Path to left video file")
+    parser.add_argument("--right", default=None, help="Path to left video file")
+    parser.add_argument(
+        "--scale",
+        default=None,
+        help="Scale of the final panorama (i.e. for downsizing)",
+    )
     args = parser.parse_args()
 
+    if (not args.left or not args.right) and not args.game_id:
+        print("You must supply either left and right videos or a game-id")
+        exit(1)
+
+    if (not args.left or not args.right) and args.game_id:
+        game_dir: str = os.path.join(os.environ["HOME"], "Videos", args.game_id)
+        config_file: str = os.path.join(game_dir, "config.yaml")
+        if not os.path.exists(config_file):
+            print(f"Could not config config file: {config_file}")
+            exit(1)
+        with open(config_file, "r") as file:
+            config_yaml = yaml.safe_load(file)
+        args.left = config_yaml["game"]["videos"]["left"][0]
+        if "/" not in args.left:
+            args.left = os.path.join(game_dir, args.left)
+        args.right = config_yaml["game"]["videos"]["right"][0]
+        if "/" not in args.right:
+            args.right = os.path.join(game_dir, args.right)
+
     # Determine frame offsets by synchronizing audio.
-    lfo, rfo = synchronize_by_audio(args.video1, args.video2)
+    lfo, rfo = synchronize_by_audio(args.left, args.right)
 
     print("Extracting frames at the sync points...")
     # Ensure frame indices are integers.
-    frame1: np.ndarray = extract_frame(args.video1, lfo)
-    frame2: np.ndarray = extract_frame(args.video2, rfo)
+    frame1: np.ndarray = extract_frame(args.left, lfo)
+    frame2: np.ndarray = extract_frame(args.right, rfo)
 
     # Run the stitching pipeline which includes control point computation and PTO update.
     print("Running SuperPoint and LightGlue to obtain control point matches...")
     configure_stitching(
         frame1,
         frame2,
-        directory=str(Path(args.video1).parent),
+        directory=str(Path(args.left).parent),
         max_control_points=240,
+        scale=args.scale,
     )
 
 

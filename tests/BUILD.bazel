@@ -5,10 +5,11 @@ cc_binary(
     ],
     linkopts = [
         "-ltiff",
+        "-lopencv_imgproc",
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//src:cuda_pano",
+        "//src/pano:cuda_pano",
         "@local_cuda//:cuda_runtime",
         "@opencv_linux//:opencv",
     ],
