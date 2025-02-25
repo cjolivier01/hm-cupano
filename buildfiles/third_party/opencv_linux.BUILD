@@ -11,8 +11,8 @@ config_setting(
     constraint_values = ["@platforms//cpu:x86_64"],
 )
 
-# OPENCV_VERSION = "opencv5"
-OPENCV_VERSION = "opencv4"
+OPENCV_VERSION = "opencv5"
+# OPENCV_VERSION = "opencv4"
 
 cc_library(
     name = "opencv",
