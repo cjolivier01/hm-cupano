@@ -40,8 +40,12 @@ std::optional<cv::Scalar> match_seam_images(
 
   // ----- Process image1 (sampling from the left side of the seam) -----
   // Only examine the middle 50% of image1's rows.
-  int startRow1 = image1.rows / 4;
-  int endRow1 = (3 * image1.rows) / 4;
+
+  constexpr int kTopDivisor = 4;
+  constexpr int kBottomDivisor = 10;
+
+  int startRow1 = image1.rows / kTopDivisor;
+  int endRow1 = ((kBottomDivisor - 1) * image1.rows) / kBottomDivisor;
   for (int r = startRow1; r < endRow1; r++) {
     // Map image1’s local row (r) to the seam mask’s row coordinate.
     int globalRow = topLeft1.y + r;
@@ -95,8 +99,8 @@ std::optional<cv::Scalar> match_seam_images(
 
   // ----- Process image2 (sampling from the right side of the seam) -----
   // Only examine the middle 50% of image2's rows.
-  int startRow2 = image2.rows / 4;
-  int endRow2 = (3 * image2.rows) / 4;
+  int startRow2 = image2.rows / kTopDivisor;
+  int endRow2 = ((kBottomDivisor - 1) * image2.rows) / kBottomDivisor;
   for (int r = startRow2; r < endRow2; r++) {
     // Map image2’s local row (r) to the seam mask’s row coordinate.
     int globalRow = topLeft2.y + r;
