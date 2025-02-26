@@ -7,6 +7,15 @@ cc_binary(
     srcs = [
         "Stabilization.cpp",
     ],
+    linkopts = [
+      "-l:libopencv_cudafeatures2d.so",
+      "-l:libopencv_cudaarithm.so",
+      "-l:libopencv_cudaimgproc.so",
+      "-l:libopencv_cudaoptflow.so",
+      "-l:libopencv_cudawarping.so",
+      "-l:libopencv_3d.so",
+      "-l:libopencv_features.so",
+    ],
     deps = [
         ":frame_stabilizer",
     ],
@@ -44,7 +53,15 @@ cuda_library(
         "-keep",
         #"-O0",
     ],
-    # includes = ["."],
+    linkopts = [
+      "-l:libopencv_cudafeatures2d.so",
+      "-l:libopencv_cudaarithm.so",
+      "-l:libopencv_cudaimgproc.so",
+      "-l:libopencv_cudaoptflow.so",
+      "-l:libopencv_cudawarping.so",
+      "-l:libopencv_3d.so",
+      "-l:libopencv_features.so",
+    ],
     visibility = ["//visibility:private"],
     deps = [
         "@opencv_linux//:opencv",

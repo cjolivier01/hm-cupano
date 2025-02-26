@@ -95,5 +95,28 @@
         }
       ],
     },
+    {
+      "name": "(LLDB) Stabilization",
+      "type": "lldb",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "program": "${workspaceFolder}/bazel-bin/src/stable/stabilization",
+      "args": [
+        "/mnt/home/colivier-local/src/hstream/bouncy.mp4",
+        "unbouncy.mp4",
+      ],
+      "sourceMap": {
+        "/proc/self/cwd": "${workspaceFolder}",
+        "~/src": "${env:HOME}/src",
+        "external/deepstream/sources": "${env:HOME}/src/hstream/external/deepstream/sources",
+        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils",
+      },
+      "env": {
+        "DISPLAY": ":1",
+        "CUDA_LAUNCH_BLOCKING": "1",
+      },
+      //"stopOnEntry": true,
+      "preLaunchTask": "Build All",
+    },
   ]
 }

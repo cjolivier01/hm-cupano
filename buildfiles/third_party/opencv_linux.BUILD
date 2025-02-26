@@ -46,7 +46,7 @@ cc_library(
         "//conditions:default": [],
     }),
     linkopts = [
-        #"-L/usr/local/lib",
+        "-L/usr/local/lib",
         "-l:libopencv_core.so",
         #"-l:libopencv_calib3d.so",
         #"-l:libopencv_features2d.so",
