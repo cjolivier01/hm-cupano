@@ -6,7 +6,7 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 
-#include "cudaTypes.h"
+#include "cuda/cudaTypes.h"
 
 #ifdef WITH_JETSON_UTILS
 #include "imageFormat.h" // Assumed to define the jetson‑utils imageFormat enum (e.g. IMAGE_BGR8, etc.)
@@ -330,9 +330,8 @@ struct SurfaceInfo {
   int width{0};
   int height{0};
   int pitch{0};
-  mutable void *data_ptr{nullptr};
+  mutable void* data_ptr{nullptr};
 };
-
 
 /**
  * @brief Templated class to manage CUDA device memory for one or more images.
@@ -431,10 +430,10 @@ class CudaMat {
   constexpr int batch_size() const;
 
   constexpr int channels() const {
-    return sizeof(T)/sizeof(BaseScalar_t<T>);
-  } 
+    return sizeof(T) / sizeof(BaseScalar_t<T>);
+  }
 
-  constexpr int pitch() const { 
+  constexpr int pitch() const {
     return pitch_ ? pitch_ : sizeof(T) * width();
   }
 
@@ -444,10 +443,10 @@ class CudaMat {
 
   CudaSurface<T> surface() const {
     return CudaSurface<T>{
-      .d_ptr=d_data_,
-      .width=cols_,
-      .height=rows_,
-      .pitch=pitch(),
+        .d_ptr = d_data_,
+        .width = static_cast<uint32_t>(cols_),
+        .height = static_cast<uint32_t>(rows_),
+        .pitch = static_cast<uint32_t>(pitch()),
     };
   }
 

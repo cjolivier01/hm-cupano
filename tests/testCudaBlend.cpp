@@ -1,8 +1,8 @@
-#include "controlMasks.h"
-#include "cudaMat.h"
-#include "cudaPano.h"
-#include "cudaStatus.h"
-#include "showImage.h"
+#include "cuda/cudaStatus.h"
+#include "pano/controlMasks.h"
+#include "pano/cudaMat.h"
+#include "pano/cudaPano.h"
+#include "pano/showImage.h"
 
 #include <cuda_runtime.h> // for CUDA vector types
 #include <opencv2/opencv.hpp>

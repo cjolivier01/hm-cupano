@@ -135,12 +135,11 @@ CudaMat<T>::CudaMat(int B, int W, int H, int C, CudaPixelType type) : batch_size
 
 template <typename T>
 CudaMat<T>::CudaMat(int B, int W, int H, int C)
-    : batch_size_(B),
-      rows_(H),
+    : rows_(H),
       cols_(W),
-      type_(CudaTypeToPixelType<T>::value) // automatically inferred from T
-{
-  assert(cudaPixelTypeChannels(type_) == C * sizeof(T) / sizeof(typename BaseScalar<T>::type));
+      type_(CudaTypeToPixelType<T>::value), // automatically inferred from T
+      batch_size_(B) {
+  assert(static_cast<size_t>(cudaPixelTypeChannels(type_)) == C * sizeof(T) / sizeof(typename BaseScalar<T>::type));
   size_t elemSize = cudaPixelElementSize(type_);
   assert(sizeof(T) == elemSize);
   size_t total_size = static_cast<size_t>(B * W * H) * elemSize;
@@ -150,10 +149,10 @@ CudaMat<T>::CudaMat(int B, int W, int H, int C)
 template <typename T>
 CudaMat<T>::CudaMat(T* d_data, int B, int W, int H, int C)
     : d_data_(d_data),
-      batch_size_(B),
       rows_(H),
       cols_(W),
       type_(CudaTypeToPixelType<T>::value), // automatically inferred from T
+      batch_size_(B),
       owns_(false) {
   assert(cudaPixelTypeChannels(type_) == C * sizeof(T) / sizeof(typename BaseScalar<T>::type));
   assert(sizeof(T) == cudaPixelElementSize(type_));
