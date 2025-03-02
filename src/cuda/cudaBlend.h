@@ -10,12 +10,14 @@
 
 #pragma once
 
+#include <cuda_fp16.h>
 #include <cuda_runtime.h>
-#include <vector>
+
 #include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <iostream>
+#include <vector>
 
 /**
  * @brief Batched Context Structure for Laplacian Blending (images only).
@@ -85,21 +87,21 @@ struct CudaBatchLaplacianBlendContext {
     }
   }
 
-  const int numLevels;           ///< Number of pyramid levels.
-  const int imageWidth;          ///< Width of the full-resolution image.
-  const int imageHeight;         ///< Height of the full-resolution image.
-  const int batchSize;           ///< Number of images in the batch.
-  size_t allocation_size{0};     ///< Total allocated device memory size.
-  std::vector<int> widths;       ///< Widths of images at each pyramid level.
-  std::vector<int> heights;      ///< Heights of images at each pyramid level.
-  std::vector<T*> d_gauss1;      ///< Gaussian pyramid for first image.
-  std::vector<T*> d_gauss2;      ///< Gaussian pyramid for second image.
-  std::vector<T*> d_maskPyr;     ///< Pyramid for the shared mask.
-  std::vector<T*> d_lap1;        ///< Laplacian pyramid for first image.
-  std::vector<T*> d_lap2;        ///< Laplacian pyramid for second image.
-  std::vector<T*> d_blend;       ///< Blended Laplacian pyramid.
+  const int numLevels; ///< Number of pyramid levels.
+  const int imageWidth; ///< Width of the full-resolution image.
+  const int imageHeight; ///< Height of the full-resolution image.
+  const int batchSize; ///< Number of images in the batch.
+  size_t allocation_size{0}; ///< Total allocated device memory size.
+  std::vector<int> widths; ///< Widths of images at each pyramid level.
+  std::vector<int> heights; ///< Heights of images at each pyramid level.
+  std::vector<T*> d_gauss1; ///< Gaussian pyramid for first image.
+  std::vector<T*> d_gauss2; ///< Gaussian pyramid for second image.
+  std::vector<T*> d_maskPyr; ///< Pyramid for the shared mask.
+  std::vector<T*> d_lap1; ///< Laplacian pyramid for first image.
+  std::vector<T*> d_lap2; ///< Laplacian pyramid for second image.
+  std::vector<T*> d_blend; ///< Blended Laplacian pyramid.
   std::vector<T*> d_resonstruct; ///< Temporary arrays for reconstruction.
-  bool initialized{false};       ///< Flag indicating if the context has been initialized.
+  bool initialized{false}; ///< Flag indicating if the context has been initialized.
 };
 
 /**
