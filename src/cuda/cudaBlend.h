@@ -120,7 +120,7 @@ struct CudaBatchLaplacianBlendContext {
  * @param stream CUDA stream to use for all kernel launches and memory copies (default is 0).
  * @return cudaError_t CUDA error code.
  */
-template <typename T>
+template <typename T, typename F_T = float>
 cudaError_t cudaBatchedLaplacianBlend(
     const T* h_image1,
     const T* h_image2,
@@ -148,7 +148,7 @@ cudaError_t cudaBatchedLaplacianBlend(
  * @param stream CUDA stream to use for all kernel launches and memory copies (default is 0).
  * @return cudaError_t CUDA error code.
  */
-template <typename T>
+template <typename T, typename F_T = float>
 cudaError_t cudaBatchedLaplacianBlendWithContext(
     const T* d_image1,
     const T* d_image2,

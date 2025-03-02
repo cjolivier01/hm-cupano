@@ -111,7 +111,7 @@ __global__ void BatchedDownsampleKernelMask(
 // Batched upsample kernel for RGB images.
 // Upsamples a low-resolution image by a factor of 2 using bilinear interpolation.
 // ---------------------
-template <typename T>
+template <typename T, typename F_T>
 __global__ void BatchedUpsampleKernelRGB(
     const T* input,
     int inWidth,
@@ -134,12 +134,12 @@ __global__ void BatchedUpsampleKernelRGB(
   const T* inImage = input + b * inImageSize;
   T* outImage = output + b * outImageSize;
 
-  float gx = static_cast<float>(x) / 2.0f;
-  float gy = static_cast<float>(y) / 2.0f;
+  F_T gx = static_cast<F_T>(x) / 2.0f;
+  F_T gy = static_cast<F_T>(y) / 2.0f;
   int gxi = floorf(gx);
   int gyi = floorf(gy);
-  float dx = gx - gxi;
-  float dy = gy - gyi;
+  F_T dx = gx - gxi;
+  F_T dy = gy - gyi;
   int gxi1 = min(gxi + 1, inWidth - 1);
   int gyi1 = min(gyi + 1, inHeight - 1);
 
@@ -148,32 +148,32 @@ __global__ void BatchedUpsampleKernelRGB(
   int idx01 = (gyi1 * inWidth + gxi) * 3;
   int idx11 = (gyi1 * inWidth + gxi1) * 3;
 
-  float outR, outG, outB;
+  F_T outR, outG, outB;
   { // R channel interpolation.
-    float val00 = static_cast<float>(inImage[idx00 + 0]);
-    float val10 = static_cast<float>(inImage[idx10 + 0]);
-    float val01 = static_cast<float>(inImage[idx01 + 0]);
-    float val11 = static_cast<float>(inImage[idx11 + 0]);
-    float val0 = val00 * (1.0f - dx) + val10 * dx;
-    float val1 = val01 * (1.0f - dx) + val11 * dx;
+    F_T val00 = static_cast<F_T>(inImage[idx00 + 0]);
+    F_T val10 = static_cast<F_T>(inImage[idx10 + 0]);
+    F_T val01 = static_cast<F_T>(inImage[idx01 + 0]);
+    F_T val11 = static_cast<F_T>(inImage[idx11 + 0]);
+    F_T val0 = val00 * (1.0f - dx) + val10 * dx;
+    F_T val1 = val01 * (1.0f - dx) + val11 * dx;
     outR = val0 * (1.0f - dy) + val1 * dy;
   }
   { // G channel interpolation.
-    float val00 = static_cast<float>(inImage[idx00 + 1]);
-    float val10 = static_cast<float>(inImage[idx10 + 1]);
-    float val01 = static_cast<float>(inImage[idx01 + 1]);
-    float val11 = static_cast<float>(inImage[idx11 + 1]);
-    float val0 = val00 * (1.0f - dx) + val10 * dx;
-    float val1 = val01 * (1.0f - dx) + val11 * dx;
+    F_T val00 = static_cast<F_T>(inImage[idx00 + 1]);
+    F_T val10 = static_cast<F_T>(inImage[idx10 + 1]);
+    F_T val01 = static_cast<F_T>(inImage[idx01 + 1]);
+    F_T val11 = static_cast<F_T>(inImage[idx11 + 1]);
+    F_T val0 = val00 * (1.0f - dx) + val10 * dx;
+    F_T val1 = val01 * (1.0f - dx) + val11 * dx;
     outG = val0 * (1.0f - dy) + val1 * dy;
   }
   { // B channel interpolation.
-    float val00 = static_cast<float>(inImage[idx00 + 2]);
-    float val10 = static_cast<float>(inImage[idx10 + 2]);
-    float val01 = static_cast<float>(inImage[idx01 + 2]);
-    float val11 = static_cast<float>(inImage[idx11 + 2]);
-    float val0 = val00 * (1.0f - dx) + val10 * dx;
-    float val1 = val01 * (1.0f - dx) + val11 * dx;
+    F_T val00 = static_cast<F_T>(inImage[idx00 + 2]);
+    F_T val10 = static_cast<F_T>(inImage[idx10 + 2]);
+    F_T val01 = static_cast<F_T>(inImage[idx01 + 2]);
+    F_T val11 = static_cast<F_T>(inImage[idx11 + 2]);
+    F_T val0 = val00 * (1.0f - dx) + val10 * dx;
+    F_T val1 = val01 * (1.0f - dx) + val11 * dx;
     outB = val0 * (1.0f - dy) + val1 * dy;
   }
   int idxOut = (y * outWidth + x) * 3;
@@ -187,7 +187,7 @@ __global__ void BatchedUpsampleKernelRGB(
 // For each pixel in the high-resolution Gaussian level, compute:
 // Laplacian = Gaussian_high - upsample(Gaussian_low)
 // ---------------------
-template <typename T>
+template <typename T, typename F_T>
 __global__ void BatchedComputeLaplacianKernelRGB(
     const T* gaussHigh,
     int highWidth,
@@ -212,12 +212,12 @@ __global__ void BatchedComputeLaplacianKernelRGB(
   const T* lowImage = gaussLow + b * lowImageSize;
   T* lapImage = laplacian + b * highImageSize;
 
-  float gx = static_cast<float>(x) / 2.0f;
-  float gy = static_cast<float>(y) / 2.0f;
+  F_T gx = static_cast<F_T>(x) / static_cast<F_T>(2.0f);
+  F_T gy = static_cast<F_T>(y) / static_cast<F_T>(2.0f);
   int gxi = floorf(gx);
   int gyi = floorf(gy);
-  float dx = gx - gxi;
-  float dy = gy - gyi;
+  F_T dx = gx - static_cast<F_T>(gxi);
+  F_T dy = gy - static_cast<F_T>(gyi);
   int gxi1 = min(gxi + 1, lowWidth - 1);
   int gyi1 = min(gyi + 1, lowHeight - 1);
 
@@ -226,38 +226,40 @@ __global__ void BatchedComputeLaplacianKernelRGB(
   int idx01 = (gyi1 * lowWidth + gxi) * 3;
   int idx11 = (gyi1 * lowWidth + gxi1) * 3;
 
-  float upR, upG, upB;
+  const F_T F_ONE = static_cast<F_T>(1.0);
+
+  F_T upR, upG, upB;
   { // R channel.
-    float val00 = static_cast<float>(lowImage[idx00 + 0]);
-    float val10 = static_cast<float>(lowImage[idx10 + 0]);
-    float val01 = static_cast<float>(lowImage[idx01 + 0]);
-    float val11 = static_cast<float>(lowImage[idx11 + 0]);
-    float val0 = val00 * (1.0f - dx) + val10 * dx;
-    float val1 = val01 * (1.0f - dx) + val11 * dx;
-    upR = val0 * (1.0f - dy) + val1 * dy;
+    F_T val00 = static_cast<F_T>(lowImage[idx00 + 0]);
+    F_T val10 = static_cast<F_T>(lowImage[idx10 + 0]);
+    F_T val01 = static_cast<F_T>(lowImage[idx01 + 0]);
+    F_T val11 = static_cast<F_T>(lowImage[idx11 + 0]);
+    F_T val0 = val00 * (F_ONE - dx) + val10 * dx;
+    F_T val1 = val01 * (F_ONE - dx) + val11 * dx;
+    upR = val0 * (F_ONE - dy) + val1 * dy;
   }
   { // G channel.
-    float val00 = static_cast<float>(lowImage[idx00 + 1]);
-    float val10 = static_cast<float>(lowImage[idx10 + 1]);
-    float val01 = static_cast<float>(lowImage[idx01 + 1]);
-    float val11 = static_cast<float>(lowImage[idx11 + 1]);
-    float val0 = val00 * (1.0f - dx) + val10 * dx;
-    float val1 = val01 * (1.0f - dx) + val11 * dx;
-    upG = val0 * (1.0f - dy) + val1 * dy;
+    F_T val00 = static_cast<F_T>(lowImage[idx00 + 1]);
+    F_T val10 = static_cast<F_T>(lowImage[idx10 + 1]);
+    F_T val01 = static_cast<F_T>(lowImage[idx01 + 1]);
+    F_T val11 = static_cast<F_T>(lowImage[idx11 + 1]);
+    F_T val0 = val00 * (F_ONE - dx) + val10 * dx;
+    F_T val1 = val01 * (F_ONE - dx) + val11 * dx;
+    upG = val0 * (F_ONE - dy) + val1 * dy;
   }
   { // B channel.
-    float val00 = static_cast<float>(lowImage[idx00 + 2]);
-    float val10 = static_cast<float>(lowImage[idx10 + 2]);
-    float val01 = static_cast<float>(lowImage[idx01 + 2]);
-    float val11 = static_cast<float>(lowImage[idx11 + 2]);
-    float val0 = val00 * (1.0f - dx) + val10 * dx;
-    float val1 = val01 * (1.0f - dx) + val11 * dx;
-    upB = val0 * (1.0f - dy) + val1 * dy;
+    F_T val00 = static_cast<F_T>(lowImage[idx00 + 2]);
+    F_T val10 = static_cast<F_T>(lowImage[idx10 + 2]);
+    F_T val01 = static_cast<F_T>(lowImage[idx01 + 2]);
+    F_T val11 = static_cast<F_T>(lowImage[idx11 + 2]);
+    F_T val0 = val00 * (F_ONE - dx) + val10 * dx;
+    F_T val1 = val01 * (F_ONE - dx) + val11 * dx;
+    upB = val0 * (F_ONE - dy) + val1 * dy;
   }
   int idxHigh = (y * highWidth + x) * 3;
-  lapImage[idxHigh + 0] = static_cast<T>(static_cast<float>(highImage[idxHigh + 0]) - upR);
-  lapImage[idxHigh + 1] = static_cast<T>(static_cast<float>(highImage[idxHigh + 1]) - upG);
-  lapImage[idxHigh + 2] = static_cast<T>(static_cast<float>(highImage[idxHigh + 2]) - upB);
+  lapImage[idxHigh + 0] = static_cast<T>(static_cast<F_T>(highImage[idxHigh + 0]) - upR);
+  lapImage[idxHigh + 1] = static_cast<T>(static_cast<F_T>(highImage[idxHigh + 1]) - upG);
+  lapImage[idxHigh + 2] = static_cast<T>(static_cast<F_T>(highImage[idxHigh + 2]) - upB);
 }
 
 // ---------------------
@@ -265,7 +267,7 @@ __global__ void BatchedComputeLaplacianKernelRGB(
 // Blends two Laplacian images using a single–channel mask.
 // (The shared mask is not batched.)
 // ---------------------
-template <typename T>
+template <typename T, typename F_T>
 __global__ void BatchedBlendKernelRGB(
     const T* lap1,
     const T* lap2,
@@ -290,15 +292,17 @@ __global__ void BatchedBlendKernelRGB(
   const T* maskImage = mask;
   T* blendImage = blended + b * imageSizeRGB;
 
+  const F_T F_ONE = static_cast<F_T>(1.0);
+
   int idx = (y * width + x) * 3;
-  float m = static_cast<float>(maskImage[y * width + x]);
-  float mm1 = 1.0f - m;
+  F_T m = static_cast<F_T>(maskImage[y * width + x]);
+  F_T mm1 = F_ONE - m;
   blendImage[idx + 0] =
-      static_cast<T>(m * static_cast<float>(lap1Image[idx + 0]) + mm1 * static_cast<float>(lap2Image[idx + 0]));
+      static_cast<T>(m * static_cast<F_T>(lap1Image[idx + 0]) + mm1 * static_cast<F_T>(lap2Image[idx + 0]));
   blendImage[idx + 1] =
-      static_cast<T>(m * static_cast<float>(lap1Image[idx + 1]) + mm1 * static_cast<float>(lap2Image[idx + 1]));
+      static_cast<T>(m * static_cast<F_T>(lap1Image[idx + 1]) + mm1 * static_cast<F_T>(lap2Image[idx + 1]));
   blendImage[idx + 2] =
-      static_cast<T>(m * static_cast<float>(lap1Image[idx + 2]) + mm1 * static_cast<float>(lap2Image[idx + 2]));
+      static_cast<T>(m * static_cast<F_T>(lap1Image[idx + 2]) + mm1 * static_cast<F_T>(lap2Image[idx + 2]));
 }
 
 // ---------------------
@@ -306,7 +310,7 @@ __global__ void BatchedBlendKernelRGB(
 // Reconstructs the higher-resolution image by upsampling the lower-resolution
 // reconstruction and adding the blended Laplacian.
 // ---------------------
-template <typename T>
+template <typename T, typename F_T>
 __global__ void BatchedReconstructKernelRGB(
     const T* lowerRes,
     int lowWidth,
@@ -331,12 +335,14 @@ __global__ void BatchedReconstructKernelRGB(
   const T* lapImage = lap + b * highImageSize;
   T* reconImage = reconstruction + b * highImageSize;
 
-  float gx = static_cast<float>(x) / 2.0f;
-  float gy = static_cast<float>(y) / 2.0f;
+  const F_T F_ONE = static_cast<F_T>(1.0);
+
+  F_T gx = static_cast<F_T>(x) / static_cast<F_T>(2.0f);
+  F_T gy = static_cast<F_T>(y) / static_cast<F_T>(2.0f);
   int gxi = floorf(gx);
   int gyi = floorf(gy);
-  float dx = gx - gxi;
-  float dy = gy - gyi;
+  F_T dx = gx - static_cast<F_T>(gxi);
+  F_T dy = gy - static_cast<F_T>(gyi);
   int gxi1 = min(gxi + 1, lowWidth - 1);
   int gyi1 = min(gyi + 1, lowHeight - 1);
 
@@ -345,45 +351,45 @@ __global__ void BatchedReconstructKernelRGB(
   int idx01 = (gyi1 * lowWidth + gxi) * 3;
   int idx11 = (gyi1 * lowWidth + gxi1) * 3;
 
-  float upR, upG, upB;
+  F_T upR, upG, upB;
   { // R channel.
-    float val00 = static_cast<float>(lowImage[idx00 + 0]);
-    float val10 = static_cast<float>(lowImage[idx10 + 0]);
-    float val01 = static_cast<float>(lowImage[idx01 + 0]);
-    float val11 = static_cast<float>(lowImage[idx11 + 0]);
-    float val0 = val00 * (1.0f - dx) + val10 * dx;
-    float val1 = val01 * (1.0f - dx) + val11 * dx;
-    upR = val0 * (1.0f - dy) + val1 * dy;
+    F_T val00 = static_cast<F_T>(lowImage[idx00 + 0]);
+    F_T val10 = static_cast<F_T>(lowImage[idx10 + 0]);
+    F_T val01 = static_cast<F_T>(lowImage[idx01 + 0]);
+    F_T val11 = static_cast<F_T>(lowImage[idx11 + 0]);
+    F_T val0 = val00 * (F_ONE - dx) + val10 * dx;
+    F_T val1 = val01 * (F_ONE - dx) + val11 * dx;
+    upR = val0 * (F_ONE - dy) + val1 * dy;
   }
   { // G channel.
-    float val00 = static_cast<float>(lowImage[idx00 + 1]);
-    float val10 = static_cast<float>(lowImage[idx10 + 1]);
-    float val01 = static_cast<float>(lowImage[idx01 + 1]);
-    float val11 = static_cast<float>(lowImage[idx11 + 1]);
-    float val0 = val00 * (1.0f - dx) + val10 * dx;
-    float val1 = val01 * (1.0f - dx) + val11 * dx;
-    upG = val0 * (1.0f - dy) + val1 * dy;
+    F_T val00 = static_cast<F_T>(lowImage[idx00 + 1]);
+    F_T val10 = static_cast<F_T>(lowImage[idx10 + 1]);
+    F_T val01 = static_cast<F_T>(lowImage[idx01 + 1]);
+    F_T val11 = static_cast<F_T>(lowImage[idx11 + 1]);
+    F_T val0 = val00 * (F_ONE - dx) + val10 * dx;
+    F_T val1 = val01 * (F_ONE - dx) + val11 * dx;
+    upG = val0 * (F_ONE - dy) + val1 * dy;
   }
   { // B channel.
-    float val00 = static_cast<float>(lowImage[idx00 + 2]);
-    float val10 = static_cast<float>(lowImage[idx10 + 2]);
-    float val01 = static_cast<float>(lowImage[idx01 + 2]);
-    float val11 = static_cast<float>(lowImage[idx11 + 2]);
-    float val0 = val00 * (1.0f - dx) + val10 * dx;
-    float val1 = val01 * (1.0f - dx) + val11 * dx;
-    upB = val0 * (1.0f - dy) + val1 * dy;
+    F_T val00 = static_cast<F_T>(lowImage[idx00 + 2]);
+    F_T val10 = static_cast<F_T>(lowImage[idx10 + 2]);
+    F_T val01 = static_cast<F_T>(lowImage[idx01 + 2]);
+    F_T val11 = static_cast<F_T>(lowImage[idx11 + 2]);
+    F_T val0 = val00 * (F_ONE - dx) + val10 * dx;
+    F_T val1 = val01 * (F_ONE - dx) + val11 * dx;
+    upB = val0 * (F_ONE - dy) + val1 * dy;
   }
   int idxHigh = (y * highWidth + x) * 3;
-  reconImage[idxHigh + 0] = static_cast<T>(upR + static_cast<float>(lapImage[idxHigh + 0]));
-  reconImage[idxHigh + 1] = static_cast<T>(upG + static_cast<float>(lapImage[idxHigh + 1]));
-  reconImage[idxHigh + 2] = static_cast<T>(upB + static_cast<float>(lapImage[idxHigh + 2]));
+  reconImage[idxHigh + 0] = static_cast<T>(upR + static_cast<F_T>(lapImage[idxHigh + 0]));
+  reconImage[idxHigh + 1] = static_cast<T>(upG + static_cast<F_T>(lapImage[idxHigh + 1]));
+  reconImage[idxHigh + 2] = static_cast<T>(upB + static_cast<F_T>(lapImage[idxHigh + 2]));
 }
 
 // =============================================================================
 // Templated Host Functions: Batched Laplacian Blending
 // =============================================================================
 
-template <typename T>
+template <typename T, typename F_T>
 cudaError_t cudaBatchedLaplacianBlend(
     const T* h_image1,
     const T* h_image2,
@@ -474,7 +480,7 @@ cudaError_t cudaBatchedLaplacianBlend(
   }
   for (int level = 0; level < numLevels - 1; level++) {
     dim3 grid((widths[level] + block.x - 1) / block.x, (heights[level] + block.y - 1) / block.y, batchSize);
-    BatchedComputeLaplacianKernelRGB<T><<<grid, block, 0, stream>>>(
+    BatchedComputeLaplacianKernelRGB<T, F_T><<<grid, block, 0, stream>>>(
         d_gauss1[level],
         widths[level],
         heights[level],
@@ -483,7 +489,7 @@ cudaError_t cudaBatchedLaplacianBlend(
         heights[level + 1],
         d_lap1[level],
         batchSize);
-    BatchedComputeLaplacianKernelRGB<T><<<grid, block, 0, stream>>>(
+    BatchedComputeLaplacianKernelRGB<T, F_T><<<grid, block, 0, stream>>>(
         d_gauss2[level],
         widths[level],
         heights[level],
@@ -505,7 +511,7 @@ cudaError_t cudaBatchedLaplacianBlend(
     size_t sizeRGB = widths[level] * heights[level] * 3 * batchSize * sizeof(T);
     cudaMalloc((void**)&d_blend[level], sizeRGB);
     dim3 grid((widths[level] + block.x - 1) / block.x, (heights[level] + block.y - 1) / block.y, batchSize);
-    BatchedBlendKernelRGB<T><<<grid, block, 0, stream>>>(
+    BatchedBlendKernelRGB<T, F_T><<<grid, block, 0, stream>>>(
         d_lap1[level], d_lap2[level], d_maskPyr[level], d_blend[level], widths[level], heights[level], batchSize);
   }
 
@@ -523,7 +529,7 @@ cudaError_t cudaBatchedLaplacianBlend(
     size_t highSize = widths[level] * heights[level] * 3 * batchSize * sizeof(T);
     cudaMalloc((void**)&d_temp, highSize);
     dim3 grid((widths[level] + block.x - 1) / block.x, (heights[level] + block.y - 1) / block.y, batchSize);
-    BatchedReconstructKernelRGB<T><<<grid, block, 0, stream>>>(
+    BatchedReconstructKernelRGB<T, F_T><<<grid, block, 0, stream>>>(
         d_reconstruct,
         widths[level + 1],
         heights[level + 1],
@@ -551,7 +557,7 @@ cudaError_t cudaBatchedLaplacianBlend(
   return cudaGetLastError();
 }
 
-template <typename T>
+template <typename T, typename F_T>
 cudaError_t cudaBatchedLaplacianBlendWithContext(
     const T* d_image1,
     const T* d_image2,
@@ -659,7 +665,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
         (context.heights[level] + block.y - 1) / block.y,
         context.batchSize);
 
-    BatchedComputeLaplacianKernelRGB<T><<<grid, block, 0, stream>>>(
+    BatchedComputeLaplacianKernelRGB<T, F_T><<<grid, block, 0, stream>>>(
         context.d_gauss1[level],
         context.widths[level],
         context.heights[level],
@@ -670,7 +676,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
         context.batchSize);
     CUDA_CHECK(cudaGetLastError());
 
-    BatchedComputeLaplacianKernelRGB<T><<<grid, block, 0, stream>>>(
+    BatchedComputeLaplacianKernelRGB<T, F_T><<<grid, block, 0, stream>>>(
         context.d_gauss2[level],
         context.widths[level],
         context.heights[level],
@@ -705,7 +711,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
         (context.widths[level] + block.x - 1) / block.x,
         (context.heights[level] + block.y - 1) / block.y,
         context.batchSize);
-    BatchedBlendKernelRGB<T><<<grid, block, 0, stream>>>(
+    BatchedBlendKernelRGB<T, F_T><<<grid, block, 0, stream>>>(
         context.d_lap1[level],
         context.d_lap2[level],
         context.d_maskPyr[level],
@@ -771,7 +777,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
         (context.widths[level] + block.x - 1) / block.x,
         (context.heights[level] + block.y - 1) / block.y,
         context.batchSize);
-    BatchedReconstructKernelRGB<T><<<grid, block, 0, stream>>>(
+    BatchedReconstructKernelRGB<T, F_T><<<grid, block, 0, stream>>>(
         d_reconstruct,
         context.widths[level + 1],
         context.heights[level + 1],
@@ -794,54 +800,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
   // If we've reached here, everything went well
   return cudaSuccess;
 }
-
-//------------------------------------------------------------------------------
-// Device Kernels
-//------------------------------------------------------------------------------
-
-// BatchedDownsampleKernelRGB<T>
-#define INSTANTIATE_BATCHED_DOWNSAMPLE_KERNEL_RGB(T)      \
-  template __global__ void BatchedDownsampleKernelRGB<T>( \
-      const T* input, int inWidth, int inHeight, T* output, int outWidth, int outHeight, int batchSize);
-
-// BatchedDownsampleKernelMask<T>
-#define INSTANTIATE_BATCHED_DOWNSAMPLE_KERNEL_MASK(T)      \
-  template __global__ void BatchedDownsampleKernelMask<T>( \
-      const T* input, int inWidth, int inHeight, T* output, int outWidth, int outHeight);
-
-// BatchedUpsampleKernelRGB<T>
-#define INSTANTIATE_BATCHED_UPSAMPLE_KERNEL_RGB(T)      \
-  template __global__ void BatchedUpsampleKernelRGB<T>( \
-      const T* input, int inWidth, int inHeight, T* output, int outWidth, int outHeight, int batchSize);
-
-// BatchedComputeLaplacianKernelRGB<T>
-#define INSTANTIATE_BATCHED_COMPUTE_LAPLACIAN_KERNEL_RGB(T)     \
-  template __global__ void BatchedComputeLaplacianKernelRGB<T>( \
-      const T* gaussHigh,                                       \
-      int highWidth,                                            \
-      int highHeight,                                           \
-      const T* gaussLow,                                        \
-      int lowWidth,                                             \
-      int lowHeight,                                            \
-      T* laplacian,                                             \
-      int batchSize);
-
-// BatchedBlendKernelRGB<T>
-#define INSTANTIATE_BATCHED_BLEND_KERNEL_RGB(T)      \
-  template __global__ void BatchedBlendKernelRGB<T>( \
-      const T* lap1, const T* lap2, const T* mask, T* blended, int width, int height, int batchSize);
-
-// BatchedReconstructKernelRGB<T>
-#define INSTANTIATE_BATCHED_RECONSTRUCT_KERNEL_RGB(T)      \
-  template __global__ void BatchedReconstructKernelRGB<T>( \
-      const T* lowerRes,                                   \
-      int lowWidth,                                        \
-      int lowHeight,                                       \
-      const T* lap,                                        \
-      int highWidth,                                       \
-      int highHeight,                                      \
-      T* reconstruction,                                   \
-      int batchSize);
 
 //------------------------------------------------------------------------------
 // Host Functions
