@@ -193,6 +193,8 @@ def extract_frame(video_path: str, frame_idx: int) -> np.ndarray:
     Raises:
         ValueError: If the frame cannot be extracted.
     """
+    if video_path.endswith(".png"):
+        return cv2.imread(video_path)
     cap = cv2.VideoCapture(video_path)
     cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
     ret, frame = cap.read()
@@ -625,6 +627,13 @@ def main() -> None:
     )
     parser.add_argument("--left", default=None, help="Path to left video file")
     parser.add_argument("--right", default=None, help="Path to left video file")
+    parser.add_argument("--lfo", default=None, help="Left frame offset")
+    parser.add_argument("--rfo", default=None, help="Right frame offset")
+    parser.add_argument(
+        "--synchronize-only",
+        action="store_true",
+        help="Only synchronize and print out the frame offsets",
+    )
     parser.add_argument(
         "--scale",
         default=None,
@@ -640,7 +649,7 @@ def main() -> None:
         game_dir: str = os.path.join(os.environ["HOME"], "Videos", args.game_id)
         config_file: str = os.path.join(game_dir, "config.yaml")
         if not os.path.exists(config_file):
-            print(f"Could not config config file: {config_file}")
+            print(f"Could not find config file: {config_file}")
             exit(1)
         with open(config_file, "r") as file:
             config_yaml = yaml.safe_load(file)
@@ -652,7 +661,13 @@ def main() -> None:
             args.right = os.path.join(game_dir, args.right)
 
     # Determine frame offsets by synchronizing audio.
-    lfo, rfo = synchronize_by_audio(args.left, args.right)
+    if (args.lfo is None and args.rfo is None) or args.synchronize_only:
+        lfo, rfo = synchronize_by_audio(args.left, args.right)
+    else:
+        lfo, rfo = args.lfo, args.rfo
+
+    if args.synchronize_only:
+        return
 
     print("Extracting frames at the sync points...")
     # Ensure frame indices are integers.
