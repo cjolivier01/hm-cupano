@@ -42,12 +42,16 @@ Run the stitching test
 
 Left frame:
 ![alt text](./assets/left.png)
+
 Right frame:
 ![alt text](./assets/right.png)
-Key points (Superpoint)
+
+Key points (SuperPoint)
 ![alt text](./assets/keypoints.png)
-Keypoint Matches
+
+Matches (LightGlue)
 ![alt text](./assets/matches.png)
-Stitched Panorama
+
+Stitched Panorama (CUDA Kernels, hard seam or laplacian blending + color correction)
 ![alt text](./assets/s.png)
 
