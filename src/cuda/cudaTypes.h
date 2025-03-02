@@ -184,7 +184,7 @@ using BaseScalar_t = typename BaseScalar<T>::type;
  */
 template <typename T>
 struct CudaSurface final {
-  T* d_ptr;
+  T* __restrict__ d_ptr;
   std::uint32_t width;
   std::uint32_t height;
   std::uint32_t pitch;

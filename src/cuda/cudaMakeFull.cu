@@ -4,7 +4,6 @@
 #include <cuda_runtime.h>
 #include <cassert>
 
-// If you want to support 16‐bit and bfloat16 types:
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 
@@ -163,11 +162,6 @@ __global__ void copyRoiKernelBatched(
       int destX = offsetX + x;
       int destY = offsetY + y;
       if (destX < dest.width && destY < dest.height) {
-        // int srcOffset = b * (full_src_width * full_src_height);
-        // int srcIdx = (srcY * full_src_width + srcX);
-        // int destOffset = b * (destWidth * destHeight);
-        // int destIdx = (destY * destWidth + destX);
-        // dest[destOffset + destIdx] = perform_cast<T_out>(src[srcOffset + srcIdx]);
         *surface_ptr(dest, b, destX, destY) = perform_cast<T_out>(*surface_ptr(src, b, srcX, srcY));
       }
     }
@@ -297,22 +291,6 @@ cudaError_t copy_roi_batched(
 ////////////////////////////////////////////////////////////////////////////////
 // Explicit Template Instantiations
 ////////////////////////////////////////////////////////////////////////////////
-
-// #define INSTANTIATE_FILL_KERNEL_BATCHED(T) \
-//   template __global__ void fillKernelBatched<T>(T * dest, int destWidth, int destHeight, T value, int batchSize);
-
-// #define INSTANTIATE_COPY_ROI_KERNEL_BATCHED(T_in, T_out)      \
-//   template __global__ void copyRoiKernelBatched<T_in, T_out>( \
-//       const CudaSurface<T_in>& src,                            \
-//       int regionWidth,                                        \
-//       int regionHeight,                                       \
-//       int srcROI_x,                                           \
-//       int srcROI_y,                                           \
-//       CudaSurface<T_out> dest,                                \
-//       int offsetX,                                            \
-//       int offsetY,                                            \
-//       int batchSize);
-
 #define INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(T_in, T_out)     \
   template cudaError_t simple_make_full_batch<T_in, T_out>( \
       const CudaSurface<T_in>& src,                         \
@@ -327,23 +305,18 @@ cudaError_t copy_roi_batched(
       CudaSurface<T_out> dest,                              \
       cudaStream_t stream);
 
-#define INSTANTIATE_COPY_ROI_BATCHED(T_in, T_out) \
-  template cudaError_t copy_roi_batched<T_in, T_out>(       \
-      const CudaSurface<T_in>& src,                         \
-      int regionWidth,                                      \
-      int regionHeight,                                     \
-      int srcROI_x,                                         \
-      int srcROI_y,                                         \
-      CudaSurface<T_out> dest,                              \
-      int offsetX,                                          \
-      int offsetY,                                          \
-      int batchSize,                                        \
+#define INSTANTIATE_COPY_ROI_BATCHED(T_in, T_out)     \
+  template cudaError_t copy_roi_batched<T_in, T_out>( \
+      const CudaSurface<T_in>& src,                   \
+      int regionWidth,                                \
+      int regionHeight,                               \
+      int srcROI_x,                                   \
+      int srcROI_y,                                   \
+      CudaSurface<T_out> dest,                        \
+      int offsetX,                                    \
+      int offsetY,                                    \
+      int batchSize,                                  \
       cudaStream_t stream);
-
-// Same–type instantiations:
-// INSTANTIATE_COPY_ROI_KERNEL_BATCHED(float3, float3)
-// INSTANTIATE_COPY_ROI_KERNEL_BATCHED(uchar3, uchar3)
-// INSTANTIATE_COPY_ROI_KERNEL_BATCHED(uchar3, half3)
 
 // --- Host functions ---
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(uchar3, float3)
@@ -351,7 +324,7 @@ INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float3, float3)
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(uchar4, float4)
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(uchar4, float3)
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float4, float4)
-//INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float4, uchar4)
+// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float4, uchar4)
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float3, uchar4)
 
 // Same–type instantiations:
