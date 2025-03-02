@@ -11,10 +11,7 @@
 #include <vector>
 
 // =============================================================================
-// Templated Batched Kernels for Image Data
-// =============================================================================
-
-// Macro to wrap a CUDA call and return on error
+// Macro to check CUDA calls and return on error.
 #define CUDA_CHECK(call)                                                                          \
   do {                                                                                            \
     cudaError_t _err = (call);                                                                    \
@@ -24,16 +21,84 @@
     }                                                                                             \
   } while (0)
 
-// ---------------------
-// Batched downsample kernel for RGB images.
-// For each output pixel (x,y), average a 2x2 block from the input image.
-// ---------------------
+// =============================================================================
+// Templated CUDA Kernels for Batched Laplacian Blending
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Fused downsample kernel for two RGB images.
+// Instead of launching separate kernels for image1 and image2, we fuse them
+// into one kernel call. Each output pixel is computed by averaging a 2x2 block.
+// -----------------------------------------------------------------------------
 template <typename T>
-__global__ void BatchedDownsampleKernelRGB(
-    const T* input,
+__global__ void FusedBatchedDownsampleKernelRGB(
+    const T* __restrict__ input1,
+    const T* __restrict__ input2,
     int inWidth,
     int inHeight,
-    T* output,
+    T* __restrict__ output1,
+    T* __restrict__ output2,
+    int outWidth,
+    int outHeight,
+    int batchSize) {
+  int b = blockIdx.z;
+  if (b >= batchSize)
+    return;
+
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x >= outWidth || y >= outHeight)
+    return;
+
+  int inImageSize = inWidth * inHeight * 3;
+  int outImageSize = outWidth * outHeight * 3;
+  const T* inImage1 = input1 + b * inImageSize;
+  const T* inImage2 = input2 + b * inImageSize;
+  T* outImage1 = output1 + b * outImageSize;
+  T* outImage2 = output2 + b * outImageSize;
+
+  int inX = x * 2;
+  int inY = y * 2;
+  float sumR1 = 0.0f, sumG1 = 0.0f, sumB1 = 0.0f;
+  float sumR2 = 0.0f, sumG2 = 0.0f, sumB2 = 0.0f;
+  int count = 0;
+#pragma unroll
+  for (int dy = 0; dy < 2; dy++) {
+#pragma unroll
+    for (int dx = 0; dx < 2; dx++) {
+      int ix = inX + dx;
+      int iy = inY + dy;
+      if (ix < inWidth && iy < inHeight) {
+        int idx = (iy * inWidth + ix) * 3;
+        sumR1 += static_cast<float>(inImage1[idx + 0]);
+        sumG1 += static_cast<float>(inImage1[idx + 1]);
+        sumB1 += static_cast<float>(inImage1[idx + 2]);
+        sumR2 += static_cast<float>(inImage2[idx + 0]);
+        sumG2 += static_cast<float>(inImage2[idx + 1]);
+        sumB2 += static_cast<float>(inImage2[idx + 2]);
+        count++;
+      }
+    }
+  }
+  int outIdx = (y * outWidth + x) * 3;
+  outImage1[outIdx + 0] = static_cast<T>(sumR1 / count);
+  outImage1[outIdx + 1] = static_cast<T>(sumG1 / count);
+  outImage1[outIdx + 2] = static_cast<T>(sumB1 / count);
+  outImage2[outIdx + 0] = static_cast<T>(sumR2 / count);
+  outImage2[outIdx + 1] = static_cast<T>(sumG2 / count);
+  outImage2[outIdx + 2] = static_cast<T>(sumB2 / count);
+}
+
+// -----------------------------------------------------------------------------
+// Batched downsample kernel for a single image with __restrict__ and unrolling.
+// This kernel is kept in case separate launches are desired.
+// -----------------------------------------------------------------------------
+template <typename T>
+__global__ void BatchedDownsampleKernelRGB(
+    const T* __restrict__ input,
+    int inWidth,
+    int inHeight,
+    T* __restrict__ output,
     int outWidth,
     int outHeight,
     int batchSize) {
@@ -55,7 +120,9 @@ __global__ void BatchedDownsampleKernelRGB(
   int inY = y * 2;
   float sumR = 0.0f, sumG = 0.0f, sumB = 0.0f;
   int count = 0;
+#pragma unroll
   for (int dy = 0; dy < 2; dy++) {
+#pragma unroll
     for (int dx = 0; dx < 2; dx++) {
       int ix = inX + dx;
       int iy = inY + dy;
@@ -74,15 +141,15 @@ __global__ void BatchedDownsampleKernelRGB(
   outImage[outIdx + 2] = static_cast<T>(sumB / count);
 }
 
-// ---------------------
-// Shared (non‐batched) downsample kernel for a single–channel mask.
-// ---------------------
+// -----------------------------------------------------------------------------
+// Batched downsample kernel for a single-channel mask with __restrict__ and unrolling.
+// -----------------------------------------------------------------------------
 template <typename T>
 __global__ void BatchedDownsampleKernelMask(
-    const T* input,
+    const T* __restrict__ input,
     int inWidth,
     int inHeight,
-    T* output,
+    T* __restrict__ output,
     int outWidth,
     int outHeight) {
   int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -94,7 +161,9 @@ __global__ void BatchedDownsampleKernelMask(
   int inY = y * 2;
   float sum = 0.0f;
   int count = 0;
+#pragma unroll
   for (int dy = 0; dy < 2; dy++) {
+#pragma unroll
     for (int dx = 0; dx < 2; dx++) {
       int ix = inX + dx;
       int iy = inY + dy;
@@ -107,16 +176,15 @@ __global__ void BatchedDownsampleKernelMask(
   output[y * outWidth + x] = static_cast<T>(sum / count);
 }
 
-// ---------------------
-// Batched upsample kernel for RGB images.
-// Upsamples a low-resolution image by a factor of 2 using bilinear interpolation.
-// ---------------------
+// -----------------------------------------------------------------------------
+// Batched upsample kernel for RGB images using bilinear interpolation.
+// -----------------------------------------------------------------------------
 template <typename T, typename F_T>
 __global__ void BatchedUpsampleKernelRGB(
-    const T* input,
+    const T* __restrict__ input,
     int inWidth,
     int inHeight,
-    T* output,
+    T* __restrict__ output,
     int outWidth,
     int outHeight,
     int batchSize) {
@@ -182,20 +250,19 @@ __global__ void BatchedUpsampleKernelRGB(
   outImage[idxOut + 2] = static_cast<T>(outB);
 }
 
-// ---------------------
-// Batched compute Laplacian kernel for RGB images.
-// For each pixel in the high-resolution Gaussian level, compute:
-// Laplacian = Gaussian_high - upsample(Gaussian_low)
-// ---------------------
+// -----------------------------------------------------------------------------
+// Batched computation of the Laplacian for RGB images.
+// For each pixel, compute Laplacian = Gaussian_high - upsample(Gaussian_low).
+// -----------------------------------------------------------------------------
 template <typename T, typename F_T>
 __global__ void BatchedComputeLaplacianKernelRGB(
-    const T* gaussHigh,
+    const T* __restrict__ gaussHigh,
     int highWidth,
     int highHeight,
-    const T* gaussLow,
+    const T* __restrict__ gaussLow,
     int lowWidth,
     int lowHeight,
-    T* laplacian,
+    T* __restrict__ laplacian,
     int batchSize) {
   int b = blockIdx.z;
   if (b >= batchSize)
@@ -212,8 +279,8 @@ __global__ void BatchedComputeLaplacianKernelRGB(
   const T* lowImage = gaussLow + b * lowImageSize;
   T* lapImage = laplacian + b * highImageSize;
 
-  F_T gx = static_cast<F_T>(x) / static_cast<F_T>(2.0f);
-  F_T gy = static_cast<F_T>(y) / static_cast<F_T>(2.0f);
+  F_T gx = static_cast<F_T>(x) / 2.0f;
+  F_T gy = static_cast<F_T>(y) / 2.0f;
   int gxi = floorf(gx);
   int gyi = floorf(gy);
   F_T dx = gx - static_cast<F_T>(gxi);
@@ -227,7 +294,6 @@ __global__ void BatchedComputeLaplacianKernelRGB(
   int idx11 = (gyi1 * lowWidth + gxi1) * 3;
 
   const F_T F_ONE = static_cast<F_T>(1.0);
-
   F_T upR, upG, upB;
   { // R channel.
     F_T val00 = static_cast<F_T>(lowImage[idx00 + 0]);
@@ -262,17 +328,16 @@ __global__ void BatchedComputeLaplacianKernelRGB(
   lapImage[idxHigh + 2] = static_cast<T>(static_cast<F_T>(highImage[idxHigh + 2]) - upB);
 }
 
-// ---------------------
+// -----------------------------------------------------------------------------
 // Batched blend kernel for RGB images.
-// Blends two Laplacian images using a single–channel mask.
-// (The shared mask is not batched.)
-// ---------------------
+// Blends two Laplacian pyramid levels using a shared single-channel mask.
+// -----------------------------------------------------------------------------
 template <typename T, typename F_T>
 __global__ void BatchedBlendKernelRGB(
-    const T* lap1,
-    const T* lap2,
-    const T* mask,
-    T* blended,
+    const T* __restrict__ lap1,
+    const T* __restrict__ lap2,
+    const T* __restrict__ mask,
+    T* __restrict__ blended,
     int width,
     int height,
     int batchSize) {
@@ -288,12 +353,11 @@ __global__ void BatchedBlendKernelRGB(
   int imageSizeRGB = width * height * 3;
   const T* lap1Image = lap1 + b * imageSizeRGB;
   const T* lap2Image = lap2 + b * imageSizeRGB;
-  // Use the shared mask (no batch offset)
+  // The mask is shared (non-batched)
   const T* maskImage = mask;
   T* blendImage = blended + b * imageSizeRGB;
 
   const F_T F_ONE = static_cast<F_T>(1.0);
-
   int idx = (y * width + x) * 3;
   F_T m = static_cast<F_T>(maskImage[y * width + x]);
   F_T mm1 = F_ONE - m;
@@ -305,20 +369,20 @@ __global__ void BatchedBlendKernelRGB(
       static_cast<T>(m * static_cast<F_T>(lap1Image[idx + 2]) + mm1 * static_cast<F_T>(lap2Image[idx + 2]));
 }
 
-// ---------------------
+// -----------------------------------------------------------------------------
 // Batched reconstruction kernel for RGB images.
-// Reconstructs the higher-resolution image by upsampling the lower-resolution
-// reconstruction and adding the blended Laplacian.
-// ---------------------
+// Reconstructs the high-resolution image by upsampling the lower-resolution image and
+// adding the blended Laplacian details.
+// -----------------------------------------------------------------------------
 template <typename T, typename F_T>
 __global__ void BatchedReconstructKernelRGB(
-    const T* lowerRes,
+    const T* __restrict__ lowerRes,
     int lowWidth,
     int lowHeight,
-    const T* lap,
+    const T* __restrict__ lap,
     int highWidth,
     int highHeight,
-    T* reconstruction,
+    T* __restrict__ reconstruction,
     int batchSize) {
   int b = blockIdx.z;
   if (b >= batchSize)
@@ -336,9 +400,8 @@ __global__ void BatchedReconstructKernelRGB(
   T* reconImage = reconstruction + b * highImageSize;
 
   const F_T F_ONE = static_cast<F_T>(1.0);
-
-  F_T gx = static_cast<F_T>(x) / static_cast<F_T>(2.0f);
-  F_T gy = static_cast<F_T>(y) / static_cast<F_T>(2.0f);
+  F_T gx = static_cast<F_T>(x) / 2.0f;
+  F_T gy = static_cast<F_T>(y) / 2.0f;
   int gxi = floorf(gx);
   int gyi = floorf(gy);
   F_T dx = gx - static_cast<F_T>(gxi);
@@ -352,7 +415,7 @@ __global__ void BatchedReconstructKernelRGB(
   int idx11 = (gyi1 * lowWidth + gxi1) * 3;
 
   F_T upR, upG, upB;
-  { // R channel.
+  { // Reconstruct R channel.
     F_T val00 = static_cast<F_T>(lowImage[idx00 + 0]);
     F_T val10 = static_cast<F_T>(lowImage[idx10 + 0]);
     F_T val01 = static_cast<F_T>(lowImage[idx01 + 0]);
@@ -361,7 +424,7 @@ __global__ void BatchedReconstructKernelRGB(
     F_T val1 = val01 * (F_ONE - dx) + val11 * dx;
     upR = val0 * (F_ONE - dy) + val1 * dy;
   }
-  { // G channel.
+  { // Reconstruct G channel.
     F_T val00 = static_cast<F_T>(lowImage[idx00 + 1]);
     F_T val10 = static_cast<F_T>(lowImage[idx10 + 1]);
     F_T val01 = static_cast<F_T>(lowImage[idx01 + 1]);
@@ -370,7 +433,7 @@ __global__ void BatchedReconstructKernelRGB(
     F_T val1 = val01 * (F_ONE - dx) + val11 * dx;
     upG = val0 * (F_ONE - dy) + val1 * dy;
   }
-  { // B channel.
+  { // Reconstruct B channel.
     F_T val00 = static_cast<F_T>(lowImage[idx00 + 2]);
     F_T val10 = static_cast<F_T>(lowImage[idx10 + 2]);
     F_T val01 = static_cast<F_T>(lowImage[idx01 + 2]);
@@ -400,12 +463,11 @@ cudaError_t cudaBatchedLaplacianBlend(
     int numLevels,
     int batchSize,
     cudaStream_t stream) {
-  // For RGB images (3 channels)
+  // For RGB images (3 channels) and a single-channel mask.
   size_t imageSize = imageWidth * imageHeight * 3 * sizeof(T);
-  // For mask (single channel, not batched)
   size_t maskSize = imageWidth * imageHeight * sizeof(T);
 
-  // Allocate device memory for level-0 images (batched).
+  // Allocate device memory for level-0 Gaussian pyramid images.
   std::vector<T*> d_gauss1(numLevels);
   std::vector<T*> d_gauss2(numLevels);
   std::vector<T*> d_maskPyr(numLevels);
@@ -421,13 +483,12 @@ cudaError_t cudaBatchedLaplacianBlend(
     heights[i] = (heights[i - 1] + 1) / 2;
   }
 
-  // Allocate level 0 arrays.
+  // Allocate level 0 arrays and copy input data from host to device.
   size_t sizeRGB0 = widths[0] * heights[0] * 3 * batchSize * sizeof(T);
   size_t sizeMask0 = widths[0] * heights[0] * sizeof(T);
   cudaMalloc((void**)&d_gauss1[0], sizeRGB0);
   cudaMalloc((void**)&d_gauss2[0], sizeRGB0);
   cudaMalloc((void**)&d_maskPyr[0], sizeMask0);
-  // Copy host images into device memory for level 0.
   cudaMemcpyAsync(d_gauss1[0], h_image1, imageSize * batchSize, cudaMemcpyHostToDevice, stream);
   cudaMemcpyAsync(d_gauss2[0], h_image2, imageSize * batchSize, cudaMemcpyHostToDevice, stream);
   cudaMemcpyAsync(d_maskPyr[0], h_mask, maskSize, cudaMemcpyHostToDevice, stream);
@@ -435,7 +496,7 @@ cudaError_t cudaBatchedLaplacianBlend(
   // Allocate device memory for higher pyramid levels.
   for (int level = 1; level < numLevels; level++) {
     size_t sizeRGB = widths[level] * heights[level] * 3 * batchSize * sizeof(T);
-    size_t sizeMask = widths[level] * heights[level] * sizeof(T); // single mask
+    size_t sizeMask = widths[level] * heights[level] * sizeof(T);
     cudaMalloc((void**)&d_gauss1[level], sizeRGB);
     cudaMalloc((void**)&d_gauss2[level], sizeRGB);
     cudaMalloc((void**)&d_maskPyr[level], sizeMask);
@@ -443,28 +504,21 @@ cudaError_t cudaBatchedLaplacianBlend(
 
   dim3 block(16, 16, 1);
 
-  // 1. Build Gaussian pyramids.
+  // 1. Build Gaussian pyramids for both image sets and the shared mask.
   for (int level = 0; level < numLevels - 1; level++) {
     dim3 gridRGB((widths[level + 1] + block.x - 1) / block.x, (heights[level + 1] + block.y - 1) / block.y, batchSize);
-    // Downsample image1.
-    BatchedDownsampleKernelRGB<T><<<gridRGB, block, 0, stream>>>(
+    // Use fused downsampling for the two image sets.
+    FusedBatchedDownsampleKernelRGB<T><<<gridRGB, block, 0, stream>>>(
         d_gauss1[level],
-        widths[level],
-        heights[level],
-        d_gauss1[level + 1],
-        widths[level + 1],
-        heights[level + 1],
-        batchSize);
-    // Downsample image2.
-    BatchedDownsampleKernelRGB<T><<<gridRGB, block, 0, stream>>>(
         d_gauss2[level],
         widths[level],
         heights[level],
+        d_gauss1[level + 1],
         d_gauss2[level + 1],
         widths[level + 1],
         heights[level + 1],
         batchSize);
-    // Downsample mask (shared, so 2D grid only).
+    // Downsample the shared mask (non-batched).
     {
       dim3 gridMask((widths[level + 1] + block.x - 1) / block.x, (heights[level + 1] + block.y - 1) / block.y, 1);
       BatchedDownsampleKernelMask<T><<<gridMask, block, 0, stream>>>(
@@ -506,7 +560,7 @@ cudaError_t cudaBatchedLaplacianBlend(
     cudaMemcpyAsync(d_lap2[last], d_gauss2[last], lastSize, cudaMemcpyDeviceToDevice, stream);
   }
 
-  // 3. Blend the Laplacian pyramids.
+  // 3. Blend the Laplacian pyramids using the shared mask.
   for (int level = 0; level < numLevels; level++) {
     size_t sizeRGB = widths[level] * heights[level] * 3 * batchSize * sizeof(T);
     cudaMalloc((void**)&d_blend[level], sizeRGB);
@@ -544,7 +598,7 @@ cudaError_t cudaBatchedLaplacianBlend(
   cudaMemcpyAsync(h_output, d_reconstruct, imageSize * batchSize, cudaMemcpyDeviceToHost, stream);
   cudaFree(d_reconstruct);
 
-  // Cleanup all allocated device memory.
+  // Cleanup allocated device memory.
   for (int level = 0; level < numLevels; level++) {
     cudaFree(d_gauss1[level]);
     cudaFree(d_gauss2[level]);
@@ -567,7 +621,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     cudaStream_t stream) {
   size_t imageSize = context.imageWidth * context.imageHeight * 3 * sizeof(T);
 
-  // If context not yet initialized, set up widths/heights and allocate memory
+  // If context not yet initialized, set up pyramid dimensions and allocate device memory.
   if (!context.initialized) {
     context.widths[0] = context.imageWidth;
     context.heights[0] = context.imageHeight;
@@ -576,21 +630,16 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
       context.heights[i] = (context.heights[i - 1] + 1) / 2;
       assert(context.widths[i] && context.heights[i]);
     }
-
-    // Allocate device memory for each level
     for (int level = 0; level < context.numLevels; level++) {
       size_t sizeRGB = context.widths[level] * context.heights[level] * 3 * context.batchSize * sizeof(T);
       size_t sizeMask = context.widths[level] * context.heights[level] * sizeof(T);
       assert(sizeRGB && sizeMask);
-
-      // --- Use CUDA_CHECK for each allocation ---
       CUDA_CHECK(cudaMalloc((void**)&context.d_lap1[level], sizeRGB));
       context.allocation_size += sizeRGB;
       CUDA_CHECK(cudaMalloc((void**)&context.d_lap2[level], sizeRGB));
       context.allocation_size += sizeRGB;
       CUDA_CHECK(cudaMalloc((void**)&context.d_blend[level], sizeRGB));
       context.allocation_size += sizeRGB;
-
       if (level > 0) {
         CUDA_CHECK(cudaMalloc((void**)&context.d_maskPyr[level], sizeMask));
         context.allocation_size += sizeMask;
@@ -599,7 +648,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
         CUDA_CHECK(cudaMalloc((void**)&context.d_gauss2[level], sizeRGB));
         context.allocation_size += sizeRGB;
       } else {
-        // Level 0 uses the input pointers directly
         context.d_maskPyr[0] = const_cast<T*>(d_mask);
         context.d_gauss1[0] = const_cast<T*>(d_image1);
         context.d_gauss2[0] = const_cast<T*>(d_image2);
@@ -607,42 +655,26 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     }
   }
 
-  // -----------------------------------------------------------------
-  // 1. Build Gaussian pyramid for images and mask
-  // -----------------------------------------------------------------
   dim3 block(16, 16, 1);
 
+  // 1. Build Gaussian pyramids.
   for (int level = 0; level < context.numLevels - 1; level++) {
     dim3 grid(
         (context.widths[level + 1] + block.x - 1) / block.x,
         (context.heights[level + 1] + block.y - 1) / block.y,
         context.batchSize);
-
-    // Downsample d_gauss1[level] -> d_gauss1[level+1]
-    BatchedDownsampleKernelRGB<T><<<grid, block, 0, stream>>>(
+    FusedBatchedDownsampleKernelRGB<T><<<grid, block, 0, stream>>>(
         context.d_gauss1[level],
-        context.widths[level],
-        context.heights[level],
-        context.d_gauss1[level + 1],
-        context.widths[level + 1],
-        context.heights[level + 1],
-        context.batchSize);
-    // --- Check for kernel launch errors ---
-    CUDA_CHECK(cudaGetLastError());
-
-    // Downsample d_gauss2[level] -> d_gauss2[level+1]
-    BatchedDownsampleKernelRGB<T><<<grid, block, 0, stream>>>(
         context.d_gauss2[level],
         context.widths[level],
         context.heights[level],
+        context.d_gauss1[level + 1],
         context.d_gauss2[level + 1],
         context.widths[level + 1],
         context.heights[level + 1],
         context.batchSize);
     CUDA_CHECK(cudaGetLastError());
-
     {
-      // Downsample the mask
       dim3 gridMask(
           (context.widths[level + 1] + block.x - 1) / block.x, (context.heights[level + 1] + block.y - 1) / block.y, 1);
       BatchedDownsampleKernelMask<T><<<gridMask, block, 0, stream>>>(
@@ -656,15 +688,12 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     }
   }
 
-  // -----------------------------------------------------------------
-  // 2. Build Laplacian pyramids
-  // -----------------------------------------------------------------
+  // 2. Build Laplacian pyramids.
   for (int level = 0; level < context.numLevels - 1; level++) {
     dim3 grid(
         (context.widths[level] + block.x - 1) / block.x,
         (context.heights[level] + block.y - 1) / block.y,
         context.batchSize);
-
     BatchedComputeLaplacianKernelRGB<T, F_T><<<grid, block, 0, stream>>>(
         context.d_gauss1[level],
         context.widths[level],
@@ -675,7 +704,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
         context.d_lap1[level],
         context.batchSize);
     CUDA_CHECK(cudaGetLastError());
-
     BatchedComputeLaplacianKernelRGB<T, F_T><<<grid, block, 0, stream>>>(
         context.d_gauss2[level],
         context.widths[level],
@@ -687,8 +715,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
         context.batchSize);
     CUDA_CHECK(cudaGetLastError());
   }
-
-  // The top of the pyramid (last level) is a copy of the Gaussian
   int last = context.numLevels - 1;
   CUDA_CHECK(cudaMemcpyAsync(
       context.d_lap1[last],
@@ -703,9 +729,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
       cudaMemcpyDeviceToDevice,
       stream));
 
-  // -----------------------------------------------------------------
-  // 3. Blend pyramids
-  // -----------------------------------------------------------------
+  // 3. Blend the Laplacian pyramids.
   for (int level = 0; level < context.numLevels; level++) {
     dim3 grid(
         (context.widths[level] + block.x - 1) / block.x,
@@ -722,9 +746,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     CUDA_CHECK(cudaGetLastError());
   }
 
-  // -----------------------------------------------------------------
-  // 4. Reconstruct final image from blended Laplacian pyramid
-  // -----------------------------------------------------------------
+  // 4. Reconstruct the final image.
   T* d_reconstruct = nullptr;
   if (!context.initialized) {
     if (context.numLevels > 1) {
@@ -744,15 +766,12 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     d_reconstruct = context.d_resonstruct[last];
     assert(d_reconstruct);
   }
-  assert(d_reconstruct);
-
   CUDA_CHECK(cudaMemcpyAsync(
       d_reconstruct,
       context.d_blend[last],
       context.widths[last] * context.heights[last] * 3 * sizeof(T) * context.batchSize,
       cudaMemcpyDeviceToDevice,
       stream));
-
   for (int level = context.numLevels - 2; level >= 0; level--) {
     T* d_temp = nullptr;
     if (!context.initialized) {
@@ -763,16 +782,12 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
         assert(!context.d_resonstruct[level]);
         context.d_resonstruct[level] = d_temp;
       } else {
-        // Level 0 goes directly to output
         d_temp = d_output;
         assert(highSize == imageSize * context.batchSize);
       }
     } else {
       d_temp = (level > 0) ? context.d_resonstruct[level] : d_output;
     }
-    assert(d_temp);
-    assert(d_reconstruct);
-
     dim3 grid(
         (context.widths[level] + block.x - 1) / block.x,
         (context.heights[level] + block.y - 1) / block.y,
@@ -787,25 +802,18 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
         d_temp,
         context.batchSize);
     CUDA_CHECK(cudaGetLastError());
-
-    // Prepare for next iteration
     d_reconstruct = d_temp;
   }
-
   assert(d_reconstruct == d_output);
-
-  // Mark as initialized
   context.initialized = true;
 
-  // If we've reached here, everything went well
   return cudaSuccess;
 }
 
 //------------------------------------------------------------------------------
-// Host Functions
+// Explicit template instantiations for supported data types.
 //------------------------------------------------------------------------------
 
-// cudaBatchedLaplacianBlend<T>
 #define INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(T)  \
   template cudaError_t cudaBatchedLaplacianBlend<T>( \
       const T* h_image1,                             \
@@ -818,7 +826,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
       int batchSize,                                 \
       cudaStream_t stream);
 
-// cudaBatchedLaplacianBlendWithContext<T>
 #define INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT(T) \
   template cudaError_t cudaBatchedLaplacianBlendWithContext<T>(  \
       const T* d_image1,                                         \
