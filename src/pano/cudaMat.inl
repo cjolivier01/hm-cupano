@@ -161,7 +161,7 @@ CudaMat<T>::CudaMat(T* d_data, int B, int W, int H, int C)
 template <typename T>
 CudaMat<T>::CudaMat(const SurfaceInfo& surface_info, int B) : type_(CudaTypeToPixelType<T>::value) {
   assert(surface_info.data_ptr && surface_info.width && surface_info.height && B);
-  assert(!surface_info.pitch || surface_info.pitch >= sizeof(T) * surface_info.width);
+  assert(!surface_info.pitch || surface_info.pitch >= (int)sizeof(T) * surface_info.width);
   rows_ = surface_info.height;
   cols_ = surface_info.width;
   pitch_ = surface_info.pitch;
