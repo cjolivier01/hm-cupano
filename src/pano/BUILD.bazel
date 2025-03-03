@@ -1,6 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
-INCLUDE_PREFIX = "pano"
+INCLUDE_PREFIX = "cupano/pano"
 
 config_setting(
     name = "aarch64-linux-gnu",

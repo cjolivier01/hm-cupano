@@ -1,6 +1,6 @@
 load("@rules_cuda//cuda:defs.bzl", "cuda_library")
 
-INCLUDE_PREFIX = "cuda"
+INCLUDE_PREFIX = "cupano/cuda"
 
 cuda_library(
     name = "cuda_blend_cuda_lib",

@@ -1,9 +1,9 @@
 #pragma once
 
-#include "cuda/cudaMakeFull.h"
-#include "cuda/cudaRemap.h"
-#include "cudaPano.h"
-#include "pano/showImage.h"
+#include "cupano/cuda/cudaMakeFull.h"
+#include "cupano/cuda/cudaRemap.h"
+#include "cupano/pano/cudaPano.h"
+#include "cupano/pano/showImage.h"
 
 namespace hm {
 namespace pano {

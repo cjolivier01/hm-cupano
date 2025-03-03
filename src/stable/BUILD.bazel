@@ -1,6 +1,6 @@
 load("@rules_cuda//cuda:defs.bzl", "cuda_library")
 
-INCLUDE_PREFIX = "stable"
+INCLUDE_PREFIX = "cupano/stable"
 
 cc_binary(
     name = "stabilization",

@@ -6,7 +6,7 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 
-#include "cuda/cudaTypes.h"
+#include "cupano/cuda/cudaTypes.h"
 
 #ifdef WITH_JETSON_UTILS
 #include "imageFormat.h" // Assumed to define the jetson‑utils imageFormat enum (e.g. IMAGE_BGR8, etc.)
