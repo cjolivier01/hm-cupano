@@ -44,4 +44,15 @@ cc_library(
         "cudaTypes.h",
     ],
     include_prefix = INCLUDE_PREFIX,
+    deps=[
+      ":cuda_status",
+    ],
+)
+
+cc_library(
+    name = "cuda_status",
+    hdrs = [
+        "cudaStatus.h",
+    ],
+    include_prefix = INCLUDE_PREFIX,
 )
