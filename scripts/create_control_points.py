@@ -158,27 +158,6 @@ def synchronize_by_audio(
     return left_frame_offset, right_frame_offset
 
 
-def find_sync_offset(
-    audio1: np.ndarray, audio2: np.ndarray, sample_rate: int = 44100
-) -> int:
-    """
-    Use full cross-correlation to determine the relative offset (in samples) between two audio signals.
-    A positive lag indicates that audio1 is delayed relative to audio2.
-
-    Args:
-        audio1: First audio signal (1D or 2D array).
-        audio2: Second audio signal (1D or 2D array).
-        sample_rate: The audio sample rate (samples per second).
-
-    Returns:
-        The lag (in samples) corresponding to maximum correlation.
-    """
-    corr: np.ndarray = correlate(audio1, audio2, mode="full")
-    lag_arr: np.ndarray = np.arange(-len(audio2) + 1, len(audio1))
-    best_lag: int = int(lag_arr[np.argmax(corr)])
-    return best_lag
-
-
 def extract_frame(video_path: str, frame_idx: int) -> np.ndarray:
     """
     Extract a single frame from a video file using OpenCV.
@@ -667,7 +646,9 @@ def main() -> None:
         lfo, rfo = args.lfo, args.rfo
 
     if args.synchronize_only:
-        return
+        print(f"Left frame offset: {lfo}")
+        print(f"Right frame offset: {rfo}")
+        exit(0)
 
     print("Extracting frames at the sync points...")
     # Ensure frame indices are integers.
