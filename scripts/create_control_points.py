@@ -104,9 +104,6 @@ def synchronize_by_audio(
         skip in each video so that they are synchronized. The offsets are returned as integers.
     """
     
-    # REMOVE ME!!!!!!!!!!!
-    seconds = 10
-    
     if verbose:
         print("Opening videos...")
 
