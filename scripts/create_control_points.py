@@ -103,6 +103,10 @@ def synchronize_by_audio(
         A tuple (left_frame_offset, right_frame_offset) representing the number of frames to
         skip in each video so that they are synchronized. The offsets are returned as integers.
     """
+    
+    # REMOVE ME!!!!!!!!!!!
+    seconds = 10
+    
     if verbose:
         print("Opening videos...")
 
@@ -142,6 +146,7 @@ def synchronize_by_audio(
     correlation: np.ndarray = scipy.signal.correlate(
         audio1[:, 0], audio2[:, 0], mode="full"
     )
+    sumc = np.sum(correlation)
     # Compute lag: subtract the length of the signal (using axis 1 length)
     lag: int = np.argmax(correlation) - audio1.shape[0] + 1
 
@@ -155,8 +160,8 @@ def synchronize_by_audio(
         print(f"Equivalent time offset: {time_offset} seconds")
 
     # Determine starting frame for each video.
-    left_frame_offset: int = int(round(frame_offset)) if frame_offset > 0 else 0
-    right_frame_offset: int = int(round(-frame_offset)) if frame_offset < 0 else 0
+    left_frame_offset: float = frame_offset if frame_offset > 0 else 0
+    right_frame_offset: float = -frame_offset if frame_offset < 0 else 0
 
     return left_frame_offset, right_frame_offset
 
