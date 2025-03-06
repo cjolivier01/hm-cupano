@@ -135,12 +135,15 @@ def synchronize_by_audio(
     if verbose:
         print("Calculating cross-correlation...")
 
+    sum1 = np.sum(audio1[:, 0])
+    sum2 = np.sum(audio2[:, 0])
+
     # Use only the first channel for correlation.
     correlation: np.ndarray = scipy.signal.correlate(
-        audio1[0, :], audio2[0, :], mode="full"
+        audio1[:, 0], audio2[:, 0], mode="full"
     )
     # Compute lag: subtract the length of the signal (using axis 1 length)
-    lag: int = np.argmax(correlation) - audio1.shape[1] + 1
+    lag: int = np.argmax(correlation) - audio1.shape[0] + 1
 
     # Convert lag (in audio samples) to frame offset.
     fps = video1_fps
