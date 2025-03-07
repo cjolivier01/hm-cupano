@@ -611,7 +611,7 @@ def main() -> None:
     )
     parser.add_argument("--left", default=None, help="Path to left video file")
     parser.add_argument("--right", default=None, help="Path to left video file")
-    parser.add_argument("--max-control-points", default=250, help="Maximum number of control points")
+    parser.add_argument("--max-control-points", default=500, help="Maximum number of control points")
     parser.add_argument("--lfo", default=None, help="Left frame offset")
     parser.add_argument("--rfo", default=None, help="Right frame offset")
     parser.add_argument(
