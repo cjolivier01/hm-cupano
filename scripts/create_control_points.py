@@ -163,7 +163,7 @@ def synchronize_by_audio(
     return left_frame_offset, right_frame_offset
 
 
-def extract_frame(video_path: str, frame_idx: int) -> np.ndarray:
+def extract_frame(video_path: str, frame_idx: Optional[float]) -> np.ndarray:
     """
     Extract a single frame from a video file using OpenCV.
 
@@ -611,6 +611,7 @@ def main() -> None:
     )
     parser.add_argument("--left", default=None, help="Path to left video file")
     parser.add_argument("--right", default=None, help="Path to left video file")
+    parser.add_argument("--max-control-points", default=250, help="Maximum number of control points")
     parser.add_argument("--lfo", default=None, help="Left frame offset")
     parser.add_argument("--rfo", default=None, help="Right frame offset")
     parser.add_argument(
@@ -644,18 +645,26 @@ def main() -> None:
         if "/" not in args.right:
             args.right = os.path.join(game_dir, args.right)
 
-    # Determine frame offsets by synchronizing audio.
-    if (args.lfo is None and args.rfo is None) or args.synchronize_only:
-        lfo, rfo = synchronize_by_audio(args.left, args.right)
+    is_image = False
+    if args.left.endswith(".png") and args.right.endswith(".png"):
+        is_image = True
+
+    if not is_image:
+        # Determine frame offsets by synchronizing audio.
+        if (args.lfo is None and args.rfo is None) or args.synchronize_only:
+            lfo, rfo = synchronize_by_audio(args.left, args.right)
+        else:
+            lfo, rfo = args.lfo, args.rfo
+
+        if args.synchronize_only:
+            print(f"Left frame offset: {lfo}")
+            print(f"Right frame offset: {rfo}")
+            exit(0)
+
+        print("Extracting frames at the sync points...")
     else:
-        lfo, rfo = args.lfo, args.rfo
+        lfo, rfo = None, None
 
-    if args.synchronize_only:
-        print(f"Left frame offset: {lfo}")
-        print(f"Right frame offset: {rfo}")
-        exit(0)
-
-    print("Extracting frames at the sync points...")
     # Ensure frame indices are integers.
     frame1: np.ndarray = extract_frame(args.left, lfo)
     frame2: np.ndarray = extract_frame(args.right, rfo)
@@ -666,7 +675,7 @@ def main() -> None:
         frame1,
         frame2,
         directory=str(Path(args.left).parent),
-        max_control_points=240,
+        max_control_points=args.max_control_points,
         scale=args.scale,
     )
 
