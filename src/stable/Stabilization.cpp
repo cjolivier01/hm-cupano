@@ -1,5 +1,7 @@
-// main.cpp (or wherever your video processing loop is)
-#include "stable/FrameStabilizer.h"
+#include "cupano/stable/FrameStabilizer.h"
+
+#include <string>
+
 // Example usage in your video processing pipeline:
 bool processVideoWithStabilization(const std::string& inputPath, const std::string& outputPath) {
   // Open video
@@ -48,6 +50,7 @@ bool processVideoWithStabilization(const std::string& inputPath, const std::stri
     d_frame.upload(frame);
 
     // Apply stabilization
+
     if (!stabilizer.stabilizeFrame(d_frame, d_stabilizedFrame)) {
       std::cerr << "Failed to stabilize frame" << std::endl;
       d_stabilizedFrame = d_frame; // Use original frame if stabilization fails
