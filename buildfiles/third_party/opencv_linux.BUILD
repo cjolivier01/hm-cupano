@@ -11,8 +11,8 @@ config_setting(
     constraint_values = ["@platforms//cpu:x86_64"],
 )
 
-OPENCV_VERSION = "opencv5"
-# OPENCV_VERSION = "opencv4"
+#OPENCV_VERSION = "opencv5"
+OPENCV_VERSION = "opencv4"
 
 cc_library(
     name = "opencv",
@@ -33,7 +33,7 @@ cc_library(
         "//conditions:default": [],
     }),
     linkopts = [
-        "-L/usr/local/lib",
+        # "-L/usr/local/lib",
         "-l:libopencv_core.so",
         "-l:libopencv_imgproc.so",
         "-l:libopencv_imgcodecs.so",
