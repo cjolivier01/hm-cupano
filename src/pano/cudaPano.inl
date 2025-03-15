@@ -367,6 +367,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stream);
       CUDA_RETURN_IF_ERROR(cuerr);
     }
+#endif
     //
     // BLEND THE IMAGES (overlapping portions + some padding)
     //
@@ -381,7 +382,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
     // SHOW_IMAGE(&cudaBlendedFull);
-#endif
 
 #if 1
     //
