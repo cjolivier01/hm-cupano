@@ -28,6 +28,7 @@ std::optional<cv::Scalar> match_seam_images(
   // Ensure the seam mask is of type CV_8U.
   if (seam.type() != CV_8U) {
     std::cerr << "Error: Seam mask must be of type CV_8U." << std::endl;
+    assert(false);
     return std::nullopt;
   }
 
