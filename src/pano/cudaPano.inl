@@ -367,6 +367,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stream);
       CUDA_RETURN_IF_ERROR(cuerr);
     }
+    // SHOW_SCALED(stitch_context.cudaFull1, 0.5);
+    // SHOW_SCALED(stitch_context.cudaFull2, 0.5);
 #endif
     //
     // BLEND THE IMAGES (overlapping portions + some padding)
