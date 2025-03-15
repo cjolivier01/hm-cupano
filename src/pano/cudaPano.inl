@@ -114,6 +114,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   assert(inputImage2.batch_size() == stitch_context.batch_size());
   assert(canvas->batch_size() == stitch_context.batch_size());
 
+  // bool cross_pollenate_images = true;
+
   auto roi_width = [](const cv::Rect2i& roi) { return roi.width; };
   if (!stitch_context.is_hard_seam()) {
     //
@@ -165,6 +167,19 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     //
     // Now copy the blending portion of remapped image 1 from the canvas onto the blend image
     //
+    // cuerr = simple_make_full_batch(
+    //     // Image 1 (float image)
+    //     canvas->surface(),
+    //     /*region_width=*/roi_width(canvas_manager.roi_blend_2),
+    //     /*region_height=*/stitch_context.cudaBlendSoftSeam->height() /*roi_height(canvas_manager.roi_blend_2)*/,
+    //     /*offsetX=*/canvas_manager._x2,
+    //     /*offsetY=*/0,
+    //     /*destOffsetX=*/canvas_manager._remapper_2.xpos,
+    //     /*destOffsetY=*/0 /* we've already applied our Y offset */,
+    //     /*adjust_origin=*/false,
+    //     /*batchSize=*/stitch_context.batch_size(),
+    //     stitch_context.cudaFull1->surface(),
+    //     stream);
     cuerr = simple_make_full_batch(
         // Image 1 (float image)
         canvas->surface(),
@@ -352,6 +367,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
         // Put output in full-1 memory
         cudaBlendedFull.data_raw(),
         *stitch_context.laplacian_blend_context,
+        stitch_context.cudaFull2->channels(),
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
     // SHOW_IMAGE(&cudaBlendedFull);

@@ -144,6 +144,7 @@ cudaError_t cudaBatchedLaplacianBlend(
     T* h_output,
     int imageWidth,
     int imageHeight,
+    int channels,
     int numLevels,
     int batchSize,
     cudaStream_t stream);
@@ -171,4 +172,5 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     const T* d_mask,
     T* d_output,
     CudaBatchLaplacianBlendContext<T>& context,
+    int channels,
     cudaStream_t stream);

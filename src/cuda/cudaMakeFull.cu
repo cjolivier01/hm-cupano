@@ -69,8 +69,8 @@ DECLARE_PERFORM_CAST_3(uchar3, float3)
     };                                                                                       \
   }
 
-// DECLARE_PERFORM_CAST_UCHAR_4(float4)
-// DECLARE_PERFORM_CAST_UCHAR_4(half4)
+DECLARE_PERFORM_CAST_UCHAR_4(float4)
+DECLARE_PERFORM_CAST_UCHAR_4(half4)
 
 #define DECLARE_PERFORM_CAST_4(_src$, _dest$)               \
   template <>                                               \
@@ -327,6 +327,7 @@ INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(uchar4, half3)
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float4, float4)
 // INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float4, uchar4)
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float3, uchar4)
+// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float4, uchar4)
 
 // Same–type instantiations:
 INSTANTIATE_COPY_ROI_BATCHED(half3, uchar3)
@@ -334,5 +335,7 @@ INSTANTIATE_COPY_ROI_BATCHED(half3, uchar4)
 INSTANTIATE_COPY_ROI_BATCHED(float3, float3)
 INSTANTIATE_COPY_ROI_BATCHED(float4, float4)
 INSTANTIATE_COPY_ROI_BATCHED(float3, uchar3)
+INSTANTIATE_COPY_ROI_BATCHED(float4, uchar4)
+INSTANTIATE_COPY_ROI_BATCHED(half4, uchar4)
 INSTANTIATE_COPY_ROI_BATCHED(float3, uchar4)
 INSTANTIATE_COPY_ROI_BATCHED(uchar3, uchar3)
