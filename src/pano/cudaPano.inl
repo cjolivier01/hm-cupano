@@ -194,7 +194,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
         stitch_context.cudaFull1->surface(),
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
-    SHOW_SCALED(stitch_context.cudaFull1, 0.5);
+    // SHOW_SCALED(stitch_context.cudaFull1, 0.5);
     // SHOW_IMAGE(stitch_context.cudaFull1);
 #endif
   } else {
