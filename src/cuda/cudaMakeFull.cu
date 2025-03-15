@@ -114,8 +114,6 @@ DECLARE_PERFORM_CAST_F2_TO_UCHAR_4(half3)
 DECLARE_PERFORM_CAST_UCHAR4_TO_3(float3)
 DECLARE_PERFORM_CAST_UCHAR4_TO_3(half3)
 
-} // namespace
-
 /**
  * @brief Templated batched kernel to copy a region of interest (ROI) from a source image
  *        to a destination canvas while performing a type conversion.
@@ -169,7 +167,7 @@ __global__ void copyRoiKernelBatched(
     }
   }
 }
-
+} // namespace
 ////////////////////////////////////////////////////////////////////////////////
 // Templated Host Functions
 ////////////////////////////////////////////////////////////////////////////////
@@ -332,8 +330,7 @@ INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float3, uchar4)
 
 // Same–type instantiations:
 INSTANTIATE_COPY_ROI_BATCHED(half3, uchar3)
-INSTANTIATE_COPY_ROI_BATCHED(half3, uchar4
-)
+INSTANTIATE_COPY_ROI_BATCHED(half3, uchar4)
 INSTANTIATE_COPY_ROI_BATCHED(float3, float3)
 INSTANTIATE_COPY_ROI_BATCHED(float4, float4)
 INSTANTIATE_COPY_ROI_BATCHED(float3, uchar3)

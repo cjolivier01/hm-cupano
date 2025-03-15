@@ -169,7 +169,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
         // Image 1 (float image)
         canvas->surface(),
         /*region_width=*/roi_width(canvas_manager.roi_blend_1),
-        /*region_height=*/stitch_context.cudaBlendSoftSeam->height() /*roi_height(canvas_manager.roi_blend_1)*/,
+        /*region_height=*/stitch_context.cudaBlendSoftSeam->height(),
         canvas_manager.roi_blend_1.x,
         0 /* we've already applied our Y offset */,
         /*destOffsetX=*/canvas_manager._remapper_1.xpos,
@@ -179,7 +179,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
         stitch_context.cudaFull1->surface(),
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
-    // SHOW_IMAGE(stitch_context.cudaFull1);
+    SHOW_IMAGE(stitch_context.cudaFull1);
 #endif
   } else {
     //
