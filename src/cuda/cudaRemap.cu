@@ -126,6 +126,12 @@ __global__ void BatchedRemapKernelExOffset(
   } else {
     if (!no_unmapped_write || srcX != kUnmappedPositionValue) {
       *dest_pos = cast_to<T_in, T_out>(deflt);
+      if constexpr (sizeof(T_out) / sizeof(BaseScalar_t<T_out>) == 4) {
+        // Has an alpha channel, so clear it
+        if (srcX == kUnmappedPositionValue) {
+          dest_pos->w = 0;
+        }
+      }
     }
   }
 }
