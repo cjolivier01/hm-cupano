@@ -91,11 +91,11 @@ class CanvasManager {
   /**
    * @brief The region of interest for blending the first image.
    */
-  cv::Rect2i roi_blend_1;
+  cv::Rect2i remapped_image_roi_blend_1;
   /**
    * @brief The region of interest for blending the second image.
    */
-  cv::Rect2i roi_blend_2;
+  cv::Rect2i remapped_image_roi_blend_2;
 
   /**
    * @brief Returns the overlap padding that was set in the constructor.
@@ -140,7 +140,7 @@ class CanvasManager {
    * `_padded_blended_tlbr` is a vector of [x1, y1, x2, y2] bounding the padded region.
    */
   int _x1{0}, _y1{0}, _x2{0}, _y2{0};
-  std::vector<int> _padded_blended_tlbr;
+  // std::vector<int> _padded_blended_tlbr;
 
  private:
   /// Internal storage of the canvas layout info (width, height, positions).

@@ -52,7 +52,6 @@ inline void set_alpha_pixels(cv::Mat& image, const cv::Vec3b& color) {
   if (image.empty() || image.channels() != 4) {
     return;
   }
-
   // Iterate over each row.
   for (int y = 0; y < image.rows; y++) {
     // Get pointer to the beginning of row 'y'. Each pixel is a Vec4b.
@@ -64,6 +63,7 @@ inline void set_alpha_pixels(cv::Mat& image, const cv::Vec3b& color) {
         rowPtr[x][0] = color[0]; // Blue channel.
         rowPtr[x][1] = color[1]; // Green channel.
         rowPtr[x][2] = color[2]; // Red channel.
+        rowPtr[x][2] = 255;
       }
     }
   }
@@ -118,14 +118,15 @@ inline void displayPyramid(
 
     levelMat = convert_to_uchar(levelMat);
 
-    cv::imshow(windowName, levelMat);
-    cv::waitKey(0);
+    //cv::imshow(windowName, levelMat);
+    //cv::waitKey(0);
 
-    levelMats.emplace_back();
+    levelMats.emplace_back(std::move(levelMat));
   }
 
   // Create a composite image that is large enough to hold all levels stacked vertically.
-  cv::Mat composite(totalHeight, maxWidth, cvType, cv::Scalar::all(0));
+  cv::Mat composite(totalHeight, maxWidth, cvType, cv::Scalar::all(128));
+  composite = convert_to_uchar(composite);
 
   int currentY = 0;
   for (const auto& mat : levelMats) {
@@ -133,7 +134,9 @@ inline void displayPyramid(
     cv::Rect roi(0, currentY, mat.cols, mat.rows);
     // Copy the pyramid level image into the composite image.
     mat.copyTo(composite(roi));
+    //cv::rectangle(composite, roi, cv::Scalar(0, 255, 0), 8);
     currentY += mat.rows;
+    break;
   }
 
   if (scale != 1.0f) {

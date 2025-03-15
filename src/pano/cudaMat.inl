@@ -1,8 +1,9 @@
 #pragma once
 
+#include "cudaMat.h"
+
 #include <cuda_runtime.h>
 #include <cassert>
-#include "cudaMat.h"
 
 namespace hm {
 
