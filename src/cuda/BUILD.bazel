@@ -30,13 +30,17 @@ cuda_library(
     deps = [
         ":cuda_blend_cuda_lib_headers",
         "@local_cuda//:cuda_runtime",
+        "@opencv_linux//:opencv",
     ],
 )
 
 cc_library(
     name = "cuda_blend_cuda_lib_headers",
+    srcs = [
+    ],
     hdrs = [
         "cudaBlend.h",
+        "cudaBlendShow.h",
         "cudaImageAdjust.h",
         "cudaMakeFull.h",
         "cudaRemap.h",
@@ -44,8 +48,8 @@ cc_library(
         "cudaTypes.h",
     ],
     include_prefix = INCLUDE_PREFIX,
-    deps=[
-      ":cuda_status",
+    deps = [
+        ":cuda_status",
     ],
 )
 
