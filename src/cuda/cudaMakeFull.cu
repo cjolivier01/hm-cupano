@@ -167,7 +167,74 @@ __global__ void copyRoiKernelBatched(
     }
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// NEW KERNEL: AlphaConditionalCopyKernel
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * @brief For two surfaces of the same type (which must have an alpha channel),
+ *        if image1’s alpha is 0 while image2’s alpha is nonzero, copy image2’s pixel into image1;
+ *        and vice versa if image2’s alpha is 0 while image1’s alpha is nonzero.
+ *
+ * @tparam T The CUDA vector type (e.g. uchar4, float4, half4). It is assumed that T has members .x, .y, .z, and .w.
+ * @param image1 The first surface.
+ * @param image2 The second surface.
+ * @param batchSize Number of images in the batch.
+ */
+template <typename T>
+__global__ void AlphaConditionalCopyKernel(CudaSurface<T> image1, CudaSurface<T> image2, int batchSize) {
+  int b = blockIdx.z;
+  if (b >= batchSize)
+    return;
+
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x >= image1.width || y >= image1.height)
+    return;
+
+  // Get pointers to the pixel at (x, y) for the current batch element.
+  T* pixel1 = surface_ptr(image1, b, x, y);
+  T* pixel2 = surface_ptr(image2, b, x, y);
+
+  // If image1's alpha (w) is 0 and image2's is nonzero, copy image2's pixel to image1.
+  // Otherwise, if image2's alpha is 0 and image1's is nonzero, copy image1's pixel to image2.
+  if (pixel1->w == static_cast<BaseScalar_t<T>>(0) && pixel2->w != static_cast<BaseScalar_t<T>>(0)) {
+    *pixel1 = *pixel2;
+  } else if (pixel2->w == static_cast<BaseScalar_t<T>>(0) && pixel1->w != static_cast<BaseScalar_t<T>>(0)) {
+    *pixel2 = *pixel1;
+  }
+}
 } // namespace
+
+/**
+ * @brief Launch the AlphaConditionalCopyKernel for surfaces that use a vector type with an alpha channel.
+ *
+ * @tparam T CUDA vector type (e.g. uchar4, float4, half4).
+ * @param image1 Destination/source surface for the first image.
+ * @param image2 Destination/source surface for the second image.
+ * @param batchSize Number of images in the batch.
+ * @param stream CUDA stream to use.
+ * @return cudaError_t cudaGetLastError() after launching the kernel.
+ */
+template <typename T>
+cudaError_t AlphaConditionalCopy(CudaSurface<T>& image1, CudaSurface<T>& image2, int batchSize, cudaStream_t stream) {
+  // Define block and grid dimensions.
+  dim3 block(16, 16, 1);
+  dim3 grid((image1.width + block.x - 1) / block.x, (image1.height + block.y - 1) / block.y, batchSize);
+  // Launch the kernel.
+  AlphaConditionalCopyKernel<T><<<grid, block, 0, stream>>>(image1, image2, batchSize);
+  return cudaGetLastError();
+}
+
+#define INSTANTIATE_ALPHA_CONDITIONAL_COPY(T)   \
+  template cudaError_t AlphaConditionalCopy<T>( \
+      CudaSurface<T> & image1, CudaSurface<T> & image2, int batchSize, cudaStream_t stream);
+
+INSTANTIATE_ALPHA_CONDITIONAL_COPY(uchar4)
+INSTANTIATE_ALPHA_CONDITIONAL_COPY(float4)
+INSTANTIATE_ALPHA_CONDITIONAL_COPY(half4)
+
 ////////////////////////////////////////////////////////////////////////////////
 // Templated Host Functions
 ////////////////////////////////////////////////////////////////////////////////
