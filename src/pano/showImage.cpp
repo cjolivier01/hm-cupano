@@ -3,8 +3,8 @@
 #include <set>
 #include <unordered_set>
 
-#include <opencv2/opencv.hpp>
 #include <opencv2/highgui.hpp>
+#include <opencv2/opencv.hpp>
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -46,8 +46,20 @@ int wait_key() {
   return c;
 }
 
+cv::Mat convert_to_uchar(const cv::Mat& image) {
+  // Check if the image is of a floating-point type
+  if (image.depth() == CV_32F || image.depth() == CV_64F) {
+    cv::Mat ucharImage;
+    // convertTo automatically applies saturate_cast, clamping values to [0, 255]
+    image.convertTo(ucharImage, CV_8U);
+    return ucharImage;
+  }
+  // For non-floating point images, return a copy (or handle as needed)
+  return image;
+}
+
 void show_image(const std::string& label, const cv::Mat& img, bool wait) {
-  cv::imshow(label, img);
+  cv::imshow(label, convert_to_uchar(img));
   cv::waitKey(wait ? 0 : 1);
 }
 
@@ -62,7 +74,7 @@ void display_scaled_image(const std::string& label, cv::Mat image, float scale, 
   }
 
   // Display the image
-  cv::imshow(label, image);
+  cv::imshow(label, convert_to_uchar(image));
   cv::waitKey(wait ? 0 : 1); // Wait for a keystroke in the window
 }
 
