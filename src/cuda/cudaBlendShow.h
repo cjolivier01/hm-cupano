@@ -47,14 +47,37 @@ inline int getCVTypeForPixel(int channels) {
   return -1; // error
 }
 
-inline cv::Mat cloned_convert_to_uchar(const cv::Mat& image) {
+inline void set_alpha_pixels(cv::Mat& image, const cv::Vec3b& color) {
+  // Check that the image is non-empty and has 4 channels.
+  if (image.empty() || image.channels() != 4) {
+    return;
+  }
+
+  // Iterate over each row.
+  for (int y = 0; y < image.rows; y++) {
+    // Get pointer to the beginning of row 'y'. Each pixel is a Vec4b.
+    cv::Vec4b* rowPtr = image.ptr<cv::Vec4b>(y);
+    for (int x = 0; x < image.cols; x++) {
+      // Check if alpha channel is 0.
+      if (rowPtr[x][3] == 0) {
+        // Set B, G, R channels to the specified color.
+        rowPtr[x][0] = color[0]; // Blue channel.
+        rowPtr[x][1] = color[1]; // Green channel.
+        rowPtr[x][2] = color[2]; // Red channel.
+      }
+    }
+  }
+}
+
+inline cv::Mat convert_to_uchar(cv::Mat& image) {
   if (image.depth() == CV_32F || image.depth() == CV_64F) {
-    cv::Mat img2;
-    image.convertTo(img2, CV_8U);
-    return img2 * 255;
+    image.convertTo(image, image.depth(), 1.0 / 255.0);
+    set_alpha_pixels(image, {255, 0, 0});
+    return image;
   }
   // For non-floating point images, return a copy (or handle as needed)
-  return image.clone();
+  set_alpha_pixels(image, {255, 0, 0});
+  return image;
 }
 
 template <typename T>
@@ -84,8 +107,8 @@ inline void displayPyramid(
 
     assert(pyramid[level]);
 
-    std::unique_ptr<T[]> buffer = std::make_unique<T[]>(w * h);
     const size_t dataSize = w * h * sizeof(T) * channels;
+    std::unique_ptr<T[]> buffer = std::make_unique<T[]>(w * h * channels);
     cudaError_t cuerr = cudaMemcpy(buffer.get(), pyramid[level], dataSize, cudaMemcpyDeviceToHost);
     assert(cuerr == cudaError_t::cudaSuccess);
 
@@ -93,10 +116,12 @@ inline void displayPyramid(
     // (We clone immediately so that the Mat owns its data.)
     cv::Mat levelMat = cv::Mat(h, w, cvType, buffer.get()).clone();
 
+    levelMat = convert_to_uchar(levelMat);
+
     cv::imshow(windowName, levelMat);
     cv::waitKey(0);
 
-    levelMats.emplace_back(cloned_convert_to_uchar(levelMat));
+    levelMats.emplace_back();
   }
 
   // Create a composite image that is large enough to hold all levels stacked vertically.
@@ -138,10 +163,10 @@ inline void CudaBatchLaplacianBlendContext<T>::displayPyramids(int channels, flo
   // Display different pyramids. (Adjust which ones you want to show.)
   // displayPyramid("Gaussian 1", d_gauss1, channels);
   // displayPyramid("Gaussian 2", d_gauss2, channels);
-  displayPyramid("Mask Pyramid", d_maskPyr, widths, heights, 1, scale); // assuming mask is single channel
+  // displayPyramid("Mask Pyramid", d_maskPyr, widths, heights, 1, scale); // assuming mask is single channel
   // displayPyramid("Laplacian 1", d_lap1, channels);
   // displayPyramid("Laplacian 2", d_lap2, channels);
-  // displayPyramid("Blended Pyramid", d_blend, channels);
+  displayPyramid("Blended Pyramid", d_blend, widths, heights, channels, scale);
   // Optionally, you could also display the reconstructed images from d_resonstruct if desired.
 
   // Wait for a key press to close the windows.
