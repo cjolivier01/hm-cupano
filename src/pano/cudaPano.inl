@@ -356,7 +356,17 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   }
   if (!stitch_context.is_hard_seam()) {
     CudaMat<T_compute>& cudaBlendedFull = *stitch_context.cudaFull1;
-#if 1
+#if 0
+    if constexpr (sizeof(T_compute) / sizeof(BaseScalar_t<T_compute>) == 4) {
+      auto surf1 = stitch_context.cudaFull1->surface();
+      auto surf2 = stitch_context.cudaFull2->surface();
+      cuerr = AlphaConditionalCopy(
+          surf1,
+          surf2,
+          /*batchSize=*/stitch_context.batch_size(),
+          stream);
+      CUDA_RETURN_IF_ERROR(cuerr);
+    }
     //
     // BLEND THE IMAGES (overlapping portions + some padding)
     //
