@@ -12,8 +12,8 @@ namespace cupano {
 
 // Parameters for stabilization using GPU‑based ORB
 struct StabilizationParams {
-  int maxFeatures = 1000;  // Maximum number of features to detect
-  int historyLength = 5;   // Number of frames to use for smoothing
+  int maxFeatures = 1000; // Maximum number of features to detect
+  int historyLength = 5; // Number of frames to use for smoothing
   int blockSize = 2;
   int kSize = 3;
   int k = 0.04;
@@ -32,28 +32,30 @@ class FrameStabilizer {
   bool initialize(int width, int height);
 
   // Process a new frame and output a stabilized version
-  bool stabilizeFrame(const cv::cuda::GpuMat& inputFrame,
-                      cv::cuda::GpuMat& outputFrame);
+  bool stabilizeFrame(const cv::cuda::GpuMat& inputFrame, cv::cuda::GpuMat& outputFrame);
 
   // Reset stabilization history (e.g. when scene changes)
   void reset();
 
  private:
   // Detect features and compute descriptors using ORB on the GPU
-  bool detectFeatures(const cv::cuda::GpuMat& frame,
-                      std::vector<cv::KeyPoint>& keypoints,
-                      cv::cuda::GpuMat& descriptors);
+  bool detectFeatures(
+      const cv::cuda::GpuMat& frame,
+      std::vector<cv::KeyPoint>& keypoints,
+      cv::cuda::GpuMat& descriptors);
 
   // Match features between frames using a GPU-based descriptor matcher
-  bool matchFeatures(const cv::cuda::GpuMat& prevDescriptors,
-                     const cv::cuda::GpuMat& currDescriptors,
-                     std::vector<cv::DMatch>& matches);
+  bool matchFeatures(
+      const cv::cuda::GpuMat& prevDescriptors,
+      const cv::cuda::GpuMat& currDescriptors,
+      std::vector<cv::DMatch>& matches);
 
   // Estimate the homography transformation between matched features
-  bool estimateTransformation(const std::vector<cv::KeyPoint>& prevKeypoints,
-                              const std::vector<cv::KeyPoint>& currKeypoints,
-                              const std::vector<cv::DMatch>& matches,
-                              cv::Mat& transformMatrix);
+  bool estimateTransformation(
+      const std::vector<cv::KeyPoint>& prevKeypoints,
+      const std::vector<cv::KeyPoint>& currKeypoints,
+      const std::vector<cv::DMatch>& matches,
+      cv::Mat& transformMatrix);
 
  private:
   StabilizationParams mParams;
@@ -76,4 +78,4 @@ class FrameStabilizer {
   bool mInitialized;
 };
 
-}  // namespace cupano
+} // namespace cupano

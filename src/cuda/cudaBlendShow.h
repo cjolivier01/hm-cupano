@@ -118,8 +118,8 @@ inline void displayPyramid(
 
     levelMat = convert_to_uchar(levelMat);
 
-    //cv::imshow(windowName, levelMat);
-    //cv::waitKey(0);
+    // cv::imshow(windowName, levelMat);
+    // cv::waitKey(0);
 
     levelMats.emplace_back(std::move(levelMat));
   }
@@ -134,7 +134,7 @@ inline void displayPyramid(
     cv::Rect roi(0, currentY, mat.cols, mat.rows);
     // Copy the pyramid level image into the composite image.
     mat.copyTo(composite(roi));
-    //cv::rectangle(composite, roi, cv::Scalar(0, 255, 0), 8);
+    // cv::rectangle(composite, roi, cv::Scalar(0, 255, 0), 8);
     currentY += mat.rows;
     break;
   }

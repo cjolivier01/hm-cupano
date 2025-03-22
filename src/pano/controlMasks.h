@@ -28,8 +28,7 @@ struct SpatialTiff {
  * image and position metadata for georeferencing or alignment.
  */
 class ControlMasks {
-
-public:
+ public:
   ControlMasks() = default;
   ControlMasks(std::string game_dir);
 
@@ -68,4 +67,3 @@ public:
 
 } // namespace pano
 } // namespace hm
-

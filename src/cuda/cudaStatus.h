@@ -221,4 +221,3 @@ class CudaStatusOr {
     }                                      \
     lhs = std::move(_result.ValueOrDie()); \
   } while (0)
-

@@ -52,8 +52,8 @@ void CanvasManager::updateMinimizeBlend(const cv::Size& remapped_size_1, const c
     assert(box_x2 <= canvas_info_.width);
 
     // Compute ROIs for the blend region in each image.
-    //roi_blend_1 = {_x2 - _overlap_pad, 0, remapped_size_1.width - _x2 - _overlap_pad, remapped_size_1.height};
-    remapped_image_roi_blend_1 = { _x2 - _overlap_pad - _x1, 0, blend_width - _overlap_pad, remapped_size_1.height};
+    // roi_blend_1 = {_x2 - _overlap_pad, 0, remapped_size_1.width - _x2 - _overlap_pad, remapped_size_1.height};
+    remapped_image_roi_blend_1 = {_x2 - _overlap_pad - _x1, 0, blend_width - _overlap_pad, remapped_size_1.height};
     remapped_image_roi_blend_2 = {0, 0, blend_width - _overlap_pad, remapped_size_2.height};
     assert(remapped_image_roi_blend_1.width == remapped_image_roi_blend_2.width);
     assert(remapped_image_roi_blend_1.x + remapped_image_roi_blend_1.width <= _remapper_1.width);
