@@ -454,6 +454,10 @@ class CudaMat {
     return surface();
   }
 
+  CudaPixelType cuda_pixel_type() const {
+    return type_;
+  }
+
   /**
    * @brief Returns a pointer to the raw underlying data.
    *
