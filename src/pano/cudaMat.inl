@@ -221,7 +221,7 @@ CudaMat<T>::CudaMat(T* d_data, int B, int W, int H, int C)
       batch_size_(B),
       owns_(false) { // This instance does not own the memory.
   // Verify that the number of channels matches the expected value.
-  assert(cudaPixelTypeChannels(type_) == C * sizeof(T) / sizeof(typename BaseScalar<T>::type));
+  assert(static_cast<size_t>(cudaPixelTypeChannels(type_)) == C * sizeof(T) / sizeof(typename BaseScalar<T>::type));
   // Confirm that the size of T is as expected.
   assert(sizeof(T) == cudaPixelElementSize(type_));
 }
