@@ -107,19 +107,20 @@ void show_image(const std::string& label, const cv::Mat& img, bool wait) {
   cv::waitKey(wait ? 0 : 1);
 }
 
-void show_image(const std::string& label, const CudaSurface<uchar4>& surface, bool wait) {
-  CudaGLWindow* gl_window = get_gl_window(surface.width, surface.height, sizeof(uchar4), label.c_str());
+template <typename PIXEL_T>
+void show_surface(const std::string& label, const CudaSurface<PIXEL_T>& surface, bool wait) {
+  CudaGLWindow* gl_window = get_gl_window(surface.width, surface.height, sizeof(uchar3), label.c_str());
   if (!gl_window) {
     return;
   }
   gl_window->render(surface);
-  // std::cout << "Start of wait key" << std::endl;
-  // cv::waitKey(wait ? 0 : 1);
   if (wait) {
     wait_key(gl_window);
   }
-  // std::cout << "End of wait key" << std::endl;
 }
+
+template void show_surface<uchar3>(const std::string& label, const CudaSurface<uchar3>& surface, bool wait);
+template void show_surface<uchar4>(const std::string& label, const CudaSurface<uchar4>& surface, bool wait);
 
 void display_scaled_image(const std::string& label, cv::Mat image, float scale, bool wait) {
   if (scale != 1.0f) {
