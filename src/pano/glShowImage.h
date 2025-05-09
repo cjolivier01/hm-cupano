@@ -109,7 +109,7 @@ class CudaGLWindow {
 
   // Render the given device image (CV_8UC4) to the window
   template <typename PIXEL_T>
-  void render(const CudaSurface<PIXEL_T>& d_img) {
+  void render(const CudaSurface<PIXEL_T>& d_img, cudaStream_t stream = nullptr) {
     assert(sizeof(PIXEL_T) == channels_);
     // Map the GL texture as a CUDA array
     CHECK_CUDA_ERR(cudaGraphicsMapResources(1, &cudaRes_, 0));
@@ -117,7 +117,7 @@ class CudaGLWindow {
     CHECK_CUDA_ERR(cudaGraphicsSubResourceGetMappedArray(&arr, cudaRes_, 0, 0));
 
     // Copy from GpuMat to CUDA array (device->device)
-    CHECK_CUDA_ERR(cudaMemcpy2DToArray(
+    CHECK_CUDA_ERR(cudaMemcpy2DToArrayAsync(
         arr, // destination CUDA array
         0,
         0, // x/y offset
@@ -125,7 +125,8 @@ class CudaGLWindow {
         d_img.pitch, // source pitch
         d_img.width * 4, // row size in bytes
         d_img.height, // number of rows
-        cudaMemcpyDeviceToDevice));
+        cudaMemcpyDeviceToDevice,
+        stream));
 
     CHECK_CUDA_ERR(cudaGraphicsUnmapResources(1, &cudaRes_, 0));
 
