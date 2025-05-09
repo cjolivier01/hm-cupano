@@ -160,9 +160,10 @@ int main(int argc, char** argv) {
 #if 1
 #if 1
   using T_pipeline = uchar4;
+  // using T_pipeline = uchar3;
   // using T_pipeline = float3;
   using T_compute = float4;
-  // using T_compute = float3;
+  //using T_compute = float3;
   // using T_compute = half3;
 #else
   using T_pipeline = float3;
@@ -217,7 +218,8 @@ int main(int argc, char** argv) {
   }
   if (show) {
     // SHOW_SCALED(canvas, 0.25);
-    SHOW_SCALED(canvas, 1.0);
+    // SHOW_SCALED(canvas, 1.0);
+    hm::utils::show_image("Canvas", canvas->surface(), /*wait=*/true);
     usleep(10000);
   }
 

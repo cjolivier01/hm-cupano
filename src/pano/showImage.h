@@ -1,7 +1,7 @@
 #pragma once
 
 #include <opencv2/opencv.hpp>
-
+#include "cupano/pano/cudaMat.h"
 #include <string>
 
 namespace hm {
@@ -9,6 +9,8 @@ namespace utils {
 
 void show_image(const std::string& label, const cv::Mat& img, bool wait = true);
 void display_scaled_image(const std::string& label, cv::Mat image, float scale = 1.0, bool wait = true);
+
+void show_image(const std::string& label, const CudaSurface<uchar4>& surface, bool wait = true);
 
 std::pair<double, double> get_min_max(const cv::Mat& mat);
 cv::Mat make_fake_mask_like(const cv::Mat& mask);

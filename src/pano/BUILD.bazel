@@ -17,13 +17,20 @@ cc_library(
     srcs = [
         "cudaMat.cpp",
         "showImage.cpp",
+        "glShowImage.cpp",
     ],
     hdrs = [
         "cudaMat.h",
         "cudaMat.inl",
         "showImage.h",
+        "glShowImage.h",
     ],
     copts = [
+    ],
+    linkopts = [
+      "-lglfw",
+      "-lGLEW",
+      "-lGL",
     ],
     include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
