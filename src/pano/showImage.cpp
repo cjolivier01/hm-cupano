@@ -122,6 +122,14 @@ void show_surface(const std::string& label, const CudaSurface<PIXEL_T>& surface,
 template void show_surface<uchar3>(const std::string& label, const CudaSurface<uchar3>& surface, bool wait);
 template void show_surface<uchar4>(const std::string& label, const CudaSurface<uchar4>& surface, bool wait);
 
+bool destroy_surface_window() {
+  if (!gl_window) {
+    return false;
+  }
+  gl_window.reset();
+  return true;
+}
+
 void display_scaled_image(const std::string& label, cv::Mat image, float scale, bool wait) {
   if (scale != 1.0f) {
     // Calculate new dimensions
