@@ -13,24 +13,23 @@ namespace hm {
 namespace utils {
 
 // Helper macro for OpenGL error checking
-#define CHECK_GL_ERROR()                                        \
-  do {                                                          \
-    GLenum err = glGetError();                                  \
-    if (err != GL_NO_ERROR) {                                   \
-      throw std::runtime_error(                                 \
-          std::string("OpenGL error: ") + std::to_string(err)); \
-    }                                                           \
+#define CHECK_GL_ERROR()                                                             \
+  do {                                                                               \
+    GLenum err = glGetError();                                                       \
+    if (err != GL_NO_ERROR) {                                                        \
+      throw std::runtime_error(std::string("OpenGL error: ") + std::to_string(err)); \
+    }                                                                                \
   } while (0)
 
 // Helper macro for CUDA error checking
-#define CHECK_CUDA_ERR(call)                                           \
-  do {                                                                 \
-    cudaError_t err = call;                                            \
-    if (err != cudaSuccess) {                                          \
-      throw std::runtime_error(                                        \
-          std::string("CUDA error at ") + __FILE__ + ":" +             \
-          std::to_string(__LINE__) + " - " + cudaGetErrorString(err)); \
-    }                                                                  \
+#define CHECK_CUDA_ERR(call)                                                                  \
+  do {                                                                                        \
+    cudaError_t err = call;                                                                   \
+    if (err != cudaSuccess) {                                                                 \
+      throw std::runtime_error(                                                               \
+          std::string("CUDA error at ") + __FILE__ + ":" + std::to_string(__LINE__) + " - " + \
+          cudaGetErrorString(err));                                                           \
+    }                                                                                         \
   } while (0)
 
 class CudaGLWindow {
@@ -39,18 +38,12 @@ class CudaGLWindow {
 
  public:
   CudaGLWindow(int width, int height, int channels, const std::string& title)
-      : window_(nullptr),
-        texture_(0),
-        cudaRes_(nullptr),
-        width_(width),
-        height_(height),
-        channels_(channels) {
+      : window_(nullptr), texture_(0), cudaRes_(nullptr), width_(width), height_(height), channels_(channels) {
     if (!glfwInit()) {
       throw std::runtime_error("Failed to initialize GLFW");
     }
 
-    window_ =
-        glfwCreateWindow(width_, height_, title.c_str(), nullptr, nullptr);
+    window_ = glfwCreateWindow(width_, height_, title.c_str(), nullptr, nullptr);
     if (!window_) {
       glfwTerminate();
       throw std::runtime_error("Failed to create GLFW window");
@@ -64,9 +57,7 @@ class CudaGLWindow {
     if (glewErr != GLEW_OK) {
       glfwDestroyWindow(window_);
       glfwTerminate();
-      throw std::runtime_error(
-          std::string("GLEW init error: ") +
-          (const char*)glewGetErrorString(glewErr));
+      throw std::runtime_error(std::string("GLEW init error: ") + (const char*)glewGetErrorString(glewErr));
     }
 
     // Create OpenGL texture
@@ -79,29 +70,34 @@ class CudaGLWindow {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
+    /*! \brief Define a two-dimensional texture image.
+     *
+     *  API Signature:
+     *  void glTexImage2D(GLenum target,
+     *                    GLint level,
+     *                    GLint internalformat,
+     *                    GLsizei width,
+     *                    GLsizei height,
+     *                    GLint border,
+     *                    GLenum format,
+     *                    GLenum type,
+     *                    const void* pixels);
+     *
+     *  - target:       The texture target, e.g., GL_TEXTURE_2D.
+     *  - level:        Mipmap level-of-detail number. 0 is base image.
+     *  - internalformat: Number of color components or sized internal storage format (e.g., GL_RGBA8).
+     *  - width:        Width of the texture image. Must be >= 0.
+     *  - height:       Height of the texture image. Must be >= 0.
+     *  - border:       Width of the border. Must be 0.
+     *  - format:       Format of the pixel data (e.g., GL_RGBA, GL_BGRA, GL_RED).
+     *  - type:         Data type of the pixel data (e.g., GL_UNSIGNED_BYTE, GL_FLOAT).
+     *  - pixels:       Pointer to image data in client memory. If nullptr, allocates storage without initializing.
+     */
     if (channels_ == 4) {
-      glTexImage2D(
-          GL_TEXTURE_2D,
-          0,
-          GL_RGBA8,
-          width_,
-          height_,
-          0,
-          GL_BGRA,
-          GL_UNSIGNED_BYTE,
-          nullptr);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width_, height_, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
     } else {
       assert(channels_ == 3);
-      glTexImage2D(
-          GL_TEXTURE_2D,
-          0,
-          GL_RGBA8,
-          width_,
-          height_,
-          0,
-          GL_BGR,
-          GL_UNSIGNED_BYTE,
-          nullptr);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width_, height_, 0, GL_BGR, GL_UNSIGNED_BYTE, nullptr);
     }
 
     CHECK_GL_ERROR();
@@ -110,11 +106,8 @@ class CudaGLWindow {
     CHECK_GL_ERROR();
 
     // Register texture with CUDA
-    CHECK_CUDA_ERR(cudaGraphicsGLRegisterImage(
-        &cudaRes_,
-        texture_,
-        GL_TEXTURE_2D,
-        cudaGraphicsRegisterFlagsWriteDiscard));
+    CHECK_CUDA_ERR(
+        cudaGraphicsGLRegisterImage(&cudaRes_, texture_, GL_TEXTURE_2D, cudaGraphicsRegisterFlagsWriteDiscard));
   }
 
   ~CudaGLWindow() {
@@ -140,10 +133,7 @@ class CudaGLWindow {
 
   // Render the given device image (CV_8UC4) to the window
   template <typename PIXEL_T>
-  void render(
-      const CudaSurface<PIXEL_T>& d_img,
-      cudaStream_t stream = nullptr) {
-
+  void render(const CudaSurface<PIXEL_T>& d_img, cudaStream_t stream = nullptr) {
     assert(sizeof(PIXEL_T) == channels_);
     assert(d_img.width == width_);
     assert(d_img.height == height_);
@@ -197,12 +187,7 @@ class CudaGLWindow {
 
  private:
   // Global trampoline for GLFW key events
-  static void globalKeyCallback(
-      GLFWwindow* win,
-      int key,
-      int scancode,
-      int action,
-      int mods) {
+  static void globalKeyCallback(GLFWwindow* win, int key, int scancode, int action, int mods) {
     std::cout << "globalKeyCallback()" << std::endl;
     // if (s_instance && s_instance->keyCallback_) {
     //   s_instance->keyCallback_(key, scancode, action, mods);
