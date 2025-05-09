@@ -109,7 +109,7 @@ void show_image(const std::string& label, const cv::Mat& img, bool wait) {
 
 template <typename PIXEL_T>
 void show_surface(const std::string& label, const CudaSurface<PIXEL_T>& surface, bool wait) {
-  CudaGLWindow* gl_window = get_gl_window(surface.width, surface.height, sizeof(uchar3), label.c_str());
+  CudaGLWindow* gl_window = get_gl_window(surface.width, surface.height, sizeof(PIXEL_T), label.c_str());
   if (!gl_window) {
     return;
   }
