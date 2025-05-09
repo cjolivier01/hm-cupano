@@ -17,13 +17,13 @@ cc_library(
     srcs = [
         "cudaMat.cpp",
         "showImage.cpp",
-        "glShowImage.cpp",
+        "cudaGLWindow.cpp",
     ],
     hdrs = [
         "cudaMat.h",
         "cudaMat.inl",
         "showImage.h",
-        "glShowImage.h",
+        "cudaGLWindow.h",
     ],
     copts = [
     ],

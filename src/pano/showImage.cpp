@@ -1,5 +1,5 @@
 #include "cupano/pano/showImage.h"
-#include "cupano/pano/glShowImage.h"
+#include "cupano/pano/cudaGLWindow.h"
 
 #include <set>
 #include <unordered_set>

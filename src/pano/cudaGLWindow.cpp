@@ -1,4 +1,4 @@
-#include "cupano/pano/glShowImage.h"
+#include "cupano/pano/cudaGLWindow.h"
 
 namespace hm {
 namespace utils {}
