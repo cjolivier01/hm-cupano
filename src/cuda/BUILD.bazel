@@ -1,4 +1,5 @@
 load("@rules_cuda//cuda:defs.bzl", "cuda_library")
+load("@rules_cc//cc:defs.bzl", "cc_library")
 
 INCLUDE_PREFIX = "cupano/cuda"
 
@@ -22,7 +23,7 @@ cuda_library(
         "-Wno-deprecated-gpu-targets",
         #"-G",
         #"-g",
-        "-keep",
+        #"-keep",
         #"-O0",
     ],
     # includes = ["."],

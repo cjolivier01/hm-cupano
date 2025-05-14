@@ -159,10 +159,11 @@ int main(int argc, char** argv) {
   // Configurable parameter: number of pyramid levels.
 #if 1
 #if 1
-  using T_pipeline = uchar4;
+  //using T_pipeline = uchar4;
+  using T_pipeline = uchar3;
   // using T_pipeline = float3;
-  using T_compute = float4;
-  // using T_compute = float3;
+  //using T_compute = float4;
+  using T_compute = float3;
   // using T_compute = half3;
 #else
   using T_pipeline = float3;
@@ -188,9 +189,6 @@ int main(int argc, char** argv) {
       if (sizeof(T_pipeline) / sizeof(BaseScalar_t<T_pipeline>) == 4) {
         cv::cvtColor(sample_img_left, sample_img_left, cv::COLOR_BGR2BGRA);
         cv::cvtColor(sample_img_right, sample_img_right, cv::COLOR_BGR2BGRA);
-      } else {
-        // sample_img_left.convertTo(sample_img_left, cvPipelineType, 1.0 / 255.0);
-        // sample_img_right.convertTo(sample_img_right, cvPipelineType, 1.0 / 255.0);
       }
     }
   }
@@ -217,7 +215,8 @@ int main(int argc, char** argv) {
   }
   if (show) {
     // SHOW_SCALED(canvas, 0.25);
-    SHOW_SCALED(canvas, 1.0);
+    // SHOW_SCALED(canvas, 1.0);
+    hm::utils::show_surface("Canvas", canvas->surface(), /*wait=*/true);
     usleep(10000);
   }
 

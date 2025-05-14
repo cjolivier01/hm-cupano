@@ -1,4 +1,5 @@
-#include "showImage.h"
+#include "cupano/pano/showImage.h"
+#include "cupano/pano/cudaGLWindow.h"
 
 #include <set>
 #include <unordered_set>
@@ -13,6 +14,19 @@
 
 namespace hm {
 namespace utils {
+
+namespace {
+thread_local std::unique_ptr<CudaGLWindow> gl_window;
+
+CudaGLWindow* get_gl_window(int w, int h, int channels, const char* title) {
+  if (!gl_window) {
+    gl_window = std::make_unique<CudaGLWindow>(w, h, channels, title);
+  }
+  return gl_window.get();
+}
+
+} // namespace
+
 int kbhit() {
   struct termios oldt, newt;
   int ch;
@@ -38,9 +52,14 @@ int kbhit() {
   return 0;
 }
 
-int wait_key() {
+int wait_key(CudaGLWindow* window = nullptr) {
   int c;
   while (!(c = kbhit())) {
+    if (window && window->isKeyPressed(GLFW_KEY_ESCAPE)) {
+      // ESCAPE?
+      constexpr int kEscapeKey = 27;
+      return kEscapeKey;
+    }
     usleep(100);
   }
   return c;
@@ -86,6 +105,29 @@ cv::Mat convert_to_uchar(cv::Mat image) {
 void show_image(const std::string& label, const cv::Mat& img, bool wait) {
   cv::imshow(label, convert_to_uchar(img.clone()));
   cv::waitKey(wait ? 0 : 1);
+}
+
+template <typename PIXEL_T>
+void show_surface(const std::string& label, const CudaSurface<PIXEL_T>& surface, bool wait) {
+  CudaGLWindow* gl_window = get_gl_window(surface.width, surface.height, sizeof(PIXEL_T), label.c_str());
+  if (!gl_window) {
+    return;
+  }
+  gl_window->render(surface);
+  if (wait) {
+    wait_key(gl_window);
+  }
+}
+
+template void show_surface<uchar3>(const std::string& label, const CudaSurface<uchar3>& surface, bool wait);
+template void show_surface<uchar4>(const std::string& label, const CudaSurface<uchar4>& surface, bool wait);
+
+bool destroy_surface_window() {
+  if (!gl_window) {
+    return false;
+  }
+  gl_window.reset();
+  return true;
 }
 
 void display_scaled_image(const std::string& label, cv::Mat image, float scale, bool wait) {
