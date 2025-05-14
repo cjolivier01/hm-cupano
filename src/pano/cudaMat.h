@@ -279,10 +279,12 @@ struct CudaTypeToPixelType<__half> {
   static constexpr CudaPixelType value = CUDA_PIXEL_HALF1;
 };
 
+#if (CUDART_VERSION >= 11000)
 template <>
 struct CudaTypeToPixelType<__nv_bfloat16> {
   static constexpr CudaPixelType value = CUDA_PIXEL_BF16_1;
 };
+#endif
 
 // --- 3-channel types ---
 template <>
