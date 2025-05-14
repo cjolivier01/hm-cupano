@@ -1,8 +1,10 @@
 #pragma once
 
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
 #include <cuda_runtime.h>
+#if (CUDART_VERSION >= 11000)
+#include <cuda_bf16.h>
+#endif
+#include <cuda_fp16.h>
 
 #include <cstdint>
 
@@ -37,6 +39,7 @@ struct half4 {
 
 // USHORT types are typically provided by CUDA as "ushort3", "ushort4" etc.
 // If not available, you could define your own similar to half3/half4.
+#if (CUDART_VERSION >= 11000)
 #ifndef BF16_3_DEFINED
 #define BF16_3_DEFINED
 /**
@@ -55,6 +58,7 @@ struct bfloat16_3 {
 struct bfloat16_4 {
   __nv_bfloat16 x, y, z, w;
 };
+#endif
 #endif
 
 //------------------------------------------------------------------------------

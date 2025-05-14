@@ -12,7 +12,10 @@
 #include <iostream>
 #include <type_traits>
 
-#include <cuda_bf16.h>
+#include <cuda_runtime.h>
+// #if (CUDART_VERSION >= 11000)
+// #include <cuda_bf16.h>
+// #endif
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 
@@ -159,10 +162,10 @@ int main(int argc, char** argv) {
   // Configurable parameter: number of pyramid levels.
 #if 1
 #if 1
-  //using T_pipeline = uchar4;
+  // using T_pipeline = uchar4;
   using T_pipeline = uchar3;
   // using T_pipeline = float3;
-  //using T_compute = float4;
+  // using T_compute = float4;
   using T_compute = float3;
   // using T_compute = half3;
 #else

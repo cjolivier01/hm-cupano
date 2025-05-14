@@ -1,7 +1,10 @@
 #include "cudaBlend.h"
 #include "cudaTypes.h"
 
-#include <cuda_bf16.h>
+// #if (CUDART_VERSION >= 11000)
+// #include <cuda_bf16.h>
+// #endif
+
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 

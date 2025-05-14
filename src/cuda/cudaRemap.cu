@@ -1,6 +1,8 @@
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
 #include <cuda_runtime.h>
+// #if (CUDART_VERSION >= 11000)
+// #include <cuda_bf16.h>
+// #endif
+#include <cuda_fp16.h>
 #include <device_launch_parameters.h>
 #include "cudaImageAdjust.h"
 #include "cudaRemap.h" // Assumed to declare these host functions

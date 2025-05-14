@@ -1,8 +1,30 @@
 #pragma once
 
-#include <cuda_bf16.h>
+#include <cuda_runtime_api.h>
+
+#ifndef CUDART_VERSION
+#error CUDART_VERSION Undefined!
+#elif (CUDART_VERSION >= 12000)
+  // Code specific to CUDA 12.x and higher
+  #if (CUDART_VERSION >= 13000)
+    // Code specific to CUDA 13.x and higher
+  #else
+    // Code specific to CUDA 12.x (but lower than 13)
+  #endif
+#elif (CUDART_VERSION >= 11000)
+  // Code specific to CUDA 11.x
+#elif (CUDART_VERSION >= 10000)
+  // Code specific to CUDA 10.x
+#else
+  // Code for older CUDA versions or if CUDA is not available
+  #error Unsupported CUDA version
+#endif
+
+#if (CUDART_VERSION >= 11000)
+// #include <cuda_bf16.h>
+#endif
+
 #include <cuda_fp16.h>
-#include <cuda_runtime.h>
 #include <opencv2/opencv.hpp>
 #include <vector>
 
