@@ -105,11 +105,12 @@ struct BaseScalar<__half> {
   using type = __half;
 };
 
+#if (CUDART_VERSION >= 11000)
 template <>
 struct BaseScalar<__nv_bfloat16> {
   using type = __nv_bfloat16;
 };
-
+#endif
 // --- 3-channel types ---
 template <>
 struct BaseScalar<uchar3> {
@@ -136,10 +137,12 @@ struct BaseScalar<half3> {
   using type = __half;
 };
 
+#if (CUDART_VERSION >= 11000)
 template <>
 struct BaseScalar<bfloat16_3> {
   using type = __nv_bfloat16;
 };
+#endif
 
 // --- 4-channel types ---
 template <>
@@ -167,10 +170,12 @@ struct BaseScalar<half4> {
   using type = __half;
 };
 
+#if (CUDART_VERSION >= 11000)
 template <>
 struct BaseScalar<bfloat16_4> {
   using type = __nv_bfloat16;
 };
+#endif
 
 /**
  * @brief Helper alias to obtain the base scalar type.
