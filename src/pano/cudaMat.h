@@ -225,6 +225,7 @@ struct CudaPixelTypeToCudaType<CUDA_PIXEL_HALF4> {
   using type = half4; // Our custom half4.
 };
 
+#if (CUDART_VERSION >= 11000)
 template <>
 struct CudaPixelTypeToCudaType<CUDA_PIXEL_BF16_1> {
   using type = __nv_bfloat16;
@@ -239,6 +240,7 @@ template <>
 struct CudaPixelTypeToCudaType<CUDA_PIXEL_BF16_4> {
   using type = bfloat16_4;
 };
+#endif
 
 //
 // Primary template declaration – no definition is provided.
@@ -308,11 +310,12 @@ struct CudaTypeToPixelType<half3> {
   static constexpr CudaPixelType value = CUDA_PIXEL_HALF3;
 };
 
+#if (CUDART_VERSION >= 11000)
 template <>
 struct CudaTypeToPixelType<bfloat16_3> {
   static constexpr CudaPixelType value = CUDA_PIXEL_BF16_3;
 };
-
+#endif
 // --- 4-channel types ---
 template <>
 struct CudaTypeToPixelType<uchar4> {
@@ -339,10 +342,12 @@ struct CudaTypeToPixelType<half4> {
   static constexpr CudaPixelType value = CUDA_PIXEL_HALF4;
 };
 
+#if (CUDART_VERSION >= 11000)
 template <>
 struct CudaTypeToPixelType<bfloat16_4> {
   static constexpr CudaPixelType value = CUDA_PIXEL_BF16_4;
 };
+#endif
 
 /*----------------------------------------------------------------------------
   Template Class: CudaMat
