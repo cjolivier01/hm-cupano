@@ -15,13 +15,13 @@
 
 namespace {
 
-template <typename F_dest, typename F>
+template <typename F_dest, typename F, typename COMPUTE_F = float>
 __device__ inline F_dest round_to_uchar(const F& x) {
-  F x_rounded = x + F(0.5); // Add 0.5 in the type's precision
-  if (x_rounded <= F(0.0)) {
+  COMPUTE_F x_rounded = static_cast<COMPUTE_F>(x) + 0.5f;
+  if (x_rounded <= 0.0f) {
     return 0;
   }
-  if (x_rounded >= F(255.0)) {
+  if (x_rounded >= 255.0f) {
     return 255;
   }
   return static_cast<F_dest>(x_rounded); // Cast result to unsigned char
