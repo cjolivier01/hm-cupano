@@ -201,9 +201,11 @@ __global__ void AlphaConditionalCopyKernel(CudaSurface<T> image1, CudaSurface<T>
 
   // If image1's alpha (w) is 0 and image2's is nonzero, copy image2's pixel to image1.
   // Otherwise, if image2's alpha is 0 and image1's is nonzero, copy image1's pixel to image2.
-  if (static_cast<float>(pixel1->w) == 0.0f && static_cast<float>(pixel2->w) != 0.0f) {
+  float alpha1 = static_cast<float>(pixel1->w);
+  float alpha2 = static_cast<float>(pixel2->w);
+  if (alpha1 == 0.0f && alpha2 != 0.0f) {
     *pixel1 = *pixel2;
-  } else if (static_cast<float>(pixel2->w) == 0.0f && static_cast<float>(pixel1->w) != 0.0f) {
+  } else if (alpha2 == 0.0f && alpha1 != 0.0f) {
     *pixel2 = *pixel1;
   }
 }
