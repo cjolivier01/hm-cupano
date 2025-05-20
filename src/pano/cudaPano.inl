@@ -5,7 +5,10 @@
 #include "cupano/cuda/cudaRemap.h"
 #include "cupano/cuda/cudaTypes.h"
 #include "cupano/pano/cudaPano.h"
-#include "cupano/pano/showImage.h"
+#include "cupano/pano/showImage.h" /*NOLINT*/
+
+#include <csignal>
+#include <optional>
 
 namespace hm {
 namespace pano {
@@ -99,10 +102,10 @@ constexpr inline float3 neg(const float3& f) {
   };
 }
 
-template<typename T>
+template <typename T>
 inline constexpr size_t num_channels() {
-  static_assert(sizeof(T)/sizeof(BaseScalar_t<T>) != 1);
-  return sizeof(T)/sizeof(BaseScalar_t<T>);
+  static_assert(sizeof(T) / sizeof(BaseScalar_t<T>) != 1);
+  return sizeof(T) / sizeof(BaseScalar_t<T>);
 }
 
 } // namespace tmp
@@ -124,7 +127,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   assert(canvas->batch_size() == stitch_context.batch_size());
 
   // bool cross_pollenate_images = true;
-
   auto roi_width = [](const cv::Rect2i& roi) { return roi.width; };
   if (!stitch_context.is_hard_seam()) {
     //
@@ -177,29 +179,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     //
     // Now copy the blending portion of remapped image 1 from the canvas onto the blend image
     //
-    // cuerr = simple_make_full_batch(
-    //     // Image 1 (float image)
-    //     canvas->surface(),
-    //     /*region_width=*/roi_width(canvas_manager.roi_blend_2),
-    //     /*region_height=*/stitch_context.cudaBlendSoftSeam->height() /*roi_height(canvas_manager.roi_blend_2)*/,
-    //     /*offsetX=*/canvas_manager._x2,
-    //     /*offsetY=*/0,
-    //     /*destOffsetX=*/canvas_manager._remapper_2.xpos,
-    //     /*destOffsetY=*/0 /* we've already applied our Y offset */,
-    //     /*adjust_origin=*/false,
-    //     /*batchSize=*/stitch_context.batch_size(),
-    //     stitch_context.cudaFull1->surface(),
-    //     stream);
-
-    // cv::Mat canv_mat = canvas->download();
-    // // int wdiff = 672 - canvas_manager.remapped_image_.width;
-    // cv::Rect roi = canvas_manager.remapped_image_roi_blend_1;
-    // roi.x += canvas_manager._x1;
-    // // roi.width += wdiff;
-    // // roi.y += canvas_manager._y1;
-    // cv::rectangle(canv_mat, roi, cv::Scalar(255, 255, 0, 255), 8);
-    // utils::show_image("Left Canvas Blend ROI", canv_mat, true);
-
     cuerr = simple_make_full_batch(
         // Image 1 (float image)
         canvas->surface(),
@@ -312,24 +291,13 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     //
     // Now copy the blending portion of remapped image 2 from the canvas onto the blend image
     //
-    // assert(stitch_context.cudaBlendSoftSeam->height() == roi_height(canvas_manager.roi_blend_2));
-
-    // cv::Mat canv_mat = canvas->download();
-    // cv::Rect roi = canvas_manager.remapped_image_roi_blend_2;
-    // roi.x += canvas_manager._x2;
-    // // roi.y += canvas_manager._x2;
-    // // roi.top += canvas_manager._y2;
-    // // roi.bottom += canvas_manager._y2;
-    // cv::rectangle(canv_mat, roi, cv::Scalar(0, 255, 255, 255), 8);
-    // utils::show_image("Right Canvas Blend ROI", canv_mat, true);
-
     cuerr = simple_make_full_batch(
         // Image 1 (float image)
         canvas->surface(),
         /*region_width=*/roi_width(canvas_manager.remapped_image_roi_blend_2),
         /*region_height=*/stitch_context.cudaBlendSoftSeam->height() /*roi_height(canvas_manager.roi_blend_2)*/,
         /*offsetX=*/canvas_manager._x2,
-        /*offsetY=*/0,  // we've already applied the Y offset when painting it onto the canvas
+        /*offsetY=*/0, // we've already applied the Y offset when painting it onto the canvas
         /*destOffsetX=*/canvas_manager._remapper_2.xpos,
         /*destOffsetY=*/0 /* we've already applied our Y offset */,
         /*adjust_origin=*/false,
