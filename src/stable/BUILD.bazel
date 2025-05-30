@@ -1,0 +1,71 @@
+load("@rules_cuda//cuda:defs.bzl", "cuda_library")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+INCLUDE_PREFIX = "cupano/stable"
+
+# cc_binary(
+#     name = "stabilization",
+#     srcs = [
+#         "Stabilization.cpp",
+#     ],
+#     linkopts = [
+#       "-l:libopencv_cudafeatures2d.so",
+#       "-l:libopencv_cudaarithm.so",
+#       "-l:libopencv_cudaimgproc.so",
+#       "-l:libopencv_cudaoptflow.so",
+#       "-l:libopencv_cudawarping.so",
+#       "-l:libopencv_3d.so",
+#       "-l:libopencv_features.so",
+#     ],
+#     deps = [
+#         ":frame_stabilizer",
+#     ],
+# )
+
+# cc_library (
+#   name = "frame_stabilizer",
+#   hdrs = [
+#     "FrameStabilizer.h",
+#   ],
+#   deps = [
+#     ":frame_stabilizer_cuda_lib",
+#   ],
+#   include_prefix = INCLUDE_PREFIX,
+#   visibility = ["//visibility:public"],
+# )
+
+# cuda_library(
+#     name = "frame_stabilizer_cuda_lib",
+#     srcs = [
+#         "FrameStabilizer.cu",
+#     ],
+#     hdrs = [
+#         "FrameStabilizer.h",
+#     ],
+#     copts = [
+#         "-std=c++17",
+#         "-Xcompiler=-fPIC",
+#         # "-Xcompiler=-rdynamic",
+#         #"-Xcompiler=-O0",
+#         #"-Xcompiler=-g",
+#         "-Wno-deprecated-gpu-targets",
+#         #"-G",
+#         #"-g",
+#         "-keep",
+#         #"-O0",
+#     ],
+#     linkopts = [
+#       "-l:libopencv_cudafeatures2d.so",
+#       "-l:libopencv_cudaarithm.so",
+#       "-l:libopencv_cudaimgproc.so",
+#       "-l:libopencv_cudaoptflow.so",
+#       "-l:libopencv_cudawarping.so",
+#       "-l:libopencv_3d.so",
+#       "-l:libopencv_features.so",
+#     ],
+#     visibility = ["//visibility:private"],
+#     deps = [
+#         "@opencv_linux//:opencv",
+#         "@local_cuda//:cuda_runtime",
+#     ],
+# )

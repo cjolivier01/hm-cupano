@@ -40,7 +40,7 @@ cudaError_t copy_roi_batched(
     int offsetX,
     int offsetY,
     int batchSize,
-    cudaStream_t stream = 0);
+    cudaStream_t stream);
 
 /**
  * @brief Creates full canvas images by copying specified source ROIs from a batch of images (and masks)
@@ -83,4 +83,17 @@ cudaError_t simple_make_full_batch(
     bool adjust_origin,
     int batchSize,
     CudaSurface<T_out> dest,
-    cudaStream_t stream = 0);
+    cudaStream_t stream);
+
+/**
+ * @brief Launch the AlphaConditionalCopyKernel for surfaces that use a vector type with an alpha channel.
+ *
+ * @tparam T CUDA vector type (e.g. uchar4, float4, half4).
+ * @param image1 Destination/source surface for the first image.
+ * @param image2 Destination/source surface for the second image.
+ * @param batchSize Number of images in the batch.
+ * @param stream CUDA stream to use.
+ * @return cudaError_t cudaGetLastError() after launching the kernel.
+ */
+template <typename T>
+cudaError_t AlphaConditionalCopy(CudaSurface<T>& image1, CudaSurface<T>& image2, int batchSize, cudaStream_t stream);

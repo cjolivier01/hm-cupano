@@ -1,14 +1,18 @@
 #pragma once
 
 #include <opencv2/opencv.hpp>
-
 #include <string>
+#include "cupano/pano/cudaMat.h"
 
 namespace hm {
 namespace utils {
 
 void show_image(const std::string& label, const cv::Mat& img, bool wait = true);
 void display_scaled_image(const std::string& label, cv::Mat image, float scale = 1.0, bool wait = true);
+
+template <typename PIXEL_T>
+void show_surface(const std::string& label, const CudaSurface<PIXEL_T>& surface, bool wait);
+bool destroy_surface_window();
 
 std::pair<double, double> get_min_max(const cv::Mat& mat);
 cv::Mat make_fake_mask_like(const cv::Mat& mask);

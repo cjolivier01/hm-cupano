@@ -1,10 +1,8 @@
 #include "cudaBlend.h"
-#include "cudaTypes.h"
 
-// #if (CUDART_VERSION >= 11000)
-// #include <cuda_bf16.h>
-// #endif
-
+#if (CUDART_VERSION >= 11000)
+#include <cuda_bf16.h>
+#endif
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 
@@ -12,10 +10,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
-#include <iostream>
 #include <vector>
-
-#define PRINT_STRANGE_ALPHAS
 
 // =============================================================================
 // Macro to check CUDA calls and return on error.
@@ -28,17 +23,14 @@
     }                                                                                             \
   } while (0)
 
-#define T_CONST(_v$) static_cast<T>(_v$)
-#define F_T_CONST(_v$) static_cast<F_T>(_v$)
-
 // =============================================================================
-// Templated CUDA Kernels for Batched Laplacian Blending (now with a "channels" parameter)
+// Templated CUDA Kernels for Batched Laplacian Blending (with a "channels" parameter)
 // =============================================================================
 
 // -----------------------------------------------------------------------------
 // Fused downsample kernel for two images.
 // "channels" is either 3 (RGB) or 4 (RGBA). Each output pixel is computed by averaging a 2x2 block.
-template <typename T, typename F_T = float>
+template <typename T>
 __global__ void FusedBatchedDownsampleKernel(
     const T* __restrict__ input1,
     const T* __restrict__ input2,
@@ -68,12 +60,8 @@ __global__ void FusedBatchedDownsampleKernel(
 
   int inX = x * 2;
   int inY = y * 2;
-  assert(channels <= 4);
-  F_T sums1[3] = {0, 0, 0};
-  F_T sums2[3] = {0, 0, 0};
-  T alpha1 = 0;
-  T alpha2 = 0;
-  const int sum_channels = std::min(channels, 3);
+  float sums1[4] = {0, 0, 0, 0};
+  float sums2[4] = {0, 0, 0, 0};
   int count = 0;
   for (int dy = 0; dy < 2; dy++) {
     for (int dx = 0; dx < 2; dx++) {
@@ -81,85 +69,72 @@ __global__ void FusedBatchedDownsampleKernel(
       int iy = inY + dy;
       if (ix < inWidth && iy < inHeight) {
         int idx = (iy * inWidth + ix) * channels;
-        for (int c = 0; c < sum_channels; c++) {
-          sums1[c] += static_cast<F_T>(inImage1[idx + c]);
-          sums2[c] += static_cast<F_T>(inImage2[idx + c]);
-        }
-        if (channels == 4) {
-          alpha1 = std::max(alpha1, inImage1[idx + 3]);
-          alpha2 = std::max(alpha2, inImage2[idx + 3]);
+        for (int c = 0; c < channels; c++) {
+          sums1[c] += static_cast<float>(inImage1[idx + c]);
+          sums2[c] += static_cast<float>(inImage2[idx + c]);
         }
         count++;
       }
     }
   }
   int outIdx = (y * outWidth + x) * channels;
-  for (int c = 0; c < sum_channels; c++) {
+  for (int c = 0; c < channels; c++) {
     outImage1[outIdx + c] = static_cast<T>(sums1[c] / count);
     outImage2[outIdx + c] = static_cast<T>(sums2[c] / count);
   }
-  if (channels == 4) {
-    outImage1[outIdx + 3] = alpha1;
-    outImage2[outIdx + 3] = alpha2;
-  }
-#ifdef PRINT_STRANGE_ALPHAS
-  if ((alpha1 != T_CONST(0) && alpha1 != T_CONST(255)) || (alpha2 != T_CONST(0) && alpha2 != T_CONST(255))) {
-    printf("FusedBatchedDownsampleKernel(): Strange alphas %f and %f\n", (float)alpha1, (float)alpha2);
-  }
-#endif
 }
 
 // -----------------------------------------------------------------------------
 // Batched downsample kernel for a single image (RGB or RGBA).
-// template <typename T>
-// __global__ void BatchedDownsampleKernel(
-//     const T* __restrict__ input,
-//     int inWidth,
-//     int inHeight,
-//     T* __restrict__ output,
-//     int outWidth,
-//     int outHeight,
-//     int batchSize,
-//     int channels) {
-//   int b = blockIdx.z;
-//   if (b >= batchSize)
-//     return;
+template <typename T>
+__global__ void BatchedDownsampleKernel(
+    const T* __restrict__ input,
+    int inWidth,
+    int inHeight,
+    T* __restrict__ output,
+    int outWidth,
+    int outHeight,
+    int batchSize,
+    int channels) {
+  int b = blockIdx.z;
+  if (b >= batchSize)
+    return;
 
-//   int x = blockIdx.x * blockDim.x + threadIdx.x;
-//   int y = blockIdx.y * blockDim.y + threadIdx.y;
-//   if (x >= outWidth || y >= outHeight)
-//     return;
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x >= outWidth || y >= outHeight)
+    return;
 
-//   int inImageSize = inWidth * inHeight * channels;
-//   int outImageSize = outWidth * outHeight * channels;
-//   const T* inImage = input + b * inImageSize;
-//   T* outImage = output + b * outImageSize;
+  int inImageSize = inWidth * inHeight * channels;
+  int outImageSize = outWidth * outHeight * channels;
+  const T* inImage = input + b * inImageSize;
+  T* outImage = output + b * outImageSize;
 
-//   int inX = x * 2;
-//   int inY = y * 2;
-//   float sums[4] = {0, 0, 0, 0};
-//   int count = 0;
-//   for (int dy = 0; dy < 2; dy++) {
-//     for (int dx = 0; dx < 2; dx++) {
-//       int ix = inX + dx;
-//       int iy = inY + dy;
-//       if (ix < inWidth && iy < inHeight) {
-//         int idx = (iy * inWidth + ix) * channels;
-//         for (int c = 0; c < channels; c++) {
-//           sums[c] += static_cast<float>(inImage[idx + c]);
-//         }
-//         count++;
-//       }
-//     }
-//   }
-//   int outIdx = (y * outWidth + x) * channels;
-//   for (int c = 0; c < channels; c++) {
-//     outImage[outIdx + c] = static_cast<T>(sums[c] / count);
-//   }
-// }
+  int inX = x * 2;
+  int inY = y * 2;
+  float sums[4] = {0, 0, 0, 0};
+  int count = 0;
+  for (int dy = 0; dy < 2; dy++) {
+    for (int dx = 0; dx < 2; dx++) {
+      int ix = inX + dx;
+      int iy = inY + dy;
+      if (ix < inWidth && iy < inHeight) {
+        int idx = (iy * inWidth + ix) * channels;
+        for (int c = 0; c < channels; c++) {
+          sums[c] += static_cast<float>(inImage[idx + c]);
+        }
+        count++;
+      }
+    }
+  }
+  int outIdx = (y * outWidth + x) * channels;
+  for (int c = 0; c < channels; c++) {
+    outImage[outIdx + c] = static_cast<T>(sums[c] / count);
+  }
+}
 
 // -----------------------------------------------------------------------------
-// Batched downsample kernel for a single-channel mask (unchanged).
+// Batched downsample kernel for a single-channel mask remains unchanged.
 template <typename T>
 __global__ void BatchedDownsampleKernelMask(
     const T* __restrict__ input,
@@ -192,56 +167,56 @@ __global__ void BatchedDownsampleKernelMask(
 
 // -----------------------------------------------------------------------------
 // Batched upsample kernel for images (RGB or RGBA) using bilinear interpolation.
-// template <typename T, typename F_T>
-// __global__ void BatchedUpsampleKernel(
-//     const T* __restrict__ input,
-//     int inWidth,
-//     int inHeight,
-//     T* __restrict__ output,
-//     int outWidth,
-//     int outHeight,
-//     int batchSize,
-//     int channels) {
-//   int b = blockIdx.z;
-//   if (b >= batchSize)
-//     return;
+template <typename T, typename F_T>
+__global__ void BatchedUpsampleKernel(
+    const T* __restrict__ input,
+    int inWidth,
+    int inHeight,
+    T* __restrict__ output,
+    int outWidth,
+    int outHeight,
+    int batchSize,
+    int channels) {
+  int b = blockIdx.z;
+  if (b >= batchSize)
+    return;
 
-//   int x = blockIdx.x * blockDim.x + threadIdx.x;
-//   int y = blockIdx.y * blockDim.y + threadIdx.y;
-//   if (x >= outWidth || y >= outHeight)
-//     return;
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x >= outWidth || y >= outHeight)
+    return;
 
-//   int inImageSize = inWidth * inHeight * channels;
-//   int outImageSize = outWidth * outHeight * channels;
-//   const T* inImage = input + b * inImageSize;
-//   T* outImage = output + b * outImageSize;
+  int inImageSize = inWidth * inHeight * channels;
+  int outImageSize = outWidth * outHeight * channels;
+  const T* inImage = input + b * inImageSize;
+  T* outImage = output + b * outImageSize;
 
-//   F_T gx = static_cast<F_T>(x) / 2.0f;
-//   F_T gy = static_cast<F_T>(y) / 2.0f;
-//   int gxi = floorf(gx);
-//   int gyi = floorf(gy);
-//   F_T dx = gx - gxi;
-//   F_T dy = gy - gyi;
-//   int gxi1 = min(gxi + 1, inWidth - 1);
-//   int gyi1 = min(gyi + 1, inHeight - 1);
+  F_T gx = static_cast<F_T>(x) / 2.0f;
+  F_T gy = static_cast<F_T>(y) / 2.0f;
+  int gxi = floorf(gx);
+  int gyi = floorf(gy);
+  F_T dx = gx - gxi;
+  F_T dy = gy - gyi;
+  int gxi1 = min(gxi + 1, inWidth - 1);
+  int gyi1 = min(gyi + 1, inHeight - 1);
 
-//   int idx00 = (gyi * inWidth + gxi) * channels;
-//   int idx10 = (gyi * inWidth + gxi1) * channels;
-//   int idx01 = (gyi1 * inWidth + gxi) * channels;
-//   int idx11 = (gyi1 * inWidth + gxi1) * channels;
+  int idx00 = (gyi * inWidth + gxi) * channels;
+  int idx10 = (gyi * inWidth + gxi1) * channels;
+  int idx01 = (gyi1 * inWidth + gxi) * channels;
+  int idx11 = (gyi1 * inWidth + gxi1) * channels;
 
-//   int idxOut = (y * outWidth + x) * channels;
-//   for (int c = 0; c < channels; c++) {
-//     F_T val00 = static_cast<F_T>(inImage[idx00 + c]);
-//     F_T val10 = static_cast<F_T>(inImage[idx10 + c]);
-//     F_T val01 = static_cast<F_T>(inImage[idx01 + c]);
-//     F_T val11 = static_cast<F_T>(inImage[idx11 + c]);
-//     F_T val0 = val00 * (1.0f - dx) + val10 * dx;
-//     F_T val1 = val01 * (1.0f - dx) + val11 * dx;
-//     F_T outVal = val0 * (1.0f - dy) + val1 * dy;
-//     outImage[idxOut + c] = static_cast<T>(outVal);
-//   }
-// }
+  int idxOut = (y * outWidth + x) * channels;
+  for (int c = 0; c < channels; c++) {
+    F_T val00 = static_cast<F_T>(inImage[idx00 + c]);
+    F_T val10 = static_cast<F_T>(inImage[idx10 + c]);
+    F_T val01 = static_cast<F_T>(inImage[idx01 + c]);
+    F_T val11 = static_cast<F_T>(inImage[idx11 + c]);
+    F_T val0 = val00 * (1.0f - dx) + val10 * dx;
+    F_T val1 = val01 * (1.0f - dx) + val11 * dx;
+    F_T outVal = val0 * (1.0f - dy) + val1 * dy;
+    outImage[idxOut + c] = static_cast<T>(outVal);
+  }
+}
 
 // -----------------------------------------------------------------------------
 // Batched computation of the Laplacian.
@@ -285,7 +260,7 @@ __global__ void BatchedComputeLaplacianKernel(
   int idxHigh = (y * highWidth + x) * channels;
   for (int c = 0; c < channels; c++) {
     if (channels == 4 && c == 3) {
-      // For the alpha channel, copy the high resolution value.
+      // For the alpha channel, simply copy the high resolution value.
       lapImage[idxHigh + c] = highImage[idxHigh + c];
     } else {
       int idx00 = (gyi * lowWidth + gxi) * channels + c;
@@ -308,7 +283,8 @@ __global__ void BatchedComputeLaplacianKernel(
 // -----------------------------------------------------------------------------
 // Batched blend kernel for images.
 // For each channel the two Laplacian pyramids are blended with a weighted average.
-// (For alpha in RGBA, a simple weighted blend is performed.)
+// For RGBA images, if one image has an alpha value of 0 and the other is nonzero,
+// then for the RGB channels the pixel value from the nonzero image is used.
 template <typename T, typename F_T>
 __global__ void BatchedBlendKernel(
     const T* __restrict__ lap1,
@@ -335,33 +311,33 @@ __global__ void BatchedBlendKernel(
   const T* maskImage = mask;
   T* blendImage = blended + b * imageSize;
 
-  constexpr const F_T F_ONE = static_cast<F_T>(1.0);
+  const F_T F_ONE = static_cast<F_T>(1.0);
   int idx = (y * width + x) * channels;
   F_T m = static_cast<F_T>(maskImage[y * width + x]);
   F_T mm1 = F_ONE - m;
-  int max_channel = std::min(channels, 3);
+
   if (channels == 4) {
-    constexpr T T_ZERO = static_cast<T>(0);
-    const T alpha1 = lap1Image[idx + 3];
-    const T alpha2 = lap2Image[idx + 3];
-    if (alpha1 == T_ZERO) {
-      for (int c = 0; c < channels; c++) {
-        blendImage[idx + c] = static_cast<F_T>(lap2Image[idx + c]);
-      }
-    } else if (alpha2 == T_ZERO) {
-      for (int c = 0; c < channels; c++) {
-        blendImage[idx + c] = static_cast<F_T>(lap1Image[idx + c]);
-      }
-    } else {
-      for (int c = 0; c < max_channel; c++) {
+    // Retrieve the alpha channel values for both images.
+    T alpha1 = lap1Image[idx + 3];
+    T alpha2 = lap2Image[idx + 3];
+    // For RGB channels (c=0,1,2): if one image's alpha is 0 while the other's is nonzero,
+    // use the pixel value from the image with the nonzero alpha.
+    for (int c = 0; c < 3; c++) {
+      if (alpha1 == static_cast<T>(0) && alpha2 != static_cast<T>(0)) {
+        blendImage[idx + c] = lap2Image[idx + c];
+      } else if (alpha2 == static_cast<T>(0) && alpha1 != static_cast<T>(0)) {
+        blendImage[idx + c] = lap1Image[idx + c];
+      } else {
         blendImage[idx + c] =
             static_cast<T>(m * static_cast<F_T>(lap1Image[idx + c]) + mm1 * static_cast<F_T>(lap2Image[idx + c]));
       }
-      // Both alphas not zero, we assume both are the same value, so copy one of them into dest
-      blendImage[idx + 3] = alpha2;
     }
+    // Blend the alpha channel as usual.
+    blendImage[idx + 3] =
+        static_cast<T>(m * static_cast<F_T>(lap1Image[idx + 3]) + mm1 * static_cast<F_T>(lap2Image[idx + 3]));
   } else {
-    for (int c = 0; c < max_channel; c++) {
+    // For non-RGBA images, simply blend all channels.
+    for (int c = 0; c < channels; c++) {
       blendImage[idx + c] =
           static_cast<T>(m * static_cast<F_T>(lap1Image[idx + c]) + mm1 * static_cast<F_T>(lap2Image[idx + c]));
     }
@@ -408,26 +384,16 @@ __global__ void BatchedReconstructKernel(
   int gyi1 = min(gyi + 1, lowHeight - 1);
   int idxOut = (y * highWidth + x) * channels;
   for (int c = 0; c < channels; c++) {
-    if (channels == 4 && c == 3) {
-      reconImage[idxOut + 3] = lapImage[idxOut + 3];
-#ifdef PRINT_STRANGE_ALPHAS
-      float alpha = static_cast<float>(reconImage[idxOut + 3]);
-      if (alpha != 0 && alpha != 255) {
-        printf("BatchedReconstructKernel(): Strange alpha %f\n", alpha);
-      }
-#endif
-    } else {
-      int idx00 = (gyi * lowWidth + gxi) * channels + c;
-      int idx10 = (gyi * lowWidth + gxi1) * channels + c;
-      int idx01 = (gyi1 * lowWidth + gxi) * channels + c;
-      int idx11 = (gyi1 * lowWidth + gxi1) * channels + c;
-      F_T val00 = static_cast<F_T>(lowImage[idx00]);
-      F_T val10 = static_cast<F_T>(lowImage[idx10]);
-      F_T val01 = static_cast<F_T>(lowImage[idx01]);
-      F_T val11 = static_cast<F_T>(lowImage[idx11]);
-      F_T upVal = (val00 * (F_ONE - dx) + val10 * dx) * (F_ONE - dy) + (val01 * (F_ONE - dx) + val11 * dx) * dy;
-      reconImage[idxOut + c] = static_cast<T>(upVal + static_cast<F_T>(lapImage[idxOut + c]));
-    }
+    int idx00 = (gyi * lowWidth + gxi) * channels + c;
+    int idx10 = (gyi * lowWidth + gxi1) * channels + c;
+    int idx01 = (gyi1 * lowWidth + gxi) * channels + c;
+    int idx11 = (gyi1 * lowWidth + gxi1) * channels + c;
+    F_T val00 = static_cast<F_T>(lowImage[idx00]);
+    F_T val10 = static_cast<F_T>(lowImage[idx10]);
+    F_T val01 = static_cast<F_T>(lowImage[idx01]);
+    F_T val11 = static_cast<F_T>(lowImage[idx11]);
+    F_T upVal = (val00 * (F_ONE - dx) + val10 * dx) * (F_ONE - dy) + (val01 * (F_ONE - dx) + val11 * dx) * dy;
+    reconImage[idxOut + c] = static_cast<T>(upVal + static_cast<F_T>(lapImage[idxOut + c]));
   }
 }
 
@@ -613,7 +579,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     CudaBatchLaplacianBlendContext<T>& context,
     int channels,
     cudaStream_t stream) {
-  // size_t imageSize = context.imageWidth * context.imageHeight * channels * sizeof(T);
+  size_t imageSize = context.imageWidth * context.imageHeight * channels * sizeof(T);
 
   // Initialization: set up pyramid dimensions and allocate device memory using channels.
   if (!context.initialized) {
@@ -811,7 +777,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
 //------------------------------------------------------------------------------
 // Explicit template instantiations for supported data types.
 // The macros are updated to include the extra "channels" parameter.
-
 #define INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(T)         \
   template cudaError_t cudaBatchedLaplacianBlend<T, float>( \
       const T* h_image1,                                    \
@@ -836,11 +801,10 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
       cudaStream_t stream);
 
 INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(float)
-INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(unsigned char)
-// INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(__half)
-// INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(__nv_bfloat16)
-
 INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT(float)
+INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(unsigned char)
 INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT(unsigned char)
-// INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT(__half)
-// INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT(__nv_bfloat16)
+INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(__half)
+INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT(__half)
+INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(__nv_bfloat16)
+INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT(__nv_bfloat16)

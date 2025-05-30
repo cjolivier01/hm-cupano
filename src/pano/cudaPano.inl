@@ -1,9 +1,14 @@
 #pragma once
 
-#include "cudaMakeFull.h"
-#include "cudaPano.h"
-#include "cudaRemap.h"
-#include "showImage.h"
+#include <opencv4/opencv2/imgproc.hpp>
+#include "cupano/cuda/cudaMakeFull.h"
+#include "cupano/cuda/cudaRemap.h"
+#include "cupano/cuda/cudaTypes.h"
+#include "cupano/pano/cudaPano.h"
+#include "cupano/pano/showImage.h" /*NOLINT*/
+
+#include <csignal>
+#include <optional>
 
 namespace hm {
 namespace pano {
@@ -96,6 +101,13 @@ constexpr inline float3 neg(const float3& f) {
       .z = -f.z,
   };
 }
+
+template <typename T>
+inline constexpr size_t num_channels() {
+  static_assert(sizeof(T) / sizeof(BaseScalar_t<T>) != 1);
+  return sizeof(T) / sizeof(BaseScalar_t<T>);
+}
+
 } // namespace tmp
 
 template <typename T_pipeline, typename T_compute>
@@ -114,6 +126,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   assert(inputImage2.batch_size() == stitch_context.batch_size());
   assert(canvas->batch_size() == stitch_context.batch_size());
 
+  // bool cross_pollenate_images = true;
   auto roi_width = [](const cv::Rect2i& roi) { return roi.width; };
   if (!stitch_context.is_hard_seam()) {
     //
@@ -154,11 +167,12 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stitch_context.remap_1_x->height(),
           /*offsetX=*/canvas_manager._x1,
           /*offsetY=*/canvas_manager._y1,
+          /*no_unmapped_write=*/false,
           stream);
     }
     CUDA_RETURN_IF_ERROR(cuerr);
     // SHOW_SCALED(&inputImage1, 0.2);
-    // SHOW_SCALED(canvas, 0.15);
+    // SHOW_SCALED(canvas, 0.5);
 #endif
 
 #if 1
@@ -168,9 +182,9 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     cuerr = simple_make_full_batch(
         // Image 1 (float image)
         canvas->surface(),
-        /*region_width=*/roi_width(canvas_manager.roi_blend_1),
-        /*region_height=*/stitch_context.cudaBlendSoftSeam->height() /*roi_height(canvas_manager.roi_blend_1)*/,
-        canvas_manager.roi_blend_1.x,
+        /*region_width=*/roi_width(canvas_manager.remapped_image_roi_blend_1),
+        /*region_height=*/stitch_context.cudaBlendSoftSeam->height(),
+        canvas_manager.remapped_image_roi_blend_1.x,
         0 /* we've already applied our Y offset */,
         /*destOffsetX=*/canvas_manager._remapper_1.xpos,
         /*destOffsetY=*/0,
@@ -179,6 +193,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
         stitch_context.cudaFull1->surface(),
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
+    // SHOW_SCALED(stitch_context.cudaFull1, 0.5);
     // SHOW_IMAGE(stitch_context.cudaFull1);
 #endif
   } else {
@@ -264,6 +279,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stitch_context.remap_2_x->height(),
           /*offsetX=*/canvas_manager._x2,
           /*offsetY=*/canvas_manager._y2,
+          /*no_unmapped_write=*/false,
           stream);
     }
     CUDA_RETURN_IF_ERROR(cuerr);
@@ -275,14 +291,13 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     //
     // Now copy the blending portion of remapped image 2 from the canvas onto the blend image
     //
-    // assert(stitch_context.cudaBlendSoftSeam->height() == roi_height(canvas_manager.roi_blend_2));
     cuerr = simple_make_full_batch(
         // Image 1 (float image)
         canvas->surface(),
-        /*region_width=*/roi_width(canvas_manager.roi_blend_2),
+        /*region_width=*/roi_width(canvas_manager.remapped_image_roi_blend_2),
         /*region_height=*/stitch_context.cudaBlendSoftSeam->height() /*roi_height(canvas_manager.roi_blend_2)*/,
         /*offsetX=*/canvas_manager._x2,
-        /*offsetY=*/0,
+        /*offsetY=*/0, // we've already applied the Y offset when painting it onto the canvas
         /*destOffsetX=*/canvas_manager._remapper_2.xpos,
         /*destOffsetY=*/0 /* we've already applied our Y offset */,
         /*adjust_origin=*/false,
@@ -290,7 +305,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
         stitch_context.cudaFull2->surface(),
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
-    // SHOW_IMAGE(stitch_context.cudaFull2);
+    // SHOW_SCALED(stitch_context.cudaFull2, 0.5);
 #endif
   } else {
     //
@@ -340,7 +355,20 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   }
   if (!stitch_context.is_hard_seam()) {
     CudaMat<T_compute>& cudaBlendedFull = *stitch_context.cudaFull1;
-#if 1
+#if 0
+    if constexpr (sizeof(T_compute) / sizeof(BaseScalar_t<T_compute>) == 4) {
+      auto surf1 = stitch_context.cudaFull1->surface();
+      auto surf2 = stitch_context.cudaFull2->surface();
+      cuerr = AlphaConditionalCopy(
+          surf1,
+          surf2,
+          /*batchSize=*/stitch_context.batch_size(),
+          stream);
+      CUDA_RETURN_IF_ERROR(cuerr);
+    }
+    // SHOW_SCALED(stitch_context.cudaFull1, 0.5);
+    // SHOW_SCALED(stitch_context.cudaFull2, 0.5);
+#endif
     //
     // BLEND THE IMAGES (overlapping portions + some padding)
     //
@@ -351,11 +379,11 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
         // Put output in full-1 memory
         cudaBlendedFull.data_raw(),
         *stitch_context.laplacian_blend_context,
+        stitch_context.cudaFull2->channels(),
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
     // SHOW_IMAGE(&cudaBlendedFull);
-#endif
-
+    // stitch_context.laplacian_blend_context->displayPyramids(tmp::num_channels<T_compute>(), 0.25);
 #if 1
     //
     // Copy the blended portion (overlapping portion + some padding) onto
@@ -390,7 +418,7 @@ std::optional<float3> CudaStitchPano<T_pipeline, T_compute>::compute_image_adjus
       tmp1,
       tmp2,
       *whole_seam_mask_image_,
-      /*N=*/10,
+      /*N=*/100,
       canvas_manager_->canvas_positions()[0],
       canvas_manager_->canvas_positions()[1]);
   if (adjustment_result.has_value()) {
@@ -419,6 +447,9 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   }
   auto result = process_impl(
       inputImage1, inputImage2, *stitch_context_, *canvas_manager_, image_adjustment_, stream, std::move(canvas));
+  if (stream) {
+    cudaStreamSynchronize(stream);
+  }
   if (!result.ok()) {
     status_.Update(result.status());
   }

@@ -1,0 +1,3 @@
+nvcc -std=c++11 -I/path/to/opencv/include \
+  -L/usr/local/lib \
+  video_stabilization.cu -lopencv_core -lopencv_imgproc -lopencv_highgui -lopencv_videoio -o video_stabilization_streaming -I/usr/local/include/opencv5

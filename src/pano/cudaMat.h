@@ -1,12 +1,34 @@
 #pragma once
 
-#include <cuda_bf16.h>
+#include <cuda_runtime_api.h>
+
+#ifndef CUDART_VERSION
+#error CUDART_VERSION Undefined!
+#elif (CUDART_VERSION >= 12000)
+  // Code specific to CUDA 12.x and higher
+  #if (CUDART_VERSION >= 13000)
+    // Code specific to CUDA 13.x and higher
+  #else
+    // Code specific to CUDA 12.x (but lower than 13)
+  #endif
+#elif (CUDART_VERSION >= 11000)
+  // Code specific to CUDA 11.x
+#elif (CUDART_VERSION >= 10000)
+  // Code specific to CUDA 10.x
+#else
+  // Code for older CUDA versions or if CUDA is not available
+  #error Unsupported CUDA version
+#endif
+
+#if (CUDART_VERSION >= 11000)
+// #include <cuda_bf16.h>
+#endif
+
 #include <cuda_fp16.h>
-#include <cuda_runtime.h>
 #include <opencv2/opencv.hpp>
 #include <vector>
 
-#include "cudaTypes.h"
+#include "cupano/cuda/cudaTypes.h"
 
 #ifdef WITH_JETSON_UTILS
 #include "imageFormat.h" // Assumed to define the jetson‑utils imageFormat enum (e.g. IMAGE_BGR8, etc.)
@@ -203,6 +225,7 @@ struct CudaPixelTypeToCudaType<CUDA_PIXEL_HALF4> {
   using type = half4; // Our custom half4.
 };
 
+#if (CUDART_VERSION >= 11000)
 template <>
 struct CudaPixelTypeToCudaType<CUDA_PIXEL_BF16_1> {
   using type = __nv_bfloat16;
@@ -217,6 +240,7 @@ template <>
 struct CudaPixelTypeToCudaType<CUDA_PIXEL_BF16_4> {
   using type = bfloat16_4;
 };
+#endif
 
 //
 // Primary template declaration – no definition is provided.
@@ -255,10 +279,12 @@ struct CudaTypeToPixelType<__half> {
   static constexpr CudaPixelType value = CUDA_PIXEL_HALF1;
 };
 
+#if (CUDART_VERSION >= 11000)
 template <>
 struct CudaTypeToPixelType<__nv_bfloat16> {
   static constexpr CudaPixelType value = CUDA_PIXEL_BF16_1;
 };
+#endif
 
 // --- 3-channel types ---
 template <>
@@ -286,11 +312,12 @@ struct CudaTypeToPixelType<half3> {
   static constexpr CudaPixelType value = CUDA_PIXEL_HALF3;
 };
 
+#if (CUDART_VERSION >= 11000)
 template <>
 struct CudaTypeToPixelType<bfloat16_3> {
   static constexpr CudaPixelType value = CUDA_PIXEL_BF16_3;
 };
-
+#endif
 // --- 4-channel types ---
 template <>
 struct CudaTypeToPixelType<uchar4> {
@@ -317,10 +344,12 @@ struct CudaTypeToPixelType<half4> {
   static constexpr CudaPixelType value = CUDA_PIXEL_HALF4;
 };
 
+#if (CUDART_VERSION >= 11000)
 template <>
 struct CudaTypeToPixelType<bfloat16_4> {
   static constexpr CudaPixelType value = CUDA_PIXEL_BF16_4;
 };
+#endif
 
 /*----------------------------------------------------------------------------
   Template Class: CudaMat
@@ -330,9 +359,8 @@ struct SurfaceInfo {
   int width{0};
   int height{0};
   int pitch{0};
-  mutable void *data_ptr{nullptr};
+  mutable void* data_ptr{nullptr};
 };
-
 
 /**
  * @brief Templated class to manage CUDA device memory for one or more images.
@@ -431,10 +459,10 @@ class CudaMat {
   constexpr int batch_size() const;
 
   constexpr int channels() const {
-    return sizeof(T)/sizeof(BaseScalar_t<T>);
-  } 
+    return sizeof(T) / sizeof(BaseScalar_t<T>);
+  }
 
-  constexpr int pitch() const { 
+  constexpr int pitch() const {
     return pitch_ ? pitch_ : sizeof(T) * width();
   }
 
@@ -444,15 +472,19 @@ class CudaMat {
 
   CudaSurface<T> surface() const {
     return CudaSurface<T>{
-      .d_ptr=d_data_,
-      .width=cols_,
-      .height=rows_,
-      .pitch=pitch(),
+        .d_ptr = d_data_,
+        .width = static_cast<uint32_t>(cols_),
+        .height = static_cast<uint32_t>(rows_),
+        .pitch = static_cast<uint32_t>(pitch()),
     };
   }
 
   operator CudaSurface<T>() const {
     return surface();
+  }
+
+  CudaPixelType cuda_pixel_type() const {
+    return type_;
   }
 
   /**

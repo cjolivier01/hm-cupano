@@ -103,6 +103,7 @@ def synchronize_by_audio(
         A tuple (left_frame_offset, right_frame_offset) representing the number of frames to
         skip in each video so that they are synchronized. The offsets are returned as integers.
     """
+    
     if verbose:
         print("Opening videos...")
 
@@ -135,12 +136,16 @@ def synchronize_by_audio(
     if verbose:
         print("Calculating cross-correlation...")
 
+    sum1 = np.sum(audio1[:, 0])
+    sum2 = np.sum(audio2[:, 0])
+
     # Use only the first channel for correlation.
     correlation: np.ndarray = scipy.signal.correlate(
-        audio1[0, :], audio2[0, :], mode="full"
+        audio1[:, 0], audio2[:, 0], mode="full"
     )
+    sumc = np.sum(correlation)
     # Compute lag: subtract the length of the signal (using axis 1 length)
-    lag: int = np.argmax(correlation) - audio1.shape[1] + 1
+    lag: int = np.argmax(correlation) - audio1.shape[0] + 1
 
     # Convert lag (in audio samples) to frame offset.
     fps = video1_fps
@@ -152,34 +157,13 @@ def synchronize_by_audio(
         print(f"Equivalent time offset: {time_offset} seconds")
 
     # Determine starting frame for each video.
-    left_frame_offset: int = int(round(frame_offset)) if frame_offset > 0 else 0
-    right_frame_offset: int = int(round(-frame_offset)) if frame_offset < 0 else 0
+    left_frame_offset: float = frame_offset if frame_offset > 0 else 0
+    right_frame_offset: float = -frame_offset if frame_offset < 0 else 0
 
     return left_frame_offset, right_frame_offset
 
 
-def find_sync_offset(
-    audio1: np.ndarray, audio2: np.ndarray, sample_rate: int = 44100
-) -> int:
-    """
-    Use full cross-correlation to determine the relative offset (in samples) between two audio signals.
-    A positive lag indicates that audio1 is delayed relative to audio2.
-
-    Args:
-        audio1: First audio signal (1D or 2D array).
-        audio2: Second audio signal (1D or 2D array).
-        sample_rate: The audio sample rate (samples per second).
-
-    Returns:
-        The lag (in samples) corresponding to maximum correlation.
-    """
-    corr: np.ndarray = correlate(audio1, audio2, mode="full")
-    lag_arr: np.ndarray = np.arange(-len(audio2) + 1, len(audio1))
-    best_lag: int = int(lag_arr[np.argmax(corr)])
-    return best_lag
-
-
-def extract_frame(video_path: str, frame_idx: int) -> np.ndarray:
+def extract_frame(video_path: str, frame_idx: Optional[float]) -> np.ndarray:
     """
     Extract a single frame from a video file using OpenCV.
 
@@ -193,6 +177,8 @@ def extract_frame(video_path: str, frame_idx: int) -> np.ndarray:
     Raises:
         ValueError: If the frame cannot be extracted.
     """
+    if video_path.endswith(".png"):
+        return cv2.imread(video_path)
     cap = cv2.VideoCapture(video_path)
     cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
     ret, frame = cap.read()
@@ -625,6 +611,14 @@ def main() -> None:
     )
     parser.add_argument("--left", default=None, help="Path to left video file")
     parser.add_argument("--right", default=None, help="Path to left video file")
+    parser.add_argument("--max-control-points", type=int, default=500, help="Maximum number of control points")
+    parser.add_argument("--lfo", default=None, help="Left frame offset")
+    parser.add_argument("--rfo", default=None, help="Right frame offset")
+    parser.add_argument(
+        "--synchronize-only",
+        action="store_true",
+        help="Only synchronize and print out the frame offsets",
+    )
     parser.add_argument(
         "--scale",
         default=None,
@@ -640,7 +634,7 @@ def main() -> None:
         game_dir: str = os.path.join(os.environ["HOME"], "Videos", args.game_id)
         config_file: str = os.path.join(game_dir, "config.yaml")
         if not os.path.exists(config_file):
-            print(f"Could not config config file: {config_file}")
+            print(f"Could not find config file: {config_file}")
             exit(1)
         with open(config_file, "r") as file:
             config_yaml = yaml.safe_load(file)
@@ -651,10 +645,26 @@ def main() -> None:
         if "/" not in args.right:
             args.right = os.path.join(game_dir, args.right)
 
-    # Determine frame offsets by synchronizing audio.
-    lfo, rfo = synchronize_by_audio(args.left, args.right)
+    is_image = False
+    if args.left.endswith(".png") and args.right.endswith(".png"):
+        is_image = True
 
-    print("Extracting frames at the sync points...")
+    if not is_image:
+        # Determine frame offsets by synchronizing audio.
+        if (args.lfo is None and args.rfo is None) or args.synchronize_only:
+            lfo, rfo = synchronize_by_audio(args.left, args.right)
+        else:
+            lfo, rfo = args.lfo, args.rfo
+
+        if args.synchronize_only:
+            print(f"Left frame offset: {lfo}")
+            print(f"Right frame offset: {rfo}")
+            exit(0)
+
+        print("Extracting frames at the sync points...")
+    else:
+        lfo, rfo = None, None
+
     # Ensure frame indices are integers.
     frame1: np.ndarray = extract_frame(args.left, lfo)
     frame2: np.ndarray = extract_frame(args.right, rfo)
@@ -665,7 +675,7 @@ def main() -> None:
         frame1,
         frame2,
         directory=str(Path(args.left).parent),
-        max_control_points=240,
+        max_control_points=args.max_control_points,
         scale=args.scale,
     )
 

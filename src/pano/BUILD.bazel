@@ -1,5 +1,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
+INCLUDE_PREFIX = "cupano/pano"
+
 config_setting(
     name = "aarch64-linux-gnu",
     constraint_values = ["@platforms//cpu:aarch64"],
@@ -15,15 +17,22 @@ cc_library(
     srcs = [
         "cudaMat.cpp",
         "showImage.cpp",
+        "cudaGLWindow.cpp",
     ],
     hdrs = [
         "cudaMat.h",
         "cudaMat.inl",
         "showImage.h",
+        "cudaGLWindow.h",
     ],
     copts = [
     ],
-    includes = ["."],
+    linkopts = [
+      "-lglfw",
+      "-lGLEW",
+      "-lGL",
+    ],
+    include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
     deps = [
         "//src/cuda:cuda_blend_cuda_lib",
@@ -43,7 +52,7 @@ cc_library(
     ],
     copts = [
     ],
-    includes = ["."],
+    include_prefix = INCLUDE_PREFIX,
     linkopts = [
       "-ltiff",
     ],
@@ -64,7 +73,7 @@ cc_library(
     ],
     copts = [
     ],
-    includes = ["."],
+    include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
     deps = [
         ":cuda_matrix",

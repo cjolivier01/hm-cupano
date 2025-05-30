@@ -65,6 +65,10 @@ class CudaStatus {
     return os;
   }
 
+  static inline CudaStatus OkStatus() {
+    return CudaStatus();
+  }
+
  private:
   cudaError_t code_;
   std::string message_;

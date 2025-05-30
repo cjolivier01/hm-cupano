@@ -1,10 +1,10 @@
 #pragma once
 
-#include "canvasManager.h"
-#include "controlMasks.h"
-#include "cudaBlend.h"
-#include "cudaMat.h"
-#include "cudaStatus.h"
+#include "cupano/cuda/cudaBlend.h"
+#include "cupano/cuda/cudaStatus.h"
+#include "cupano/pano/canvasManager.h"
+#include "cupano/pano/controlMasks.h"
+#include "cupano/pano/cudaMat.h"
 
 #include <memory>
 #include <optional>

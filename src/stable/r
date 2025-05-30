@@ -1,0 +1,1 @@
+./mk && ./video_stabilization_streaming ../../bouncy.mp4 unbouncy.mp4

@@ -80,14 +80,14 @@ TiffInfo getTiffInfo(const std::string& filename) {
   // X/Y Position
   float xpos = 0.0f, ypos = 0.0f;
   if (TIFFGetField(tif, TIFFTAG_XPOSITION, &xpos)) {
-    std::cout << "X Position: " << xpos << std::endl;
+    // std::cout << "X Position: " << xpos << std::endl;
     info.xPosition = xpos;
   } else {
     std::cout << "No X Position information found." << std::endl;
   }
 
   if (TIFFGetField(tif, TIFFTAG_YPOSITION, &ypos)) {
-    std::cout << "Y Position: " << ypos << std::endl;
+    // std::cout << "Y Position: " << ypos << std::endl;
     info.yPosition = ypos;
   } else {
     std::cout << "No Y Position information found." << std::endl;

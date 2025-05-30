@@ -28,27 +28,35 @@ void CanvasManager::updateMinimizeBlend(const cv::Size& remapped_size_1, const c
   _overlapping_width = width_1 - _x2;
   assert(width_1 > _x2); // Must have positive overlap.
 
+  const int blend_width = _overlapping_width + 2 * _overlap_pad;
+
   if (_minimize_blend) {
     // Assign X offsets for the two remappers for minimal blending region.
     _remapper_1.xpos = _x1;
     // Start overlapping right away in the second remapper.
     _remapper_2.xpos = _x1 + _overlap_pad;
+    // _remapper_2.xpos = _x2;
 
     // Define the seam box (the region to be blended) with extra padding.
     int box_x1 = _x2 - _overlap_pad;
     int box_y1 = std::max(0, std::min(_y1, _y2) - _overlap_pad);
+
     int box_x2 = width_1 + _overlap_pad;
     int box_y2 =
         std::min(canvas_info_.height, std::max(_y1 + _remapper_1.height, _y2 + _remapper_2.height) + _overlap_pad);
-    _padded_blended_tlbr = {box_x1, box_y1, box_x2, box_y2};
+
+    // _padded_blended_tlbr = {box_x1, box_y1, box_x2, box_y2};
 
     // Validate the seam box within the canvas boundaries.
     assert(box_x1 >= 0);
     assert(box_x2 <= canvas_info_.width);
 
     // Compute ROIs for the blend region in each image.
-    roi_blend_1 = {_x2 - _overlap_pad, 0, remapped_size_1.width - _x2 - _overlap_pad, remapped_size_1.height};
-    roi_blend_2 = {0, 0, _overlapping_width + _overlap_pad, remapped_size_2.height};
+    // roi_blend_1 = {_x2 - _overlap_pad, 0, remapped_size_1.width - _x2 - _overlap_pad, remapped_size_1.height};
+    remapped_image_roi_blend_1 = {_x2 - _overlap_pad - _x1, 0, blend_width - _overlap_pad, remapped_size_1.height};
+    remapped_image_roi_blend_2 = {0, 0, blend_width - _overlap_pad, remapped_size_2.height};
+    assert(remapped_image_roi_blend_1.width == remapped_image_roi_blend_2.width);
+    assert(remapped_image_roi_blend_1.x + remapped_image_roi_blend_1.width <= _remapper_1.width);
   }
 }
 

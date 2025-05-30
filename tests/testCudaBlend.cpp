@@ -1,8 +1,8 @@
-#include "controlMasks.h"
-#include "cudaMat.h"
-#include "cudaPano.h"
-#include "cudaStatus.h"
-#include "showImage.h"
+#include "cupano/cuda/cudaStatus.h"
+#include "cupano/pano/controlMasks.h"
+#include "cupano/pano/cudaMat.h"
+#include "cupano/pano/cudaPano.h"
+#include "cupano/pano/showImage.h"
 
 #include <cuda_runtime.h> // for CUDA vector types
 #include <opencv2/opencv.hpp>
@@ -12,7 +12,10 @@
 #include <iostream>
 #include <type_traits>
 
-#include <cuda_bf16.h>
+#include <cuda_runtime.h>
+// #if (CUDART_VERSION >= 11000)
+// #include <cuda_bf16.h>
+// #endif
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 
@@ -159,7 +162,8 @@ int main(int argc, char** argv) {
   // Configurable parameter: number of pyramid levels.
 #if 1
 #if 1
-  using T_pipeline = uchar4;
+  // using T_pipeline = uchar4;
+  using T_pipeline = uchar3;
   // using T_pipeline = float3;
   // using T_compute = float4;
   using T_compute = float3;
@@ -188,9 +192,6 @@ int main(int argc, char** argv) {
       if (sizeof(T_pipeline) / sizeof(BaseScalar_t<T_pipeline>) == 4) {
         cv::cvtColor(sample_img_left, sample_img_left, cv::COLOR_BGR2BGRA);
         cv::cvtColor(sample_img_right, sample_img_right, cv::COLOR_BGR2BGRA);
-      } else {
-        // sample_img_left.convertTo(sample_img_left, cvPipelineType, 1.0 / 255.0);
-        // sample_img_right.convertTo(sample_img_right, cvPipelineType, 1.0 / 255.0);
       }
     }
   }
@@ -216,7 +217,9 @@ int main(int argc, char** argv) {
     cv::imwrite(output, canvas->download());
   }
   if (show) {
-    SHOW_SCALED(canvas, 0.25);
+    // SHOW_SCALED(canvas, 0.25);
+    // SHOW_SCALED(canvas, 1.0);
+    hm::utils::show_surface("Canvas", canvas->surface(), /*wait=*/true);
     usleep(10000);
   }
 

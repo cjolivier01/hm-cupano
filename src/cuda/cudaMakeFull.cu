@@ -4,8 +4,9 @@
 #include <cuda_runtime.h>
 #include <cassert>
 
-// If you want to support 16‐bit and bfloat16 types:
+#if (CUDART_VERSION >= 11000)
 #include <cuda_bf16.h>
+#endif
 #include <cuda_fp16.h>
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -14,13 +15,13 @@
 
 namespace {
 
-template <typename F_dest, typename F>
+template <typename F_dest, typename F, typename COMPUTE_F = float>
 __device__ inline F_dest round_to_uchar(const F& x) {
-  F x_rounded = x + F(0.5); // Add 0.5 in the type's precision
-  if (x_rounded <= F(0.0)) {
+  COMPUTE_F x_rounded = static_cast<COMPUTE_F>(x) + 0.5f;
+  if (x_rounded <= 0.0f) {
     return 0;
   }
-  if (x_rounded >= F(255.0)) {
+  if (x_rounded >= 255.0f) {
     return 255;
   }
   return static_cast<F_dest>(x_rounded); // Cast result to unsigned char
@@ -70,8 +71,8 @@ DECLARE_PERFORM_CAST_3(uchar3, float3)
     };                                                                                       \
   }
 
-// DECLARE_PERFORM_CAST_UCHAR_4(float4)
-// DECLARE_PERFORM_CAST_UCHAR_4(half4)
+DECLARE_PERFORM_CAST_UCHAR_4(float4)
+DECLARE_PERFORM_CAST_UCHAR_4(half4)
 
 #define DECLARE_PERFORM_CAST_4(_src$, _dest$)               \
   template <>                                               \
@@ -99,6 +100,7 @@ DECLARE_PERFORM_CAST_4(uchar4, float4)
   }
 
 DECLARE_PERFORM_CAST_F2_TO_UCHAR_4(float3)
+DECLARE_PERFORM_CAST_F2_TO_UCHAR_4(half3)
 
 #define DECLARE_PERFORM_CAST_UCHAR4_TO_3(_dest$)             \
   /* We simply discard the fourth channel (alpha) */         \
@@ -112,8 +114,7 @@ DECLARE_PERFORM_CAST_F2_TO_UCHAR_4(float3)
   }
 
 DECLARE_PERFORM_CAST_UCHAR4_TO_3(float3)
-
-} // namespace
+DECLARE_PERFORM_CAST_UCHAR4_TO_3(half3)
 
 /**
  * @brief Templated batched kernel to copy a region of interest (ROI) from a source image
@@ -163,16 +164,80 @@ __global__ void copyRoiKernelBatched(
       int destX = offsetX + x;
       int destY = offsetY + y;
       if (destX < dest.width && destY < dest.height) {
-        // int srcOffset = b * (full_src_width * full_src_height);
-        // int srcIdx = (srcY * full_src_width + srcX);
-        // int destOffset = b * (destWidth * destHeight);
-        // int destIdx = (destY * destWidth + destX);
-        // dest[destOffset + destIdx] = perform_cast<T_out>(src[srcOffset + srcIdx]);
         *surface_ptr(dest, b, destX, destY) = perform_cast<T_out>(*surface_ptr(src, b, srcX, srcY));
       }
     }
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// NEW KERNEL: AlphaConditionalCopyKernel
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * @brief For two surfaces of the same type (which must have an alpha channel),
+ *        if image1’s alpha is 0 while image2’s alpha is nonzero, copy image2’s pixel into image1;
+ *        and vice versa if image2’s alpha is 0 while image1’s alpha is nonzero.
+ *
+ * @tparam T The CUDA vector type (e.g. uchar4, float4, half4). It is assumed that T has members .x, .y, .z, and .w.
+ * @param image1 The first surface.
+ * @param image2 The second surface.
+ * @param batchSize Number of images in the batch.
+ */
+template <typename T>
+__global__ void AlphaConditionalCopyKernel(CudaSurface<T> image1, CudaSurface<T> image2, int batchSize) {
+  int b = blockIdx.z;
+  if (b >= batchSize)
+    return;
+
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x >= image1.width || y >= image1.height)
+    return;
+
+  // Get pointers to the pixel at (x, y) for the current batch element.
+  T* pixel1 = surface_ptr(image1, b, x, y);
+  T* pixel2 = surface_ptr(image2, b, x, y);
+
+  // If image1's alpha (w) is 0 and image2's is nonzero, copy image2's pixel to image1.
+  // Otherwise, if image2's alpha is 0 and image1's is nonzero, copy image1's pixel to image2.
+  float alpha1 = static_cast<float>(pixel1->w);
+  float alpha2 = static_cast<float>(pixel2->w);
+  if (alpha1 == 0.0f && alpha2 != 0.0f) {
+    *pixel1 = *pixel2;
+  } else if (alpha2 == 0.0f && alpha1 != 0.0f) {
+    *pixel2 = *pixel1;
+  }
+}
+} // namespace
+
+/**
+ * @brief Launch the AlphaConditionalCopyKernel for surfaces that use a vector type with an alpha channel.
+ *
+ * @tparam T CUDA vector type (e.g. uchar4, float4, half4).
+ * @param image1 Destination/source surface for the first image.
+ * @param image2 Destination/source surface for the second image.
+ * @param batchSize Number of images in the batch.
+ * @param stream CUDA stream to use.
+ * @return cudaError_t cudaGetLastError() after launching the kernel.
+ */
+template <typename T>
+cudaError_t AlphaConditionalCopy(CudaSurface<T>& image1, CudaSurface<T>& image2, int batchSize, cudaStream_t stream) {
+  // Define block and grid dimensions.
+  dim3 block(16, 16, 1);
+  dim3 grid((image1.width + block.x - 1) / block.x, (image1.height + block.y - 1) / block.y, batchSize);
+  // Launch the kernel.
+  AlphaConditionalCopyKernel<T><<<grid, block, 0, stream>>>(image1, image2, batchSize);
+  return cudaGetLastError();
+}
+
+#define INSTANTIATE_ALPHA_CONDITIONAL_COPY(T)   \
+  template cudaError_t AlphaConditionalCopy<T>( \
+      CudaSurface<T> & image1, CudaSurface<T> & image2, int batchSize, cudaStream_t stream);
+
+INSTANTIATE_ALPHA_CONDITIONAL_COPY(uchar4)
+INSTANTIATE_ALPHA_CONDITIONAL_COPY(float4)
+INSTANTIATE_ALPHA_CONDITIONAL_COPY(half4)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Templated Host Functions
@@ -297,22 +362,6 @@ cudaError_t copy_roi_batched(
 ////////////////////////////////////////////////////////////////////////////////
 // Explicit Template Instantiations
 ////////////////////////////////////////////////////////////////////////////////
-
-// #define INSTANTIATE_FILL_KERNEL_BATCHED(T) \
-//   template __global__ void fillKernelBatched<T>(T * dest, int destWidth, int destHeight, T value, int batchSize);
-
-// #define INSTANTIATE_COPY_ROI_KERNEL_BATCHED(T_in, T_out)      \
-//   template __global__ void copyRoiKernelBatched<T_in, T_out>( \
-//       const CudaSurface<T_in>& src,                            \
-//       int regionWidth,                                        \
-//       int regionHeight,                                       \
-//       int srcROI_x,                                           \
-//       int srcROI_y,                                           \
-//       CudaSurface<T_out> dest,                                \
-//       int offsetX,                                            \
-//       int offsetY,                                            \
-//       int batchSize);
-
 #define INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(T_in, T_out)     \
   template cudaError_t simple_make_full_batch<T_in, T_out>( \
       const CudaSurface<T_in>& src,                         \
@@ -327,37 +376,37 @@ cudaError_t copy_roi_batched(
       CudaSurface<T_out> dest,                              \
       cudaStream_t stream);
 
-#define INSTANTIATE_COPY_ROI_BATCHED(T_in, T_out) \
-  template cudaError_t copy_roi_batched<T_in, T_out>(       \
-      const CudaSurface<T_in>& src,                         \
-      int regionWidth,                                      \
-      int regionHeight,                                     \
-      int srcROI_x,                                         \
-      int srcROI_y,                                         \
-      CudaSurface<T_out> dest,                              \
-      int offsetX,                                          \
-      int offsetY,                                          \
-      int batchSize,                                        \
+#define INSTANTIATE_COPY_ROI_BATCHED(T_in, T_out)     \
+  template cudaError_t copy_roi_batched<T_in, T_out>( \
+      const CudaSurface<T_in>& src,                   \
+      int regionWidth,                                \
+      int regionHeight,                               \
+      int srcROI_x,                                   \
+      int srcROI_y,                                   \
+      CudaSurface<T_out> dest,                        \
+      int offsetX,                                    \
+      int offsetY,                                    \
+      int batchSize,                                  \
       cudaStream_t stream);
-
-// Same–type instantiations:
-// INSTANTIATE_COPY_ROI_KERNEL_BATCHED(float3, float3)
-// INSTANTIATE_COPY_ROI_KERNEL_BATCHED(uchar3, uchar3)
-// INSTANTIATE_COPY_ROI_KERNEL_BATCHED(uchar3, half3)
 
 // --- Host functions ---
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(uchar3, float3)
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float3, float3)
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(uchar4, float4)
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(uchar4, float3)
+INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(uchar4, half3)
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float4, float4)
-//INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float4, uchar4)
+// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float4, uchar4)
 INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float3, uchar4)
+// INSTANTIATE_SIMPLE_MAKE_FULL_BATCH(float4, uchar4)
 
 // Same–type instantiations:
 INSTANTIATE_COPY_ROI_BATCHED(half3, uchar3)
+INSTANTIATE_COPY_ROI_BATCHED(half3, uchar4)
 INSTANTIATE_COPY_ROI_BATCHED(float3, float3)
 INSTANTIATE_COPY_ROI_BATCHED(float4, float4)
 INSTANTIATE_COPY_ROI_BATCHED(float3, uchar3)
+INSTANTIATE_COPY_ROI_BATCHED(float4, uchar4)
+INSTANTIATE_COPY_ROI_BATCHED(half4, uchar4)
 INSTANTIATE_COPY_ROI_BATCHED(float3, uchar4)
 INSTANTIATE_COPY_ROI_BATCHED(uchar3, uchar3)
