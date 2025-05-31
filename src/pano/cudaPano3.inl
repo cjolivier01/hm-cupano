@@ -326,6 +326,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     CUDA_RETURN_IF_ERROR(cuerr);
   }
 
+  SHOW_IMAGE(canvas);
+
   // -------------------- IMAGE 2 --------------------
   if (!stitch_context.is_hard_seam()) {
     // SOFT-SEAM: remap image2 onto canvas
@@ -411,6 +413,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     }
     CUDA_RETURN_IF_ERROR(cuerr);
   }
+
+  SHOW_IMAGE(canvas);
 
   // --------------- BLEND (Soft‐Seam) ---------------
   if (!stitch_context.is_hard_seam()) {

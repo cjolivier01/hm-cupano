@@ -71,11 +71,11 @@ static std::vector<SpatialTiff3> normalize_positions3(std::vector<SpatialTiff3>&
   return positions;
 }
 
-std::vector<uchar> get_unique_values(const cv::Mat& gray)
+std::vector<int> get_unique_values(const cv::Mat& gray)
 {
     CV_Assert(gray.type() == CV_8U);  // must be single‐channel 8‐bit
 
-    std::set<uchar> uniq;
+    std::set<int> uniq;
     for (int y = 0; y < gray.rows; y++) {
         const uchar* rowPtr = gray.ptr<uchar>(y);
         for (int x = 0; x < gray.cols; x++) {
@@ -84,7 +84,7 @@ std::vector<uchar> get_unique_values(const cv::Mat& gray)
     }
 
     // copy the set into a sorted vector
-    return std::vector<uchar>(uniq.begin(), uniq.end());
+    return std::vector<int>(uniq.begin(), uniq.end());
 }
 
 cv::Mat load_seam_mask3(const std::string& filename) {
@@ -92,7 +92,7 @@ cv::Mat load_seam_mask3(const std::string& filename) {
   cv::Mat seam_mask_dest = seam_mask.clone();
   if (!seam_mask.empty()) {
 
-    std::vector<uchar> unique_values = get_unique_values(seam_mask);
+    std::vector<int> unique_values = get_unique_values(seam_mask);
     assert(unique_values.size() == 3);
 
     for (size_t image_index = 0; image_index < unique_values.size(); ++image_index) {
