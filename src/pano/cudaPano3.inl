@@ -88,9 +88,10 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
             /*batch_size=*/batch_size);
   } else {
     // Hard-seam: single channel
-    assert(seam_color.type() == CV_8UC3); // we still loaded 3 channels, but will take only one channel
+    assert(seam_color.type() == CV_8UC1); // we still loaded 3 channels, but will take only one channel
     cv::Mat seam_gray;
-    cv::cvtColor(seam_color, seam_gray, cv::COLOR_BGR2GRAY);
+    // cv::cvtColor(seam_color, seam_gray, cv::COLOR_BGR2GRAY);
+    seam_gray = seam_color;
     stitch_context_->cudaBlendHardSeam = std::make_unique<CudaMat<unsigned char>>(seam_gray);
   }
 
@@ -236,6 +237,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     }
     CUDA_RETURN_IF_ERROR(cuerr);
   }
+
+  SHOW_IMAGE(canvas);
 
   // -------------------- IMAGE 1 --------------------
   if (!stitch_context.is_hard_seam()) {

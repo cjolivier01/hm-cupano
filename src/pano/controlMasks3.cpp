@@ -71,22 +71,36 @@ static std::vector<SpatialTiff3> normalize_positions3(std::vector<SpatialTiff3>&
   return positions;
 }
 
-/**
- * @brief Loads a **3‐channel** seam mask from disk (e.g. a PNG).  
- *        We assume the user supplies it as a 3‐channel color image where
- *        each channel is already 0/255 (or 0/1) to indicate weights.  
- *        We simply load as CV_8UC3 and (if needed) invert or normalize.
- */
-static cv::Mat load_seam_mask3(const std::string& filename) {
-  cv::Mat mask = cv::imread(filename, cv::IMREAD_COLOR); // CV_8UC3
-  if (!mask.empty()) {
-    // If the mask’s channels are “0 / 255,” normalize them to “0 / 1.”
-    cv::Mat float_mask;
-    mask.convertTo(float_mask, CV_32F, 1.0f / 255.0f);
-    // Then convert back to 8-bit [0..255] so that 1.0→255 (for CudaMat<uchar>).
-    float_mask.convertTo(mask, CV_8UC3, 255.0f);
+std::vector<uchar> get_unique_values(const cv::Mat& gray)
+{
+    CV_Assert(gray.type() == CV_8U);  // must be single‐channel 8‐bit
+
+    std::set<uchar> uniq;
+    for (int y = 0; y < gray.rows; y++) {
+        const uchar* rowPtr = gray.ptr<uchar>(y);
+        for (int x = 0; x < gray.cols; x++) {
+            uniq.insert(rowPtr[x]);
+        }
+    }
+
+    // copy the set into a sorted vector
+    return std::vector<uchar>(uniq.begin(), uniq.end());
+}
+
+cv::Mat load_seam_mask3(const std::string& filename) {
+  cv::Mat seam_mask = cv::imread(filename, cv::IMREAD_GRAYSCALE);
+  cv::Mat seam_mask_dest = seam_mask.clone();
+  if (!seam_mask.empty()) {
+
+    std::vector<uchar> unique_values = get_unique_values(seam_mask);
+    assert(unique_values.size() == 3);
+
+    for (size_t image_index = 0; image_index < unique_values.size(); ++image_index) {
+      cv::Mat mask = (seam_mask == unique_values[image_index]);
+      seam_mask_dest.setTo(image_index, mask);
+    }
   }
-  return mask;
+  return seam_mask_dest;
 }
 
 } // namespace

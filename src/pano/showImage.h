@@ -17,6 +17,11 @@ bool destroy_surface_window();
 std::pair<double, double> get_min_max(const cv::Mat& mat);
 cv::Mat make_fake_mask_like(const cv::Mat& mask);
 
+#define SHOW_SURFACE(_mat$)                                                             \
+  do {                                                                                \
+    ::hm::utils::show_surface(std::string(#_mat$), (_mat$)->surface(), /*wait=*/true); \
+  } while (false)
+
 #define SHOW_IMAGE(_mat$)                                                             \
   do {                                                                                \
     ::hm::utils::show_image(std::string(#_mat$), (_mat$)->download(), /*wait=*/true); \

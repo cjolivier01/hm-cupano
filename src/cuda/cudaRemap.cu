@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <iostream>
 
 namespace {
 
@@ -229,7 +230,7 @@ __global__ void BatchedRemapKernelExOffsetWithDestMap(
 
   // No pitch on the mask right now
   int checkIdx = (offsetY + y) * dest.width + (offsetX + x);
-
+  printf("dest_image_map[checkIdx]=%d\n", (int)dest_image_map[checkIdx]);
   if (dest_image_map[checkIdx] == this_image_index) {
     int destImageSizeBytes = dest.width * dest.pitch;
     T_out* destImage = advance_bytes(dest.d_ptr, b * destImageSizeBytes);
