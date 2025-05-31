@@ -7,6 +7,7 @@ cuda_library(
     name = "cuda_blend_cuda_lib",
     srcs = [
         "cudaBlend.cu",
+        "cudaBlend3.cu",
         "cudaImageAdjust.cu",
         "cudaMakeFull.cu",
         "cudaRemap.cu",
@@ -42,6 +43,7 @@ cc_library(
     ],
     hdrs = [
         "cudaBlend.h",
+        "cudaBlend3.h",
         "cudaBlendShow.h",
         "cudaImageAdjust.h",
         "cudaMakeFull.h",
@@ -61,4 +63,12 @@ cc_library(
         "cudaStatus.h",
     ],
     include_prefix = INCLUDE_PREFIX,
+)
+
+cc_binary(
+  name = "cudaBlend3_test",
+  srcs = ["cudaBlend3_test/cpp"],
+  deps = [
+    ":cuda_blend_cuda_lib",
+  ],
 )
