@@ -62,7 +62,7 @@
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
       "args": [
         //"--game-id=stitch-fix",
-        "--game-id=mlk-heat-1",
+        "--game-id=foxes",
         //"--game-id=ev-tv-1a",
         //"--game-id=mylive",
         // "--game-id=pdp",
@@ -113,10 +113,10 @@
       "args": [
         "--game-id=3stitch",
         "--show",
-        "--adjust=1",
+        "--adjust=0",
         "--levels=0",
         //"--perf",
-        //"--output=${workspaceRoot}/output.png",
+        "--output=${workspaceRoot}/output.png",
       ],
       "sourceMap": {
         "/proc/self/cwd": "${workspaceFolder}",

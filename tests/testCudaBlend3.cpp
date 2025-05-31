@@ -141,11 +141,11 @@ int main(int argc, char** argv) {
   }
 
   // Left video frame 
-  std::string sample_img_image_0_path = directory + "/image_0.png";
+  std::string sample_img_image_0_path = directory + "/image0.png";
   // Middle video frame
-  std::string sample_img_image_1_path = directory + "/image_1.png";
+  std::string sample_img_image_1_path = directory + "/image1.png";
   // Right video frame
-  std::string sample_img_image_2_path = directory + "/image_2.png";
+  std::string sample_img_image_2_path = directory + "/image2.png";
 
   cv::Mat sample_img_image_0 = cv::imread(sample_img_image_0_path, cv::IMREAD_COLOR);
   if (sample_img_image_0.empty()) {
