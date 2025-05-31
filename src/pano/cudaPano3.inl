@@ -415,7 +415,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     // each of size (mask_width × mask_height) in T_compute type.
     CudaMat<T_compute>& cudaBlendedFull = *stitch_context.cudaFull0;
 
-    cuerr = cudaBatchedLaplacianBlendWithContext3<T_compute, float>(
+    cuerr = cudaBatchedLaplacianBlendWithContext3(
         stitch_context.cudaFull0->data_raw(),
         stitch_context.cudaFull1->data_raw(),
         stitch_context.cudaFull2->data_raw(),
@@ -482,6 +482,30 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
   return result;
 }
 
+template <typename T_pipeline, typename T_compute>
+std::optional<float3> CudaStitchPano3<T_pipeline, T_compute>::compute_image_adjustment(
+    const CudaMat<T_pipeline>& inputImage1,
+    const CudaMat<T_pipeline>& inputImage2,
+    const CudaMat<T_pipeline>& inputImage3) {
+  // cv::Mat tmp1 = inputImage1.download();
+  // cv::Mat tmp2 = inputImage2.download();
+  // std::optional<cv::Scalar> adjustment_result = match_seam_images(
+  //     tmp1,
+  //     tmp2,
+  //     *whole_seam_mask_image_,
+  //     /*N=*/100,
+  //     canvas_manager_->canvas_positions()[0],
+  //     canvas_manager_->canvas_positions()[1]);
+  // if (adjustment_result.has_value()) {
+  //   const cv::Scalar& adjustment = *adjustment_result;
+  //   return float3{
+  //       .x = (float)adjustment[0],
+  //       .y = (float)adjustment[1],
+  //       .z = (float)adjustment[2],
+  //   };
+  // }
+  return std::nullopt;
+}
 /**
  * A naive, direct extension of “match_seam_images” that now takes THREE images and a 3‐channel seam.
  * We sample around the seam boundary for each image’s region, accumulate per‐channel sums in image0, image1, image2,
