@@ -164,7 +164,6 @@ TEST(CudaBlend3SmallTest, SinglePixelIdentityMasks) {
   }
 }
 
-#if 0
 // Test 2: 2×2 RGB images, uniform equal-weight mask
 // image1 all ones, image2 all twos, image3 all threes, mask = (1/3, 1/3, 1/3)
 // Then output pixel = (1 + 2 + 3) / 3 = 2 for each channel.
@@ -184,36 +183,41 @@ TEST(CudaBlend3SmallTest, TwoByTwoUniformMask) {
   std::vector<float> h_mask(maskCount);
   std::vector<float> h_output(pixelCount);
 
+  CudaVector img1(h_image1), img2(h_image2), img3(h_image3);
+
   // Uniform mask = (1/3, 1/3, 1/3) at each pixel
   for (int i = 0; i < width * height; i++) {
     h_mask[3 * i + 0] = 1.0f / 3.0f;
     h_mask[3 * i + 1] = 1.0f / 3.0f;
     h_mask[3 * i + 2] = 1.0f / 3.0f;
   }
-
-  CUDA_CHECK(cudaMemset(h_output.data(), 0, pixelCount * sizeof(float)));
-  ASSERT_EQ(
-      cudaBatchedLaplacianBlend3<float>(
-          h_image1.data(),
-          h_image2.data(),
-          h_image3.data(),
-          h_mask.data(),
-          h_output.data(),
-          width,
-          height,
-          channels,
-          numLevels,
-          batchSize,
-          0),
-      cudaSuccess);
-  CUDA_CHECK(cudaDeviceSynchronize());
-
+  CudaVector mask(h_mask);
+  {
+    CudaVector output(h_output);
+    CUDA_CHECK(cudaMemset(output.data(), 0, pixelCount * sizeof(float)));
+    ASSERT_EQ(
+        cudaBatchedLaplacianBlend3<float>(
+            img1.data(),
+            img2.data(),
+            img3.data(),
+            mask.data(),
+            output.data(),
+            width,
+            height,
+            channels,
+            numLevels,
+            batchSize,
+            0),
+        cudaSuccess);
+    CUDA_CHECK(cudaDeviceSynchronize());
+  }
   // Expect each blended pixel channel to be exactly 2.0
   for (int idx = 0; idx < pixelCount; idx++) {
     EXPECT_NEAR(h_output[idx], 2.0f, kEpsilon) << "Output mismatch at index " << idx;
   }
 }
 
+#if 0
 // Test 3: Single-Pixel RGBA images (channels=4), varying alpha blending
 // Verify that RGB gets blended by (m₁,m₂,m₃) but alpha is also weighted by same mask.
 TEST(CudaBlend3SmallTest, SinglePixelRGBAAlphaBlending) {
