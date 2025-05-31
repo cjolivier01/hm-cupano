@@ -65,10 +65,13 @@ cc_library(
     include_prefix = INCLUDE_PREFIX,
 )
 
-cc_binary(
+cc_test(
   name = "cudaBlend3_test",
-  srcs = ["cudaBlend3_test/cpp"],
+  srcs = ["cudaBlend3_test.cpp"],
   deps = [
     ":cuda_blend_cuda_lib",
-  ],
+    "@googletest//:gtest",
+    "@googletest//:gtest_main",
+  ]
 )
+

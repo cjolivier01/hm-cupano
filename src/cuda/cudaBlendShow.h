@@ -2,7 +2,6 @@
 
 #include "cudaBlend.h"
 
-#include <memory>
 #include <string>
 #include <vector>
 
