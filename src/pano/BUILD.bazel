@@ -45,10 +45,14 @@ cc_library(
     srcs = [
         "canvasManager.cpp",
         "controlMasks.cpp",
+        "canvasManager3.cpp",
+        "controlMasks3.cpp",
     ],
     hdrs = [
         "canvasManager.h",
         "controlMasks.h",
+        "canvasManager3.h",
+        "controlMasks3.h",
     ],
     copts = [
     ],
@@ -66,10 +70,13 @@ cc_library(
     name = "cuda_pano",
     srcs = [
         "cudaPano.cpp",
+        "cudaPano3.cpp",
     ],
     hdrs = [
         "cudaPano.h",
         "cudaPano.inl",
+        "cudaPano3.h",
+        "cudaPano3.inl",
     ],
     copts = [
     ],
