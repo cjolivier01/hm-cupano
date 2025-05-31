@@ -47,7 +47,7 @@ struct StitchingContext3 {
 
   // Soft‐seam: 3‐channel mask; or if hard seam, single‐channel:
   std::unique_ptr<CudaMat<T_compute>> cudaBlendSoftSeam; // CV type = T_compute with 3 channels
-  std::unique_ptr<CudaMat<unsigned char>> cudaBlendHardSeam; // single‐channel (0/1)
+  std::unique_ptr<CudaMat<unsigned char>> cudaBlendHardSeam; // single‐channel, image index
 
   // 3‐image Laplacian‐blend context (for soft‐seam case):
   std::unique_ptr<CudaBatchLaplacianBlendContext3<BaseScalar_t<T_compute>>> laplacian_blend_context;

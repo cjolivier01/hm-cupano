@@ -93,6 +93,7 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
     // cv::cvtColor(seam_color, seam_gray, cv::COLOR_BGR2GRAY);
     seam_gray = seam_color;
     stitch_context_->cudaBlendHardSeam = std::make_unique<CudaMat<unsigned char>>(seam_gray);
+    SHOW_IMAGE(stitch_context_->cudaBlendHardSeam);
   }
 
   if (match_exposure_) {
@@ -151,7 +152,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
   assert(inputImage1.batch_size() == stitch_context.batch_size());
   assert(inputImage2.batch_size() == stitch_context.batch_size());
   assert(canvas->batch_size() == stitch_context.batch_size());
-
+#if 0
   // -------------------- IMAGE 0 --------------------
   if (!stitch_context.is_hard_seam()) {
     // SOFT-SEAM: remap image0 onto canvas
@@ -239,7 +240,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
   }
 
   SHOW_IMAGE(canvas);
-
+#endif
   // -------------------- IMAGE 1 --------------------
   if (!stitch_context.is_hard_seam()) {
     // SOFT-SEAM: remap image1 onto canvas
