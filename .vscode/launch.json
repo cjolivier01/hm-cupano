@@ -105,6 +105,57 @@
       ],
     },
     {
+      "name": "(LLDB) cudaBlend3",
+      "type": "lldb",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend3",
+      "args": [
+        //"--game-id=stitch-fix",
+        "--game-id=mlk-heat-1",
+        //"--game-id=ev-tv-1a",
+        //"--game-id=mylive",
+        // "--game-id=pdp",
+        "--show",
+        "--adjust=1",
+        //"--levels=0",
+        "--levels=6",
+        //"--perf",
+        //"--output=${workspaceRoot}/output.png",
+      ],
+      "sourceMap": {
+        "/proc/self/cwd": "${workspaceFolder}",
+        "~/src": "${env:HOME}/src",
+        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils",
+      },
+      "env": {
+        "DISPLAY": ":1",
+        "CUDA_LAUNCH_BLOCKING": "1",
+      },
+      //"stopOnEntry": true,
+      "preLaunchTask": "Build All",
+    },
+    {
+      "name": "(CUDA) cudaBlend3",
+      "type": "cuda-gdb",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "debuggerPath": "/usr/local/cuda/bin/cuda-gdb",
+      "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend3",
+      "args": "--game-id=mylive --adjust=0 --levels=1",
+      "initCommands": [
+        "directory ${workspaceFolder}",
+      ],
+      "preLaunchTask": "Build All",
+      "environment": [
+        {
+          "name": "CUDA_LAUNCH_BLOCKING",
+          "value": "1"
+        }
+      ],
+    },
+
+    {
       "name": "(LLDB) Stabilization",
       "type": "lldb",
       "request": "launch",
