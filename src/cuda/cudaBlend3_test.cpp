@@ -217,7 +217,6 @@ TEST(CudaBlend3SmallTest, TwoByTwoUniformMask) {
   }
 }
 
-#if 0
 // Test 3: Single-Pixel RGBA images (channels=4), varying alpha blending
 // Verify that RGB gets blended by (m₁,m₂,m₃) but alpha is also weighted by same mask.
 TEST(CudaBlend3SmallTest, SinglePixelRGBAAlphaBlending) {
@@ -242,25 +241,31 @@ TEST(CudaBlend3SmallTest, SinglePixelRGBAAlphaBlending) {
   h_image2 = {50.0f, 60.0f, 70.0f, 80.0f};
   h_image3 = {90.0f, 100.0f, 110.0f, 120.0f};
 
+  CudaVector img1(h_image1), img2(h_image2), img3(h_image3);
+
   // Mask = (0.2, 0.3, 0.5)
   h_mask = {0.2f, 0.3f, 0.5f};
 
-  CUDA_CHECK(cudaMemset(h_output.data(), 0, pixelCount * sizeof(float)));
-  ASSERT_EQ(
-      cudaBatchedLaplacianBlend3<float>(
-          h_image1.data(),
-          h_image2.data(),
-          h_image3.data(),
-          h_mask.data(),
-          h_output.data(),
-          width,
-          height,
-          channels,
-          numLevels,
-          batchSize,
-          0),
-      cudaSuccess);
-  CUDA_CHECK(cudaDeviceSynchronize());
+  CudaVector mask(h_mask);
+  {
+    CudaVector output(h_output);
+    CUDA_CHECK(cudaMemset(output.data(), 0, pixelCount * sizeof(float)));
+    ASSERT_EQ(
+        cudaBatchedLaplacianBlend3<float>(
+            img1.data(),
+            img2.data(),
+            img3.data(),
+            mask.data(),
+            output.data(),
+            width,
+            height,
+            channels,
+            numLevels,
+            batchSize,
+            0),
+        cudaSuccess);
+    CUDA_CHECK(cudaDeviceSynchronize());
+  }
 
   // Expected blending:
   // R = 0.2*10 + 0.3*50 + 0.5*90 = 2 + 15 + 45 = 62
@@ -273,7 +278,6 @@ TEST(CudaBlend3SmallTest, SinglePixelRGBAAlphaBlending) {
     EXPECT_NEAR(h_output[c], expected[c], kEpsilon) << "Channel " << c << " mismatch for RGBA blending.";
   }
 }
-#endif
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
