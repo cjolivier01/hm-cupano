@@ -140,7 +140,7 @@ int main(int argc, char** argv) {
     directory += std::string("/") + game_id;
   }
 
-  // Left video frame 
+  // Left video frame
   std::string sample_img_image_0_path = directory + "/image0.png";
   // Middle video frame
   std::string sample_img_image_1_path = directory + "/image1.png";
@@ -164,7 +164,11 @@ int main(int argc, char** argv) {
   }
 
   hm::pano::ControlMasks3 control_masks;
-  control_masks.load(directory);
+  if (!control_masks.load(directory)) {
+    std::cerr << "Failed to load control masks from directory: " << directory << ", reason: " << strerror(errno)
+              << std::endl;
+    return 1;
+  }
 
   // Configurable parameter: number of pyramid levels.
 #if 1
