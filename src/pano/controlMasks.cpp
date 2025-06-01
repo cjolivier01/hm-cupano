@@ -1,6 +1,11 @@
 #include "controlMasks.h"
 
+#include <png.h>
 #include <tiffio.h> // For reading TIFF metadata
+#include <tiffio.h> // For TIFF metadata
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace hm {
 namespace pano {
@@ -109,6 +114,101 @@ SpatialTiff get_geo_tiff(const std::string& filename) {
 }
 
 /**
+ * Load a paletted (indexed) PNG as a single‐channel 8-bit Mat of palette‐indices.
+ * Throws std::runtime_error on any error (non-paletted, file not found, etc.).
+ *
+ * Requirements:
+ *  • libpng installed, and you link with -lpng
+ *  • The PNG *must* be 8-bit paletted (PNG_COLOR_TYPE_PALETTE, bit_depth=8).
+ *    If it is not paletted, this will error out.
+ *
+ * Usage:
+ *    cv::Mat idx = imreadPalettedAsIndex("my_palette.png");
+ *    // idx.type()==CV_8U, idx.cols×idx.rows = image size
+ */
+cv::Mat imreadPalettedAsIndex(const std::string& filename) {
+  // 1) Open the file in binary mode
+  FILE* fp = fopen(filename.c_str(), "rb");
+  if (!fp) {
+    throw std::runtime_error("Cannot open file: " + filename);
+  }
+
+  // 2) Read and check the 8-byte PNG signature
+  png_byte sig[8];
+  if (fread(sig, 1, 8, fp) != 8) {
+    fclose(fp);
+    throw std::runtime_error("Failed to read PNG signature.");
+  }
+  if (png_sig_cmp(sig, 0, 8)) {
+    fclose(fp);
+    throw std::runtime_error("File is not recognized as a PNG.");
+  }
+
+  // 3) Create libpng read structs
+  png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+  if (!png_ptr) {
+    fclose(fp);
+    throw std::runtime_error("png_create_read_struct failed.");
+  }
+
+  png_infop info_ptr = png_create_info_struct(png_ptr);
+  if (!info_ptr) {
+    png_destroy_read_struct(&png_ptr, (png_infopp) nullptr, (png_infopp) nullptr);
+    fclose(fp);
+    throw std::runtime_error("png_create_info_struct failed.");
+  }
+
+  if (setjmp(png_jmpbuf(png_ptr))) {
+    // If we get here, libpng encountered an error
+    png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp) nullptr);
+    fclose(fp);
+    throw std::runtime_error("Error during PNG init_io or read_info.");
+  }
+
+  png_init_io(png_ptr, fp);
+  png_set_sig_bytes(png_ptr, 8); // we already read 8 signature bytes
+
+  // 4) Read PNG metadata (header)
+  png_read_info(png_ptr, info_ptr);
+
+  // 5) Check that this PNG is 8-bit paletted (indexed) format
+  png_uint_32 width = png_get_image_width(png_ptr, info_ptr);
+  png_uint_32 height = png_get_image_height(png_ptr, info_ptr);
+  png_byte color_type = png_get_color_type(png_ptr, info_ptr);
+  png_byte bit_depth = png_get_bit_depth(png_ptr, info_ptr);
+
+  if (color_type != PNG_COLOR_TYPE_PALETTE || bit_depth != 8) {
+    png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp) nullptr);
+    fclose(fp);
+    throw std::runtime_error("PNG is not 8-bit paletted (indexed).");
+  }
+
+  // 6) Ensure no transforms (we want raw indices). Do NOT call png_set_palette_to_rgb()
+  //    and do NOT call any transform that expands the palette. We just need the raw bytes.
+  //    So we skip any png_set_* that would expand the data.
+
+  // 7) Allocate row pointers and image buffer
+  std::vector<png_bytep> row_ptrs(height);
+  // Each row is `width` bytes, each byte is an index [0..255] into the palette
+  std::vector<png_byte> raw_data(width * height);
+  for (png_uint_32 y = 0; y < height; y++) {
+    row_ptrs[y] = raw_data.data() + (y * width);
+  }
+
+  // 8) Read the image into our row pointers
+  png_read_image(png_ptr, row_ptrs.data());
+
+  // 9) Clean up libpng structs
+  png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp) nullptr);
+  fclose(fp);
+
+  // 10) Wrap raw_data into a single‐channel Mat (CV_8U)
+  cv::Mat indexed((int)height, (int)width, CV_8U, raw_data.data());
+  // We must clone because raw_data is a local vector—once we leave this scope, raw_data goes away.
+  return indexed.clone();
+}
+
+/**
  * @brief Loads a seam mask from disk in grayscale, then processes min/max values for binary usage.
  *
  * This function reads the image as `IMREAD_GRAYSCALE`, finds min and max pixel
@@ -119,7 +219,8 @@ SpatialTiff get_geo_tiff(const std::string& filename) {
  * @return A processed 8-bit single-channel seam mask.
  */
 cv::Mat load_seam_mask(const std::string& filename) {
-  cv::Mat seam_mask = cv::imread(filename, cv::IMREAD_GRAYSCALE);
+  // cv::Mat seam_mask = cv::imread(filename, cv::IMREAD_GRAYSCALE);
+  cv::Mat seam_mask = imreadPalettedAsIndex(filename);
   if (!seam_mask.empty()) {
     double minVal, maxVal;
     cv::Point minLoc, maxLoc;

@@ -93,7 +93,6 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
     // cv::cvtColor(seam_color, seam_gray, cv::COLOR_BGR2GRAY);
     seam_gray = seam_color;
     stitch_context_->cudaBlendHardSeam = std::make_unique<CudaMat<unsigned char>>(seam_gray);
-    SHOW_IMAGE(stitch_context_->cudaBlendHardSeam);
   }
 
   if (match_exposure_) {

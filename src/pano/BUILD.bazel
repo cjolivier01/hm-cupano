@@ -59,6 +59,7 @@ cc_library(
     include_prefix = INCLUDE_PREFIX,
     linkopts = [
       "-ltiff",
+      "-lpng",
     ],
     visibility = ["//visibility:public"],
     deps = [
