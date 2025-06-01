@@ -100,3 +100,13 @@ cc_library(
         ":cuda_matrix",
     ],
 )
+
+cc_test(
+  name = "cudaPano3_test",
+  srcs = ["cudaPano3_test.cpp"],
+  deps = [
+    ":cuda_pano",
+    "@googletest//:gtest",
+    "@googletest//:gtest_main",
+  ]
+)

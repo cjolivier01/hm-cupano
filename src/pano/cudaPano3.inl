@@ -50,7 +50,7 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
   }
 
   canvas_manager_ = std::make_unique<CanvasManager3>(
-      CanvasInfo3{
+      CanvasInfo{
           .width = canvas_w,
           .height = canvas_h,
           .positions =

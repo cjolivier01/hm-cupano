@@ -4,19 +4,10 @@
 #include <vector>
 #include <opencv2/opencv.hpp>
 
+#include "cupano/pano/controlMasks.h"
+
 namespace hm {
 namespace pano {
-
-/**
- * @brief Holds three spatial positions (in pixels or units) for the three TIFF images,
- *        plus their per-pixel remap maps (X/Y for each of the three), and a single
- *        **3-channel** seam mask (`whole_seam_mask_image`) where each pixel (R,G,B) 
- *        holds the blending weights (m₀, m₁, m₂) for image0/1/2.
- */
-struct SpatialTiff3 {
-  float xpos;
-  float ypos;
-};
 
 class ControlMasks3 {
  public:
@@ -46,7 +37,7 @@ class ControlMasks3 {
   cv::Mat whole_seam_mask_image;
 
   // Exactly three positions for the three images
-  std::vector<SpatialTiff3> positions;
+  std::vector<SpatialTiff> positions;
 };
 
 } // namespace pano

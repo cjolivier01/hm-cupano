@@ -25,7 +25,7 @@ struct TiffInfo3 {
   float yPosition = 0.0f;
 };
 
-static SpatialTiff3 get_geo_tiff3(const std::string& filename) {
+static SpatialTiff get_geo_tiff3(const std::string& filename) {
   TiffInfo3 info;
   TIFF* tif = TIFFOpen(filename.c_str(), "r");
   if (!tif) {
@@ -53,13 +53,13 @@ static SpatialTiff3 get_geo_tiff3(const std::string& filename) {
   }
 
   TIFFClose(tif);
-  return SpatialTiff3{.xpos = info.xPosition * info.xResolution, .ypos = info.yPosition * info.yResolution};
+  return SpatialTiff{.xpos = info.xPosition * info.xResolution, .ypos = info.yPosition * info.yResolution};
 }
 
 /**
  * Normalize a list of three positions so that the minimum X and Y become zero.
  */
-static std::vector<SpatialTiff3> normalize_positions3(std::vector<SpatialTiff3>&& positions) {
+static std::vector<SpatialTiff> normalize_positions3(std::vector<SpatialTiff>&& positions) {
   float min_x = std::numeric_limits<float>::max();
   float min_y = std::numeric_limits<float>::max();
   for (auto& sp : positions) {
@@ -270,9 +270,9 @@ bool ControlMasks3::load(const std::string& game_dir_in) {
   }
 
   // Load geospatial positions from TIFF tags:
-  SpatialTiff3 p0 = get_geo_tiff3(mapping0_pos);
-  SpatialTiff3 p1 = get_geo_tiff3(mapping1_pos);
-  SpatialTiff3 p2 = get_geo_tiff3(mapping2_pos);
+  SpatialTiff p0 = get_geo_tiff3(mapping0_pos);
+  SpatialTiff p1 = get_geo_tiff3(mapping1_pos);
+  SpatialTiff p2 = get_geo_tiff3(mapping2_pos);
   positions = normalize_positions3({p0, p1, p2});
 
   return true;

@@ -4,27 +4,10 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 
+#include "cupano/pano/canvasManager.h"
+
 namespace hm {
 namespace pano {
-
-/**
- * @brief Holds basic canvas info for THREE‐image stitching.
- *        "positions" must have exactly 3 cv::Points: top-left corners of image0,1,2.
- */
-struct CanvasInfo3 {
-  int width{0};
-  int height{0};
-  std::vector<cv::Point> positions; // size() == 3
-};
-
-/**
- * @brief Remapper struct for each of the three images.
- */
-struct Remapper3 {
-  int width{0};
-  int height{0};
-  int xpos{0}; // where to place on canvas
-};
 
 /**
  * @class CanvasManager3
@@ -42,7 +25,7 @@ struct Remapper3 {
  */
 class CanvasManager3 {
  public:
-  CanvasManager3(CanvasInfo3 canvas_info, bool minimize_blend, int overlap_pad = 128);
+  CanvasManager3(CanvasInfo canvas_info, bool minimize_blend, int overlap_pad = 128);
 
   /**
    * @brief After remapping each image, call this to compute minimal blend‐ROIs:
@@ -90,15 +73,15 @@ class CanvasManager3 {
     return canvas_info_.positions;
   }
 
-  Remapper3 _remapper_0;
-  Remapper3 _remapper_1;
-  Remapper3 _remapper_2;
+  Remapper _remapper_0;
+  Remapper _remapper_1;
+  Remapper _remapper_2;
 
   // When blending, we need to know where to place the 3‐way blended pixels on canvas:
   int _x_blend_start{0}, _y_blend_start{0};
 
  private:
-  CanvasInfo3 canvas_info_;
+  CanvasInfo canvas_info_;
   bool _minimize_blend{false};
   int _overlap_pad{0};
 

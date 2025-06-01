@@ -5,7 +5,7 @@
 namespace hm {
 namespace pano {
 
-CanvasManager3::CanvasManager3(CanvasInfo3 canvas_info, bool minimize_blend, int overlap_pad)
+CanvasManager3::CanvasManager3(CanvasInfo canvas_info, bool minimize_blend, int overlap_pad)
     : canvas_info_(std::move(canvas_info)), _minimize_blend(minimize_blend), _overlap_pad(overlap_pad) {
   assert(canvas_info_.positions.size() == 3);
 }

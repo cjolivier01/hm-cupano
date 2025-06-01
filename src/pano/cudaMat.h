@@ -445,6 +445,8 @@ class CudaMat {
    */
   cv::Mat download(int batch_item = 0) const;
 
+  cudaError_t upload(const cv::Mat& cpu_mat, int batch_item = 0, cudaStream_t stream = 0);
+
   /// @brief Returns a pointer to the device memory.
   T* data();
   /// @brief Returns a const pointer to the device memory.
