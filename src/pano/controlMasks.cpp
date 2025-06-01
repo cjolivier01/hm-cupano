@@ -3,6 +3,9 @@
 #include <png.h>
 #include <tiffio.h> // For reading TIFF metadata
 #include <tiffio.h> // For TIFF metadata
+
+#include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -126,7 +129,7 @@ SpatialTiff get_geo_tiff(const std::string& filename) {
  *    cv::Mat idx = imreadPalettedAsIndex("my_palette.png");
  *    // idx.type()==CV_8U, idx.cols×idx.rows = image size
  */
-cv::Mat imreadPalettedAsIndex(const std::string& filename) {
+std::optional<cv::Mat> imreadPalettedAsIndex(const std::string& filename) {
   // 1) Open the file in binary mode
   FILE* fp = fopen(filename.c_str(), "rb");
   if (!fp) {
@@ -180,7 +183,7 @@ cv::Mat imreadPalettedAsIndex(const std::string& filename) {
   if (color_type != PNG_COLOR_TYPE_PALETTE || bit_depth != 8) {
     png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp) nullptr);
     fclose(fp);
-    throw std::runtime_error("PNG is not 8-bit paletted (indexed).");
+    return std::nullopt;
   }
 
   // 6) Ensure no transforms (we want raw indices). Do NOT call png_set_palette_to_rgb()
@@ -205,7 +208,7 @@ cv::Mat imreadPalettedAsIndex(const std::string& filename) {
   // 10) Wrap raw_data into a single‐channel Mat (CV_8U)
   cv::Mat indexed((int)height, (int)width, CV_8U, raw_data.data());
   // We must clone because raw_data is a local vector—once we leave this scope, raw_data goes away.
-  return indexed.clone();
+  return indexed;
 }
 
 /**
@@ -219,22 +222,24 @@ cv::Mat imreadPalettedAsIndex(const std::string& filename) {
  * @return A processed 8-bit single-channel seam mask.
  */
 cv::Mat load_seam_mask(const std::string& filename) {
-  // cv::Mat seam_mask = cv::imread(filename, cv::IMREAD_GRAYSCALE);
-  cv::Mat seam_mask = imreadPalettedAsIndex(filename);
-  if (!seam_mask.empty()) {
+  std::optional<cv::Mat> seam_mask = imreadPalettedAsIndex(filename);
+  if (!seam_mask) {
+    seam_mask = cv::imread(filename, cv::IMREAD_GRAYSCALE);
+  }
+  if (seam_mask && !seam_mask->empty()) {
     double minVal, maxVal;
     cv::Point minLoc, maxLoc;
-    cv::minMaxLoc(seam_mask, &minVal, &maxVal, &minLoc, &maxLoc);
+    cv::minMaxLoc(*seam_mask, &minVal, &maxVal, &minLoc, &maxLoc);
 
     // Create masks for min and max values
-    cv::Mat minMask = (seam_mask == static_cast<int>(minVal));
-    cv::Mat maxMask = (seam_mask == static_cast<int>(maxVal));
+    cv::Mat minMask = (*seam_mask == static_cast<int>(minVal));
+    cv::Mat maxMask = (*seam_mask == static_cast<int>(maxVal));
 
     // Invert: set max locations to 0 and min locations to 1
-    seam_mask.setTo(0, maxMask);
-    seam_mask.setTo(1, minMask);
+    seam_mask->setTo(0, maxMask);
+    seam_mask->setTo(1, minMask);
   }
-  return seam_mask;
+  return *seam_mask;
 }
 
 } // namespace
