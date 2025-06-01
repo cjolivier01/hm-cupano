@@ -1,6 +1,7 @@
 #pragma once
 
 #include <opencv4/opencv2/imgproc.hpp>
+#include "cupano/cuda/cudaBlendShow.h"
 #include "cupano/cuda/cudaMakeFull.h"
 #include "cupano/cuda/cudaRemap.h"
 #include "cupano/cuda/cudaTypes.h"

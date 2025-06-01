@@ -481,6 +481,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
 
+    // stitch_context.laplacian_blend_context->displayPyramids(stitch_context.cudaFull0->channels());
+
     // SHOW_IMAGE(stitch_context.cudaFull0);
     // SHOW_IMAGE(stitch_context.cudaFull1);
     // SHOW_IMAGE(stitch_context.cudaFull2);
