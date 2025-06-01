@@ -165,10 +165,10 @@ TEST(CudaStitchPano3_SoftSeamTrivial, OutputEqualsTripleAverage) {
   ASSERT_TRUE(masks.is_valid());
 
   // 3c) Create three 1×1 float images: image1=30.0, image2=60.0, image3=90.0
-  using CudaMatF = hm::CudaMat<float3>;
-  cv::Mat host1(1, 1, CV_32FC3, cv::Scalar(30.0f, 30.0f, 30.0f));
-  cv::Mat host2(1, 1, CV_32FC3, cv::Scalar(60.0f, 60.0f, 60.0f));
-  cv::Mat host3(1, 1, CV_32FC3, cv::Scalar(90.0f, 90.0f, 90.0f));
+  using CudaMatF = hm::CudaMat<float4>;
+  cv::Mat host1(1, 1, CV_32FC4, cv::Scalar(30.0f, 30.0f, 30.0f, 255.0));
+  cv::Mat host2(1, 1, CV_32FC4, cv::Scalar(60.0f, 60.0f, 60.0f, 255.0));
+  cv::Mat host3(1, 1, CV_32FC4, cv::Scalar(90.0f, 90.0f, 90.0f, 255.0));
   auto d_img1 = std::make_unique<CudaMatF>(1, 1, 1);
   auto d_img2 = std::make_unique<CudaMatF>(1, 1, 1);
   auto d_img3 = std::make_unique<CudaMatF>(1, 1, 1);
@@ -179,7 +179,7 @@ TEST(CudaStitchPano3_SoftSeamTrivial, OutputEqualsTripleAverage) {
   auto d_canvas = std::make_unique<CudaMatF>(1, 1, 1);
 
   // 3d) Instantiate with num_levels=1 (soft seam)
-  hm::pano::cuda::CudaStitchPano3<float3, float3> stitch(
+  hm::pano::cuda::CudaStitchPano3<float4, float4> stitch(
       /*batch_size=*/1,
       /*num_levels=*/1,
       masks,

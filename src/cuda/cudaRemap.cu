@@ -121,6 +121,13 @@ __global__ void BatchedRemapKernelExOffset(
   int srcX = static_cast<int>(mapX[mapIdx]);
   int srcY = static_cast<int>(mapY[mapIdx]);
 
+  if constexpr (sizeof(T_out) / sizeof(BaseScalar_t<T_out>) == 4) {
+    if (no_unmapped_write && srcX == kUnmappedPositionValue) {
+      // Don't write anything for alpha 0
+      return;
+    }
+  }
+
   if (srcX < src.width && srcY < src.height) {
     int srcImageSizeBytes = src.height * src.pitch;
     const T_in* srcImage = advance_bytes(src.d_ptr, b * srcImageSizeBytes);
@@ -177,6 +184,13 @@ __global__ void BatchedRemapKernelExOffsetAdjust(
 
   int srcX = static_cast<int>(mapX[mapIdx]);
   int srcY = static_cast<int>(mapY[mapIdx]);
+
+  // if constexpr (sizeof(T_out) / sizeof(BaseScalar_t<T_out>) == 4) {
+  //   if (no_unmapped_write && srcX == kUnmappedPositionValue) {
+  //     // Don't write anything for alpha 0
+  //     return;
+  //   }
+  // }
 
   if (srcX < src.width && srcY < src.height) {
     int srcImageSizeBytes = src.height * src.pitch;

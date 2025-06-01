@@ -28,6 +28,11 @@ namespace {
 #define T_CONST(_v$) static_cast<T>(_v$)
 #define F_T_CONST(_v$) static_cast<F_T>(_v$)
 
+template <typename T>
+inline __device__ bool is_strange_alpha(const T& alpha) {
+  return alpha != T_CONST(0) && alpha != T_CONST(255);
+}
+
 // =============================================================================
 // Templated CUDA Kernels for Batched Laplacian Blending of THREE images
 // =============================================================================
@@ -91,8 +96,17 @@ __global__ void FusedBatchedDownsampleKernel3(
         }
         if (channels == 4) {
           alpha1 = max(alpha1, inImage1[idx + 3]);
+          // if (is_strange_alpha(alpha1)) {
+          //   printf("FusedBatchedDownsampleKernel3(): Strange alpha1: %f\n", (float)alpha1);
+          // }
           alpha2 = max(alpha2, inImage2[idx + 3]);
+          // if (is_strange_alpha(alpha2)) {
+          //   printf("FusedBatchedDownsampleKernel3(): Strange alpha2: %f\n", (float)alpha2);
+          // }
           alpha3 = max(alpha3, inImage3[idx + 3]);
+          // if (is_strange_alpha(alpha3)) {
+          //   printf("FusedBatchedDownsampleKernel3(): Strange alpha3: %f\n", (float)alpha3);
+          // }
         }
         count++;
       }
@@ -109,14 +123,15 @@ __global__ void FusedBatchedDownsampleKernel3(
     outImage1[outIdx + 3] = alpha1;
     outImage2[outIdx + 3] = alpha2;
     outImage3[outIdx + 3] = alpha3;
-  }
 
 #ifdef PRINT_STRANGE_ALPHAS
-  if ((alpha1 != T_CONST(0) && alpha1 != T_CONST(255)) || (alpha2 != T_CONST(0) && alpha2 != T_CONST(255)) ||
-      (alpha3 != T_CONST(0) && alpha3 != T_CONST(255))) {
-    printf("FusedBatchedDownsampleKernel3(): Strange alphas %f, %f, %f\n", (float)alpha1, (float)alpha2, (float)alpha3);
-  }
+    if ((alpha1 != T_CONST(0) && alpha1 != T_CONST(255)) || (alpha2 != T_CONST(0) && alpha2 != T_CONST(255)) ||
+        (alpha3 != T_CONST(0) && alpha3 != T_CONST(255))) {
+      printf(
+          "FusedBatchedDownsampleKernel3(): Strange alphas %f, %f, %f\n", (float)alpha1, (float)alpha2, (float)alpha3);
+    }
 #endif
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -137,7 +152,6 @@ __global__ void FusedBatchedDownsampleMask3(
 
   int inX = x * 2;
   int inY = y * 2;
-  // F_T_CONST(0.0f); // not used directly, but for casting
   float sums[3] = {0.0f, 0.0f, 0.0f};
   int count = 0;
 
@@ -204,6 +218,9 @@ __global__ void BatchedComputeLaplacianKernel(
     if (channels == 4 && c == 3) {
       // For the alpha channel, copy the high-res value.
       lapImage[idxHigh + c] = highImage[idxHigh + c];
+      // if (is_strange_alpha(lapImage[idxHigh + c])) {
+      //   printf("BatchedComputeLaplacianKernel(): Strange lapImage[idxHigh + c]: %f\n", (float)lapImage[idxHigh + c]);
+      // }
     } else {
       int idx00 = (gyi * lowWidth + gxi) * channels + c;
       int idx10 = (gyi * lowWidth + gxi1) * channels + c;
@@ -234,8 +251,8 @@ __global__ void BatchedBlendKernel3(
     const T* __restrict__ lap1,
     const T* __restrict__ lap2,
     const T* __restrict__ lap3,
-    const T* __restrict__ mask, // [H×W×3], single (non-batched) mask
-    T* __restrict__ blended,
+    const T* __restrict__ mask, // [H×W×3], single (non‐batched) mask
+    T* __restrict__ blended, // output [batch × H × W × channels]
     int width,
     int height,
     int batchSize,
@@ -256,21 +273,61 @@ __global__ void BatchedBlendKernel3(
   const T* maskImage = mask + (y * width + x) * 3; // 3 weights per pixel
   T* blendImage = blended + b * imageSize;
 
-  // Fetch mask weights, cast to F_T
+  // Fetch mask weights (cast to F_T)
   F_T m1 = static_cast<F_T>(maskImage[0]);
   F_T m2 = static_cast<F_T>(maskImage[1]);
   F_T m3 = static_cast<F_T>(maskImage[2]);
 
-  // printf("d=%p, b=%d, m1=%f, m2=%f, m3=%f\n", blended, (int)b, (float)m1, (float)m2, (float)m3);
-
+  // Compute flat index into each image’s pixel (all channels)
   int idx = (y * width + x) * channels;
-  for (int c = 0; c < channels; c++) {
+
+  // If we have 4‐channel input, check each lap‐image’s alpha‐channel (c==3).
+  // If that alpha is zero, we zero out its mask‐weight. Then renormalize.
+  if (channels == 4) {
+    // Read each lap‐image’s alpha at this pixel
+    T alpha1 = lap1Image[idx + 3];
+    T alpha2 = lap2Image[idx + 3];
+    T alpha3 = lap3Image[idx + 3];
+
+    if (alpha1 == static_cast<T>(0))
+      m1 = static_cast<F_T>(0);
+    if (alpha2 == static_cast<T>(0))
+      m2 = static_cast<F_T>(0);
+    if (alpha3 == static_cast<T>(0))
+      m3 = static_cast<F_T>(0);
+
+    // Renormalize so that surviving weights sum to 1.0 (if any >0 remain)
+    F_T sum = m1 + m2 + m3;
+    if (sum > static_cast<F_T>(0)) {
+      m1 /= sum;
+      m2 /= sum;
+      m3 /= sum;
+    }
+    // If sum == 0, all three were skipped; leave m1=m2=m3=0 → contribution is zero.
+    // printf("d=%p, x=%d, y=%d, b=%d, m1=%f, m2=%f, m3=%f\n", blended, (int)x, (int)y, (int)b, (float)m1, (float)m2, (float)m3);
+    float summation = m1 + m2 + m3;
+    if (std::abs(1.0f - summation) > 0.01f && summation > 0.01f) {
+      printf("d=%p, x=%d, y=%d, b=%d, m1=%f, m2=%f, m3=%f\n", blended, (int)x, (int)y, (int)b, (float)m1, (float)m2, (float)m3);
+    }
+  }
+
+  // We only blend up to min(4,channels). In practice, for channels==4: blend_channels=4.
+  const int blend_channels = min(3, channels);
+
+  // Perform weighted sum over (up to) 4 channels; color channels (0..2) use m1/m2/m3.
+  for (int c = 0; c < blend_channels; c++) {
     F_T v1 = static_cast<F_T>(lap1Image[idx + c]);
     F_T v2 = static_cast<F_T>(lap2Image[idx + c]);
     F_T v3 = static_cast<F_T>(lap3Image[idx + c]);
+
     F_T blendedVal = m1 * v1 + m2 * v2 + m3 * v3;
     // printf("pos=%d, pix1=%f, pix2=%f, pix3=%f -> blended=%f\n", (int)idx + c, (float)v1, (float)v2, (float)v3, (float)blendedVal);
     blendImage[idx + c] = static_cast<T>(blendedVal);
+  }
+
+  // Finally, if we are in 4‐channel mode, force the output alpha to 255:
+  if (channels == 4) {
+    blendImage[idx + 3] = static_cast<T>(255);
   }
 }
 
@@ -547,9 +604,12 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     const T* d_image1,
     const T* d_image2,
     const T* d_image3,
-    const uint16_t *map1_x, const uint16_t *map1_y, 
-    const uint16_t *map2_x, const uint16_t *map2_y,
-    const uint16_t *map3_x, const uint16_t *map3_y,
+    const uint16_t* map1_x,
+    const uint16_t* map1_y,
+    const uint16_t* map2_x,
+    const uint16_t* map2_y,
+    const uint16_t* map3_x,
+    const uint16_t* map3_y,
     const T* d_mask,
     T* d_output,
     CudaBatchLaplacianBlendContext3<T>& context,
@@ -815,9 +875,12 @@ template cudaError_t cudaBatchedLaplacianBlendWithContext3<float, float>(
     const float* d_image1,
     const float* d_image2,
     const float* d_image3,
-    const uint16_t *map1_x, const uint16_t *map1_y, 
-    const uint16_t *map2_x, const uint16_t *map2_y,
-    const uint16_t *map3_x, const uint16_t *map3_y,
+    const uint16_t* map1_x,
+    const uint16_t* map1_y,
+    const uint16_t* map2_x,
+    const uint16_t* map2_y,
+    const uint16_t* map3_x,
+    const uint16_t* map3_y,
     const float* d_mask,
     float* d_output,
     CudaBatchLaplacianBlendContext3<float>& context,
@@ -828,9 +891,12 @@ template cudaError_t cudaBatchedLaplacianBlendWithContext3<unsigned char, float>
     const unsigned char* d_image1,
     const unsigned char* d_image2,
     const unsigned char* d_image3,
-    const uint16_t *map1_x, const uint16_t *map1_y, 
-    const uint16_t *map2_x, const uint16_t *map2_y,
-    const uint16_t *map3_x, const uint16_t *map3_y,
+    const uint16_t* map1_x,
+    const uint16_t* map1_y,
+    const uint16_t* map2_x,
+    const uint16_t* map2_y,
+    const uint16_t* map3_x,
+    const uint16_t* map3_y,
     const unsigned char* d_mask,
     unsigned char* d_output,
     CudaBatchLaplacianBlendContext3<unsigned char>& context,

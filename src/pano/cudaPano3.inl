@@ -153,6 +153,16 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
   assert(inputImage2.batch_size() == stitch_context.batch_size());
   assert(canvas->batch_size() == stitch_context.batch_size());
 
+  // SHOW_IMAGE(&inputImage0);
+  // SHOW_IMAGE(&inputImage1);
+  // SHOW_IMAGE(&inputImage2);
+
+  // We need all alphas to be zero to start
+  if constexpr(sizeof(T_pipeline) / sizeof(BaseScalar_t<T_pipeline>) == 4) {
+    cuerr = cudaMemsetAsync(canvas->data(), 0, canvas->size(), stream);
+    CUDA_RETURN_IF_ERROR(cuerr);
+  }
+
   // -------------------- IMAGE 0 --------------------
   if (!stitch_context.is_hard_seam()) {
     // SOFT-SEAM: remap image0 onto canvas
@@ -246,6 +256,9 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     }
     CUDA_RETURN_IF_ERROR(cuerr);
   }
+
+  // SHOW_IMAGE(canvas);
+  // SHOW_IMAGE(stitch_context.cudaFull0);
 
   // -------------------- IMAGE 1 --------------------
   if (!stitch_context.is_hard_seam()) {
@@ -341,6 +354,9 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     CUDA_RETURN_IF_ERROR(cuerr);
   }
 
+  // SHOW_IMAGE(canvas);
+  // SHOW_IMAGE(stitch_context.cudaFull1);
+
   // -------------------- IMAGE 2 --------------------
   if (!stitch_context.is_hard_seam()) {
     // SOFT-SEAM: remap image2 onto canvas
@@ -435,15 +451,18 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     CUDA_RETURN_IF_ERROR(cuerr);
   }
 
+  // SHOW_IMAGE(canvas);
+  // SHOW_IMAGE(stitch_context.cudaFull2);
+
   // --------------- BLEND (Soft‐Seam) ---------------
   if (!stitch_context.is_hard_seam()) {
     // We now have three “full” images in cudaFull0, cudaFull1, cudaFull2,
     // each of size (mask_width × mask_height) in T_compute type.
     CudaMat<T_compute>& cudaBlendedFull = *stitch_context.cudaFull0;
 
-    SHOW_IMAGE(stitch_context.cudaFull0);
-    SHOW_IMAGE(stitch_context.cudaFull1);
-    SHOW_IMAGE(stitch_context.cudaFull2);
+    // SHOW_IMAGE(stitch_context.cudaFull0);
+    // SHOW_IMAGE(stitch_context.cudaFull1);
+    // SHOW_IMAGE(stitch_context.cudaFull2);
 
     cuerr = cudaBatchedLaplacianBlendWithContext3(
         stitch_context.cudaFull0->data_raw(),
@@ -465,8 +484,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     // SHOW_IMAGE(stitch_context.cudaFull0);
     // SHOW_IMAGE(stitch_context.cudaFull1);
     // SHOW_IMAGE(stitch_context.cudaFull2);
-    SHOW_IMAGE(canvas);
-    SHOW_IMAGE(&cudaBlendedFull);
+    // SHOW_IMAGE(canvas);
+    // SHOW_IMAGE(&cudaBlendedFull);
 
     assert(canvas_manager._x_blend_start >= 0 && canvas_manager._y_blend_start >= 0);
 

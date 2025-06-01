@@ -173,11 +173,11 @@ int main(int argc, char** argv) {
   // Configurable parameter: number of pyramid levels.
 #if 1
 #if 1
-  // using T_pipeline = uchar4;
-  using T_pipeline = uchar3;
+  using T_pipeline = uchar4;
+  // using T_pipeline = uchar3;
   // using T_pipeline = float3;
-  // using T_compute = float4;
-  using T_compute = float3;
+  using T_compute = float4;
+  // using T_compute = float3;
   // using T_compute = half3;
 #else
   using T_pipeline = float3;
@@ -199,10 +199,12 @@ int main(int argc, char** argv) {
     if (std::is_floating_point<BaseScalar_t<T_pipeline>>()) {
       sample_img_image_0.convertTo(sample_img_image_0, cvPipelineType, 1.0 / 255.0);
       sample_img_image_1.convertTo(sample_img_image_1, cvPipelineType, 1.0 / 255.0);
+      sample_img_image_2.convertTo(sample_img_image_1, cvPipelineType, 1.0 / 255.0);
     } else {
       if (sizeof(T_pipeline) / sizeof(BaseScalar_t<T_pipeline>) == 4) {
         cv::cvtColor(sample_img_image_0, sample_img_image_0, cv::COLOR_BGR2BGRA);
         cv::cvtColor(sample_img_image_1, sample_img_image_1, cv::COLOR_BGR2BGRA);
+        cv::cvtColor(sample_img_image_2, sample_img_image_2, cv::COLOR_BGR2BGRA);
       }
     }
   }
