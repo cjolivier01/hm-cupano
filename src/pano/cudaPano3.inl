@@ -417,6 +417,10 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     // each of size (mask_width × mask_height) in T_compute type.
     CudaMat<T_compute>& cudaBlendedFull = *stitch_context.cudaFull0;
 
+    SHOW_IMAGE(stitch_context.cudaFull0);
+    SHOW_IMAGE(stitch_context.cudaFull1);
+    SHOW_IMAGE(stitch_context.cudaFull2);
+
     cuerr = cudaBatchedLaplacianBlendWithContext3(
         stitch_context.cudaFull0->data_raw(),
         stitch_context.cudaFull1->data_raw(),
@@ -428,9 +432,9 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
 
-    SHOW_IMAGE(stitch_context.cudaFull0);
-    SHOW_IMAGE(stitch_context.cudaFull1);
-    SHOW_IMAGE(stitch_context.cudaFull2);
+    // SHOW_IMAGE(stitch_context.cudaFull0);
+    // SHOW_IMAGE(stitch_context.cudaFull1);
+    // SHOW_IMAGE(stitch_context.cudaFull2);
     SHOW_IMAGE(canvas);
     SHOW_IMAGE(&cudaBlendedFull);
 
