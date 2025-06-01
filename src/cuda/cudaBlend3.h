@@ -109,31 +109,31 @@ struct CudaBatchLaplacianBlendContext3 {
     }
   }
 
-  const int numLevels;     ///< Number of pyramid levels.
-  const int imageWidth;    ///< Width of the full-resolution image.
-  const int imageHeight;   ///< Height of the full-resolution image.
-  const int batchSize;     ///< Number of images in the batch.
+  const int numLevels; ///< Number of pyramid levels.
+  const int imageWidth; ///< Width of the full-resolution image.
+  const int imageHeight; ///< Height of the full-resolution image.
+  const int batchSize; ///< Number of images in the batch.
   size_t allocation_size{0}; ///< Total allocated device memory size (in bytes).
 
-  std::vector<int> widths;   ///< Width of images at each pyramid level.
-  std::vector<int> heights;  ///< Height of images at each pyramid level.
+  std::vector<int> widths; ///< Width of images at each pyramid level.
+  std::vector<int> heights; ///< Height of images at each pyramid level.
 
   // Gaussian pyramids for three image sets:
-  std::vector<T*> d_gauss1;  ///< Device pointers for Gaussian pyramid (image set 1).
-  std::vector<T*> d_gauss2;  ///< Device pointers for Gaussian pyramid (image set 2).
-  std::vector<T*> d_gauss3;  ///< Device pointers for Gaussian pyramid (image set 3).
+  std::vector<T*> d_gauss1; ///< Device pointers for Gaussian pyramid (image set 1).
+  std::vector<T*> d_gauss2; ///< Device pointers for Gaussian pyramid (image set 2).
+  std::vector<T*> d_gauss3; ///< Device pointers for Gaussian pyramid (image set 3).
 
   std::vector<T*> d_maskPyr; ///< Device pointers for the downsampled 3-channel shared mask.
 
   // Laplacian pyramids for three image sets:
-  std::vector<T*> d_lap1;    ///< Device pointers for Laplacian pyramid (image 1).
-  std::vector<T*> d_lap2;    ///< Device pointers for Laplacian pyramid (image 2).
-  std::vector<T*> d_lap3;    ///< Device pointers for Laplacian pyramid (image 3).
+  std::vector<T*> d_lap1; ///< Device pointers for Laplacian pyramid (image 1).
+  std::vector<T*> d_lap2; ///< Device pointers for Laplacian pyramid (image 2).
+  std::vector<T*> d_lap3; ///< Device pointers for Laplacian pyramid (image 3).
 
-  std::vector<T*> d_blend;        ///< Device pointers for the blended Laplacian pyramid.
-  std::vector<T*> d_reconstruct;  ///< Device pointers for temporary reconstruction buffers.
+  std::vector<T*> d_blend; ///< Device pointers for the blended Laplacian pyramid.
+  std::vector<T*> d_reconstruct; ///< Device pointers for temporary reconstruction buffers.
 
-  bool initialized{false};  ///< Flag indicating whether the context has been initialized.
+  bool initialized{false}; ///< Flag indicating whether the context has been initialized.
 
   ///////////////////////////////////////////////////////////////////////////////
   // Member function to copy each pyramid level to host, build a composite image,
@@ -198,7 +198,8 @@ cudaError_t cudaBatchedLaplacianBlend3(
  * @param d_image3 Device pointer to the third set of full-resolution images.
  * @param d_mask   Device pointer to the shared **3-channel** mask.
  * @param d_output Device pointer where the final blended images will be stored.
- * @param context  Reference to a CudaBatchLaplacianBlendContext3 that holds preallocated buffers and blending parameters.
+ * @param context  Reference to a CudaBatchLaplacianBlendContext3 that holds preallocated buffers and blending
+ * parameters.
  * @param channels Number of image channels (e.g. 3 for RGB, 4 for RGBA).
  * @param stream   CUDA stream to use for all kernel launches and memory copies (default is 0).
  * @return cudaError_t CUDA error code.
@@ -208,6 +209,12 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     const T* d_image1,
     const T* d_image2,
     const T* d_image3,
+    const uint16_t* map1_x,
+    const uint16_t* map1_y,
+    const uint16_t* map2_x,
+    const uint16_t* map2_y,
+    const uint16_t* map3_x,
+    const uint16_t* map3_y,
     const T* d_mask,
     T* d_output,
     CudaBatchLaplacianBlendContext3<T>& context,
@@ -218,29 +225,35 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
  * @brief Explicit template instantiations for supported data types (3-image version).
  *        Currently instantiated for float and unsigned char.
  */
-#define INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND3(T)                 \
-  template cudaError_t cudaBatchedLaplacianBlend3<T, float>(         \
-      const T* h_image1,                                             \
-      const T* h_image2,                                             \
-      const T* h_image3,                                             \
-      const T* h_mask,                                               \
-      T* h_output,                                                   \
-      int imageWidth,                                                \
-      int imageHeight,                                               \
-      int channels,                                                  \
-      int numLevels,                                                 \
-      int batchSize,                                                 \
+#define INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND3(T)         \
+  template cudaError_t cudaBatchedLaplacianBlend3<T, float>( \
+      const T* h_image1,                                     \
+      const T* h_image2,                                     \
+      const T* h_image3,                                     \
+      const T* h_mask,                                       \
+      T* h_output,                                           \
+      int imageWidth,                                        \
+      int imageHeight,                                       \
+      int channels,                                          \
+      int numLevels,                                         \
+      int batchSize,                                         \
       cudaStream_t stream);
 
-#define INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT3(T)         \
-  template cudaError_t cudaBatchedLaplacianBlendWithContext3<T, float>(   \
-      const T* d_image1,                                                  \
-      const T* d_image2,                                                  \
-      const T* d_image3,                                                  \
-      const T* d_mask,                                                    \
-      T* d_output,                                                        \
-      CudaBatchLaplacianBlendContext3<T>& context,                        \
-      int channels,                                                       \
+#define INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT3(T)       \
+  template cudaError_t cudaBatchedLaplacianBlendWithContext3<T, float>( \
+      const T* d_image1,                                                \
+      const T* d_image2,                                                \
+      const T* d_image3,                                                \
+      const uint16_t* map1_x,                                           \
+      const uint16_t* map1_y,                                           \
+      const uint16_t* map2_x,                                           \
+      const uint16_t* map2_y,                                           \
+      const uint16_t* map3_x,                                           \
+      const uint16_t* map3_y,                                           \
+      const T* d_mask,                                                  \
+      T* d_output,                                                      \
+      CudaBatchLaplacianBlendContext3<T>& context,                      \
+      int channels,                                                     \
       cudaStream_t stream);
 
 // INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND3(float)
@@ -254,4 +267,3 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
 // INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND3(__nv_bfloat16)
 // INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT3(__half)
 // INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT3(__nv_bfloat16)
-
