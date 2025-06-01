@@ -148,7 +148,7 @@ TEST(CudaStitchPano3_SoftSeamTrivial, OutputEqualsTripleAverage) {
   cv::Mat map1x(1, 1, CV_16U, cv::Scalar(0)), map1y(1, 1, CV_16U, cv::Scalar(0));
   cv::Mat map2x(1, 1, CV_16U, cv::Scalar(0)), map2y(1, 1, CV_16U, cv::Scalar(0));
   cv::Mat map3x(1, 1, CV_16U, cv::Scalar(0)), map3y(1, 1, CV_16U, cv::Scalar(0));
-  
+
   // All in same place
   SpatialTiff pos0{0.0f, 0.0f}, pos1{0.0f, 0.0f}, pos2{0.0f, 0.0f};
   std::vector<SpatialTiff> positions = {pos0, pos1, pos2};
@@ -207,112 +207,115 @@ TEST(CudaStitchPano3_SoftSeamTrivial, OutputEqualsTripleAverage) {
 // Helper to compute expected average (integer truncation for uchar, exact for float)
 template <typename T>
 T expectedAverage(T a, T b, T c) {
-    if constexpr (std::is_same_v<T, unsigned char>) {
-        return static_cast<T>((int(a) + int(b) + int(c)) / 3);
-    } else {
-        return static_cast<T>((a + b + c) / 3.0f);
-    }
+  if constexpr (std::is_same_v<T, unsigned char>) {
+    return static_cast<T>((int(a.x) + int(b.x) + int(c.x)) / 3);
+  } else {
+    return {
+        static_cast<T>((a.x + b.x + c.x) / 3.0f),
+        static_cast<T>((a.y + b.y + c.y) / 3.0f),
+        static_cast<T>((a.y + b.y + c.y) / 3.0f)};
+  }
 }
 
 // Test fixture for 3x3 blending with three separate masks
-template <typename T>
+template <typename T = uchar3>
 class Blend3x3Test : public ::testing::Test {
-protected:
-    void SetUp() override {
-        W = 3;
-        H = 3;
-        C = 1;      // single‐channel
-        B = 1;      // batch size = 1
-        numLevels = 1;  // single‐level pyramid → no down/up sampling
+ protected:
+  void SetUp() override {
+    W = 3;
+    H = 3;
+    C = 1; // single‐channel
+    B = 1; // batch size = 1
+    numLevels = 1; // single‐level pyramid → no down/up sampling
 
-        imageSize = W * H * C * B;
-        maskSize  = W * H * B;
+    imageSize = W * H * C * B;
+    maskSize = W * H * B;
 
-        // Allocate host arrays
-        h_im0 .resize(imageSize);
-        h_im1 .resize(imageSize);
-        h_im2 .resize(imageSize);
-        h_mask0.resize(maskSize);
-        h_mask1.resize(maskSize);
-        h_mask2.resize(maskSize);
-        h_out .resize(imageSize);
+    // Allocate host arrays
+    h_im0.resize(imageSize);
+    h_im1.resize(imageSize);
+    h_im2.resize(imageSize);
+    h_mask0.resize(maskSize);
+    h_mask1.resize(maskSize);
+    h_mask2.resize(maskSize);
+    h_out.resize(imageSize);
 
-        // Initialize three distinct 3×3 images:
-        // image0 pixels = 0 + row*10 + col
-        // image1 pixels = 100 + row*10 + col
-        // image2 pixels = 200 + row*10 + col
-        for (int r = 0; r < H; ++r) {
-            for (int c = 0; c < W; ++c) {
-                int idx = r * W + c;
-                auto base = static_cast<T>(r * 10 + c);
-                h_im0[idx] = base;
-                h_im1[idx] = static_cast<T>(100 + (r * 10 + c));
-                h_im2[idx] = static_cast<T>(200 + (r * 10 + c));
-            }
-        }
-
-        // Zero‐initialize all masks
-        std::fill(h_mask0.begin(), h_mask0.end(), 0.0f);
-        std::fill(h_mask1.begin(), h_mask1.end(), 0.0f);
-        std::fill(h_mask2.begin(), h_mask2.end(), 0.0f);
-
-        // Set up mask so that:
-        //  - At (0,0): mask0=1 (pure image0)
-        //  - At (1,1): mask0=1, mask1=1, mask2=1 (equal blend)
-        //  - At (2,2): mask2=1 (pure image2)
-        auto setMask = [&](int r, int c, float m0, float m1, float m2) {
-            int idx = r * W + c;
-            h_mask0[idx] = m0;
-            h_mask1[idx] = m1;
-            h_mask2[idx] = m2;
-        };
-        setMask(0, 0, 1.0f, 0.0f, 0.0f);
-        setMask(1, 1, 1.0f, 1.0f, 1.0f);
-        setMask(2, 2, 0.0f, 0.0f, 1.0f);
-
-        // The rest of the pixels keep masks = 0, so output should be 0 (from image0).
-
-        // Allocate device arrays
-        CUDA_CHECK(cudaMalloc((void**)&d_im0,  imageSize * sizeof(T)));
-        CUDA_CHECK(cudaMalloc((void**)&d_im1,  imageSize * sizeof(T)));
-        CUDA_CHECK(cudaMalloc((void**)&d_im2,  imageSize * sizeof(T)));
-        CUDA_CHECK(cudaMalloc((void**)&d_mask0, maskSize  * sizeof(float)));
-        CUDA_CHECK(cudaMalloc((void**)&d_mask1, maskSize  * sizeof(float)));
-        CUDA_CHECK(cudaMalloc((void**)&d_mask2, maskSize  * sizeof(float)));
-        CUDA_CHECK(cudaMalloc((void**)&d_out,   imageSize * sizeof(T)));
-
-        // Copy host → device
-        CUDA_CHECK(cudaMemcpy(d_im0,  h_im0.data(),  imageSize * sizeof(T),   cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_im1,  h_im1.data(),  imageSize * sizeof(T),   cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_im2,  h_im2.data(),  imageSize * sizeof(T),   cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_mask0, h_mask0.data(), maskSize  * sizeof(float), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_mask1, h_mask1.data(), maskSize  * sizeof(float), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(d_mask2, h_mask2.data(), maskSize  * sizeof(float), cudaMemcpyHostToDevice));
+    // Initialize three distinct 3×3 images:
+    // image0 pixels = 0 + row*10 + col
+    // image1 pixels = 100 + row*10 + col
+    // image2 pixels = 200 + row*10 + col
+    for (int r = 0; r < H; ++r) {
+      for (int c = 0; c < W; ++c) {
+        int idx = r * W + c;
+        auto base = static_cast<T>(r * 10 + c);
+        h_im0[idx] = base;
+        h_im1[idx] = static_cast<T>(100 + (r * 10 + c));
+        h_im2[idx] = static_cast<T>(200 + (r * 10 + c));
+      }
     }
 
-    void TearDown() override {
-        cudaFree(d_im0);
-        cudaFree(d_im1);
-        cudaFree(d_im2);
-        cudaFree(d_mask0);
-        cudaFree(d_mask1);
-        cudaFree(d_mask2);
-        cudaFree(d_out);
-    }
+    // Zero‐initialize all masks
+    std::fill(h_mask0.begin(), h_mask0.end(), 0.0f);
+    std::fill(h_mask1.begin(), h_mask1.end(), 0.0f);
+    std::fill(h_mask2.begin(), h_mask2.end(), 0.0f);
 
-    int W, H, C, B, numLevels;
-    int imageSize, maskSize;
+    // Set up mask so that:
+    //  - At (0,0): mask0=1 (pure image0)
+    //  - At (1,1): mask0=1, mask1=1, mask2=1 (equal blend)
+    //  - At (2,2): mask2=1 (pure image2)
+    auto setMask = [&](int r, int c, float m0, float m1, float m2) {
+      int idx = r * W + c;
+      h_mask0[idx] = m0;
+      h_mask1[idx] = m1;
+      h_mask2[idx] = m2;
+    };
+    setMask(0, 0, 1.0f, 0.0f, 0.0f);
+    setMask(1, 1, 1.0f, 1.0f, 1.0f);
+    setMask(2, 2, 0.0f, 0.0f, 1.0f);
 
-    std::vector<T>     h_im0, h_im1, h_im2, h_out;
-    std::vector<float> h_mask0, h_mask1, h_mask2;
+    // The rest of the pixels keep masks = 0, so output should be 0 (from image0).
 
-    T*     d_im0;
-    T*     d_im1;
-    T*     d_im2;
-    float* d_mask0;
-    float* d_mask1;
-    float* d_mask2;
-    T*     d_out;
+    // Allocate device arrays
+    CUDA_CHECK(cudaMalloc((void**)&d_im0, imageSize * sizeof(T)));
+    CUDA_CHECK(cudaMalloc((void**)&d_im1, imageSize * sizeof(T)));
+    CUDA_CHECK(cudaMalloc((void**)&d_im2, imageSize * sizeof(T)));
+    CUDA_CHECK(cudaMalloc((void**)&d_mask0, maskSize * sizeof(float)));
+    CUDA_CHECK(cudaMalloc((void**)&d_mask1, maskSize * sizeof(float)));
+    CUDA_CHECK(cudaMalloc((void**)&d_mask2, maskSize * sizeof(float)));
+    CUDA_CHECK(cudaMalloc((void**)&d_out, imageSize * sizeof(T)));
+
+    // Copy host → device
+    CUDA_CHECK(cudaMemcpy(d_im0, h_im0.data(), imageSize * sizeof(T), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_im1, h_im1.data(), imageSize * sizeof(T), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_im2, h_im2.data(), imageSize * sizeof(T), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_mask0, h_mask0.data(), maskSize * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_mask1, h_mask1.data(), maskSize * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_mask2, h_mask2.data(), maskSize * sizeof(float), cudaMemcpyHostToDevice));
+  }
+
+  void TearDown() override {
+    cudaFree(d_im0);
+    cudaFree(d_im1);
+    cudaFree(d_im2);
+    cudaFree(d_mask0);
+    cudaFree(d_mask1);
+    cudaFree(d_mask2);
+    cudaFree(d_out);
+  }
+
+  int W, H, C, B, numLevels;
+  int imageSize, maskSize;
+
+  std::vector<T> h_im0, h_im1, h_im2, h_out;
+  std::vector<float> h_mask0, h_mask1, h_mask2;
+
+  T* d_im0;
+  T* d_im1;
+  T* d_im2;
+  float* d_mask0;
+  float* d_mask1;
+  float* d_mask2;
+  T* d_out;
 };
 
 TYPED_TEST_SUITE_P(Blend3x3Test);
@@ -321,61 +324,57 @@ TYPED_TEST_SUITE_P(Blend3x3Test);
 // at (1,1) is the average of image0/image1/image2,
 // at (2,2) comes purely from image2. Other pixels default to image0 (since mask=0).
 TYPED_TEST_P(Blend3x3Test, VerifyCornerAndCenterBlending) {
-    using T = TypeParam;
+  using T = uchar3;
 
-    // Invoke the no‐context 3‐image blender with one pyramid level:
-    cudaError_t err = cudaBatchedLaplacianBlend3<T, float>(
-        this->d_im0,
-        this->d_im1,
-        this->d_im2,
-        this->d_mask0,
-        this->d_mask1,
-        this->d_mask2,
-        this->d_out,
-        this->W, this->H, this->C,
-        this->numLevels,
-        this->B,
-        /*stream=*/0);
-    ASSERT_EQ(err, cudaSuccess);
+  // Invoke the no‐context 3‐image blender with one pyramid level:
+  cudaError_t err = cudaBatchedLaplacianBlend3<uchar3, float3>(
+      this->d_im0,
+      this->d_im1,
+      this->d_im2,
+      this->d_mask0,
+      this->d_mask1,
+      this->d_mask2,
+      this->d_out,
+      this->W,
+      this->H,
+      this->C,
+      this->numLevels,
+      this->B,
+      /*stream=*/0);
+  ASSERT_EQ(err, cudaSuccess);
 
-    // Copy device→host
-    CUDA_CHECK(cudaMemcpy(this->h_out.data(), this->d_out,
-                          this->imageSize * sizeof(T),
-                          cudaMemcpyDeviceToHost));
+  // Copy device→host
+  CUDA_CHECK(cudaMemcpy(this->h_out.data(), this->d_out, this->imageSize * sizeof(T), cudaMemcpyDeviceToHost));
 
-    // (0,0): expect image0(0,0) = 0 + (0*10+0) = 0
-    {
-        int idx = 0 * this->W + 0;
-        T expected = this->h_im0[idx];
-        EXPECT_EQ(this->h_out[idx], expected)
-            << "(0,0) expected " << int(expected) << ", got " << int(this->h_out[idx]);
-    }
-    // (1,1): average of image0(1,1)= (1*10+1)=11,
-    //         image1(1,1)=100+(1*10+1)=111,
-    //         image2(1,1)=200+(1*10+1)=211 → (11+111+211)/3 = 111
-    {
-        int idx = 1 * this->W + 1;
-        T v0 = this->h_im0[idx];
-        T v1 = this->h_im1[idx];
-        T v2 = this->h_im2[idx];
-        T expected = expectedAverage<T>(v0, v1, v2);
-        EXPECT_EQ(this->h_out[idx], expected)
-            << "(1,1) expected " << int(expected) << ", got " << int(this->h_out[idx]);
-    }
-    // (2,2): expect image2(2,2)=200+(2*10+2)=222
-    {
-        int idx = 2 * this->W + 2;
-        T expected = this->h_im2[idx];
-        EXPECT_EQ(this->h_out[idx], expected)
-            << "(2,2) expected " << int(expected) << ", got " << int(this->h_out[idx]);
-    }
-    // Check another pixel, e.g. (0,1): mask0=mask1=mask2=0 → output should be image0(0,1)= (0*10+1)=1
-    {
-        int idx = 0 * this->W + 1;
-        T expected = this->h_im0[idx];
-        EXPECT_EQ(this->h_out[idx], expected)
-            << "(0,1) expected " << int(expected) << ", got " << int(this->h_out[idx]);
-    }
+  // (0,0): expect image0(0,0) = 0 + (0*10+0) = 0
+  {
+    int idx = 0 * this->W + 0;
+    T expected = this->h_im0[idx];
+    EXPECT_EQ(this->h_out[idx], expected) << "(0,0) expected " << int(expected) << ", got " << int(this->h_out[idx]);
+  }
+  // (1,1): average of image0(1,1)= (1*10+1)=11,
+  //         image1(1,1)=100+(1*10+1)=111,
+  //         image2(1,1)=200+(1*10+1)=211 → (11+111+211)/3 = 111
+  {
+    int idx = 1 * this->W + 1;
+    T v0 = this->h_im0[idx];
+    T v1 = this->h_im1[idx];
+    T v2 = this->h_im2[idx];
+    T expected = expectedAverage<T>(v0, v1, v2);
+    EXPECT_EQ(this->h_out[idx], expected) << "(1,1) expected " << int(expected) << ", got " << int(this->h_out[idx]);
+  }
+  // (2,2): expect image2(2,2)=200+(2*10+2)=222
+  {
+    int idx = 2 * this->W + 2;
+    T expected = this->h_im2[idx];
+    EXPECT_EQ(this->h_out[idx], expected) << "(2,2) expected " << int(expected) << ", got " << int(this->h_out[idx]);
+  }
+  // Check another pixel, e.g. (0,1): mask0=mask1=mask2=0 → output should be image0(0,1)= (0*10+1)=1
+  {
+    int idx = 0 * this->W + 1;
+    T expected = this->h_im0[idx];
+    EXPECT_EQ(this->h_out[idx], expected) << "(0,1) expected " << int(expected) << ", got " << int(this->h_out[idx]);
+  }
 }
 
 REGISTER_TYPED_TEST_SUITE_P(Blend3x3Test, VerifyCornerAndCenterBlending);
@@ -384,7 +383,6 @@ REGISTER_TYPED_TEST_SUITE_P(Blend3x3Test, VerifyCornerAndCenterBlending);
 using MyTypes = ::testing::Types<unsigned char, float>;
 INSTANTIATE_TYPED_TEST_SUITE_P(My, Blend3x3Test, MyTypes);
 #endif
-
 
 // ----------------------------------------------------------------------------
 // Main runner for Google Test
