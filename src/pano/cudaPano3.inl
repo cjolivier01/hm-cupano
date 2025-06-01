@@ -151,7 +151,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
   assert(inputImage1.batch_size() == stitch_context.batch_size());
   assert(inputImage2.batch_size() == stitch_context.batch_size());
   assert(canvas->batch_size() == stitch_context.batch_size());
-#if 0
+
   // -------------------- IMAGE 0 --------------------
   if (!stitch_context.is_hard_seam()) {
     // SOFT-SEAM: remap image0 onto canvas
@@ -238,8 +238,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     CUDA_RETURN_IF_ERROR(cuerr);
   }
 
-  SHOW_IMAGE(canvas);
-#endif
+  // SHOW_IMAGE(canvas);
+
   // -------------------- IMAGE 1 --------------------
   if (!stitch_context.is_hard_seam()) {
     // SOFT-SEAM: remap image1 onto canvas
@@ -325,8 +325,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     }
     CUDA_RETURN_IF_ERROR(cuerr);
   }
-
-  SHOW_IMAGE(canvas);
 
   // -------------------- IMAGE 2 --------------------
   if (!stitch_context.is_hard_seam()) {
@@ -414,7 +412,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     CUDA_RETURN_IF_ERROR(cuerr);
   }
 
-  SHOW_IMAGE(canvas);
+  // SHOW_IMAGE(canvas);
 
   // --------------- BLEND (Soft‐Seam) ---------------
   if (!stitch_context.is_hard_seam()) {
