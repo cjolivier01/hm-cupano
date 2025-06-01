@@ -261,7 +261,7 @@ __global__ void BatchedBlendKernel3(
   F_T m2 = static_cast<F_T>(maskImage[1]);
   F_T m3 = static_cast<F_T>(maskImage[2]);
 
-  printf("d=%p, b=%d, m1=%f, m2=%f, m3=%f\n", blended, (int)b, (float)m1, (float)m2, (float)m3);
+  // printf("d=%p, b=%d, m1=%f, m2=%f, m3=%f\n", blended, (int)b, (float)m1, (float)m2, (float)m3);
 
   int idx = (y * width + x) * channels;
   for (int c = 0; c < channels; c++) {
@@ -269,7 +269,7 @@ __global__ void BatchedBlendKernel3(
     F_T v2 = static_cast<F_T>(lap2Image[idx + c]);
     F_T v3 = static_cast<F_T>(lap3Image[idx + c]);
     F_T blendedVal = m1 * v1 + m2 * v2 + m3 * v3;
-    printf("pos=%d, pix1=%f, pix2=%f, pix3=%f -> blended=%f\n", (int)idx + c, (float)v1, (float)v2, (float)v3, (float)blendedVal);
+    // printf("pos=%d, pix1=%f, pix2=%f, pix3=%f -> blended=%f\n", (int)idx + c, (float)v1, (float)v2, (float)v3, (float)blendedVal);
     blendImage[idx + c] = static_cast<T>(blendedVal);
   }
 }

@@ -239,8 +239,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     CUDA_RETURN_IF_ERROR(cuerr);
   }
 
-  // SHOW_IMAGE(canvas);
-
   // -------------------- IMAGE 1 --------------------
   if (!stitch_context.is_hard_seam()) {
     // SOFT-SEAM: remap image1 onto canvas
@@ -413,8 +411,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     CUDA_RETURN_IF_ERROR(cuerr);
   }
 
-  // SHOW_IMAGE(canvas);
-
   // --------------- BLEND (Soft‐Seam) ---------------
   if (!stitch_context.is_hard_seam()) {
     // We now have three “full” images in cudaFull0, cudaFull1, cudaFull2,
@@ -431,6 +427,12 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         stitch_context.cudaFull0->channels(), // num channels = 3 or 4
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
+
+    SHOW_IMAGE(stitch_context.cudaFull0);
+    SHOW_IMAGE(stitch_context.cudaFull1);
+    SHOW_IMAGE(stitch_context.cudaFull2);
+    SHOW_IMAGE(canvas);
+    SHOW_IMAGE(&cudaBlendedFull);
 
     assert(canvas_manager._x_blend_start >= 0 && canvas_manager._y_blend_start >= 0);
 

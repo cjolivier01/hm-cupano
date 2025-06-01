@@ -47,7 +47,7 @@ void CanvasManager3::updateMinimizeBlend(
     _overlapping_width12 = 0;
   }
 
-  if (_minimize_blend) {
+  if (false && _minimize_blend) {
     // 1) Where to place each remapper’s “xpos”:
     _remapper_0.xpos = x0; // image0 goes at (x0,y0)
     _remapper_1.xpos = x1; // image1 at (x1,y1)
@@ -88,9 +88,21 @@ void CanvasManager3::updateMinimizeBlend(
     left_bound = std::max(0, left_bound);
 
     // int blendW = std::max(0, right_bound - left_bound);
-
     _x_blend_start = left_bound;
     _y_blend_start = global_blend_y0;
+  } else {
+
+    // 1) Where to place each remapper’s “xpos”:
+    _remapper_0.xpos = x0; // image0 goes at (x0,y0)
+    _remapper_1.xpos = x1; // image1 at (x1,y1)
+    _remapper_2.xpos = x2; // image2 at (x2,y2)
+
+    remapped_image_roi_blend_0 = {0, 0, remapped_size_0.width, remapped_size_0.height};
+    remapped_image_roi_blend_1 = {0, 0, remapped_size_1.width, remapped_size_1.height};
+    remapped_image_roi_blend_2 = {0, 0, remapped_size_2.width, remapped_size_2.height};
+
+    _x_blend_start = 0;
+    _y_blend_start = 0;
   }
 }
 
