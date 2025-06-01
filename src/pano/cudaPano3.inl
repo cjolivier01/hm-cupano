@@ -6,7 +6,6 @@
 #include "cupano/cuda/cudaRemap.h"
 #include "cupano/cuda/cudaTypes.h"
 #include "cupano/pano/cudaPano3.h"
-#include "cupano/pano/cvTypes.h"
 #include "cupano/pano/showImage.h" /*NOLINT*/
 
 #include <csignal>
@@ -75,7 +74,8 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
   assert(seam_indexed.type() == CV_8UC1);
 
   if (!stitch_context_->is_hard_seam()) {
-    cv::Mat seam_color = make_n_channel_seam_image(seam_indexed);
+    int n_channels = sizeof(T_compute) / sizeof(BaseScalar_t<T_compute>);
+    cv::Mat seam_color = make_n_channel_seam_image(seam_indexed, n_channels);
     // Convert to T_compute type (float, etc.) but keep 3 channels
     seam_color.convertTo(seam_color, cudaPixelTypeToCvType(CudaTypeToPixelType<T_compute>::value));
     // Allocate cudaFull0/1/2 with the seam dimensions:
@@ -432,6 +432,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
 
+    assert(canvas_manager._x_blend_start >= 0 && canvas_manager._y_blend_start >= 0);
+
     // Copy the blended region back onto the canvas:
     cuerr = copy_roi_batched(
         cudaBlendedFull.surface(),
@@ -542,18 +544,15 @@ std::optional<cv::Scalar> match_seam_images3(
 }
 
 template <typename T_pipeline, typename T_compute>
-cv::Mat CudaStitchPano3<T_pipeline, T_compute>::make_n_channel_seam_image(const cv::Mat& seam_image) {
+cv::Mat CudaStitchPano3<T_pipeline, T_compute>::make_n_channel_seam_image(const cv::Mat& seam_image, int n_channels) {
   assert(seam_image.type() == CV_8UC1);
   // 2) Find the maximum label N (so we know how many output channels to allocate):
-  double minVal, maxVal;
-  cv::minMaxLoc(seam_image, &minVal, &maxVal);
-  int N = static_cast<int>(maxVal); // assumes labels are non‐negative integers
 
   // 3) Prepare a vector of single‐channel masks, one per label 0..N:
   std::vector<cv::Mat> masks;
-  masks.reserve(N + 1);
+  masks.reserve(n_channels);
 
-  for (int k = 0; k <= N; ++k) {
+  for (int k = 0; k < n_channels; ++k) {
     // (seam == k) produces a CV_8U mask with 255 where seam==k, else 0.
     cv::Mat binMask = (seam_image == k);
 
@@ -575,9 +574,7 @@ cv::Mat CudaStitchPano3<T_pipeline, T_compute>::make_n_channel_seam_image(const 
   //   oneHot.at<Vec<uchar,3>>(y,x)[0] == 1 iff seam(y,x)==0
   //   oneHot.at<Vec<uchar,3>>(y,x)[1] == 1 iff seam(y,x)==1
   //   oneHot.at<Vec<uchar,3>>(y,x)[2] == 1 iff seam(y,x)==2
-  cv::Mat oneHotCompute;
-  oneHot.convertTo(oneHotCompute, cv_type_traits::CVDepth<BaseScalar_t<T_compute>>);
-  return oneHotCompute;
+  return oneHot;
 }
 
 } // namespace cuda

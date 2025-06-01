@@ -149,7 +149,6 @@
         }
       ],
     },
-
     {
       "name": "(LLDB) Stabilization",
       "type": "lldb",
@@ -178,8 +177,7 @@
       "request": "launch",
       "cwd": "${workspaceFolder}",
       "program": "${workspaceFolder}/bazel-bin/src/cuda/cudaBlend3_test",
-      "args": [
-      ],
+      "args": [],
       "sourceMap": {
         "/proc/self/cwd": "${workspaceFolder}",
         "~/src": "${env:HOME}/src",
@@ -198,8 +196,7 @@
       "request": "launch",
       "cwd": "${workspaceFolder}",
       "program": "${workspaceFolder}/bazel-bin/src/pano/cudaPano3_test",
-      "args": [
-      ],
+      "args": [],
       "sourceMap": {
         "/proc/self/cwd": "${workspaceFolder}",
         "~/src": "${env:HOME}/src",
@@ -211,6 +208,25 @@
       },
       //"stopOnEntry": true,
       "preLaunchTask": "Build All",
+    },
+    {
+      "name": "(CUDA) cudaPano3_test",
+      "type": "cuda-gdb",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "debuggerPath": "/usr/local/cuda/bin/cuda-gdb",
+      "program": "${workspaceFolder}/bazel-bin/src/pano/cudaPano3_test",
+      "args": "",
+      "initCommands": [
+        "directory ${workspaceFolder}",
+      ],
+      "preLaunchTask": "Build All",
+      "environment": [
+        {
+          "name": "CUDA_LAUNCH_BLOCKING",
+          "value": "1"
+        }
+      ],
     },
   ]
 }
