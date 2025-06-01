@@ -1,10 +1,12 @@
 #pragma once
 
+#include <opencv4/opencv2/core/hal/interface.h>
 #include <opencv4/opencv2/imgproc.hpp>
 #include "cupano/cuda/cudaMakeFull.h"
 #include "cupano/cuda/cudaRemap.h"
 #include "cupano/cuda/cudaTypes.h"
 #include "cupano/pano/cudaPano3.h"
+#include "cupano/pano/cvTypes.h"
 #include "cupano/pano/showImage.h" /*NOLINT*/
 
 #include <csignal>
@@ -69,9 +71,11 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
       control_masks.img0_col.size(), control_masks.img1_col.size(), control_masks.img2_col.size());
 
   // Load the seam mask (3‐channel) if soft‐seam, else load single‐channel:
-  cv::Mat seam_color = control_masks.whole_seam_mask_image; // CV_8UC3 if soft-seam
+  cv::Mat seam_indexed = control_masks.whole_seam_mask_image; // CV_8UC3 if soft-seam
+  assert(seam_indexed.type() == CV_8UC1);
 
   if (!stitch_context_->is_hard_seam()) {
+    cv::Mat seam_color = make_n_channel_seam_image(seam_indexed);
     // Convert to T_compute type (float, etc.) but keep 3 channels
     seam_color.convertTo(seam_color, cudaPixelTypeToCvType(CudaTypeToPixelType<T_compute>::value));
     // Allocate cudaFull0/1/2 with the seam dimensions:
@@ -88,11 +92,8 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
             /*batch_size=*/batch_size);
   } else {
     // Hard-seam: single channel
-    assert(seam_color.type() == CV_8UC1); // we still loaded 3 channels, but will take only one channel
-    cv::Mat seam_gray;
-    // cv::cvtColor(seam_color, seam_gray, cv::COLOR_BGR2GRAY);
-    seam_gray = seam_color;
-    stitch_context_->cudaBlendHardSeam = std::make_unique<CudaMat<unsigned char>>(seam_gray);
+    assert(seam_indexed.type() == CV_8UC1);
+    stitch_context_->cudaBlendHardSeam = std::make_unique<CudaMat<unsigned char>>(seam_indexed);
   }
 
   if (match_exposure_) {
@@ -538,6 +539,45 @@ std::optional<cv::Scalar> match_seam_images3(
   // … [Implementation Omitted Here for Brevity] …
   //
   return std::nullopt;
+}
+
+template <typename T_pipeline, typename T_compute>
+cv::Mat CudaStitchPano3<T_pipeline, T_compute>::make_n_channel_seam_image(const cv::Mat& seam_image) {
+  assert(seam_image.type() == CV_8UC1);
+  // 2) Find the maximum label N (so we know how many output channels to allocate):
+  double minVal, maxVal;
+  cv::minMaxLoc(seam_image, &minVal, &maxVal);
+  int N = static_cast<int>(maxVal); // assumes labels are non‐negative integers
+
+  // 3) Prepare a vector of single‐channel masks, one per label 0..N:
+  std::vector<cv::Mat> masks;
+  masks.reserve(N + 1);
+
+  for (int k = 0; k <= N; ++k) {
+    // (seam == k) produces a CV_8U mask with 255 where seam==k, else 0.
+    cv::Mat binMask = (seam_image == k);
+
+    // Convert from {0,255} → {0,1} by dividing by 255.
+    // (if you prefer CV_32F, use binMask.convertTo(binMask, CV_32F) / 255.f)
+    binMask /= 255;
+
+    // Now binMask is CV_8U with exactly 0 or 1.
+    masks.push_back(binMask);
+  }
+
+  // 4) Merge all single‐channel masks into one multi‐channel image:
+  //    This will create a CV_8UC(N+1) Mat of size same as `seam`.
+  cv::Mat oneHot;
+  cv::merge(masks, oneHot);
+
+  // oneHot.type() == CV_8UC{N+1}.  For example, if N=2, then CV_8UC3.
+  // At (y,x):
+  //   oneHot.at<Vec<uchar,3>>(y,x)[0] == 1 iff seam(y,x)==0
+  //   oneHot.at<Vec<uchar,3>>(y,x)[1] == 1 iff seam(y,x)==1
+  //   oneHot.at<Vec<uchar,3>>(y,x)[2] == 1 iff seam(y,x)==2
+  cv::Mat oneHotCompute;
+  oneHot.convertTo(oneHotCompute, cv_type_traits::CVDepth<BaseScalar_t<T_compute>>);
+  return oneHotCompute;
 }
 
 } // namespace cuda

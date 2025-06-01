@@ -150,6 +150,8 @@ class CudaStitchPano3 {
       const CudaMat<T_pipeline>& inputImage1,
       const CudaMat<T_pipeline>& inputImage2);
 
+  cv::Mat make_n_channel_seam_image(const cv::Mat& seam_image);
+
   std::unique_ptr<StitchingContext3<T_pipeline, T_compute>> stitch_context_;
   std::unique_ptr<CanvasManager3> canvas_manager_;
   bool match_exposure_;
