@@ -15,26 +15,27 @@ config_setting(
 cc_library(
     name = "cuda_matrix",
     srcs = [
+        "cudaGLWindow.cpp",
         "cudaMat.cpp",
         "showImage.cpp",
-        "cudaGLWindow.cpp",
     ],
     hdrs = [
+        "cudaGLWindow.h",
         "cudaMat.h",
         "cudaMat.inl",
         "showImage.h",
-        "cudaGLWindow.h",
     ],
     copts = [
     ],
-    linkopts = [
-      "-lglfw",
-      "-lGLEW",
-      "-lGL",
-    ],
     include_prefix = INCLUDE_PREFIX,
+    linkopts = [
+        "-lglfw",
+        "-lGLEW",
+        "-lGL",
+    ],
     visibility = ["//visibility:public"],
     deps = [
+        ":cv_types",
         "//src/cuda:cuda_blend_cuda_lib",
         "@opencv_linux//:opencv",
     ],
@@ -44,23 +45,33 @@ cc_library(
     name = "canvas",
     srcs = [
         "canvasManager.cpp",
-        "controlMasks.cpp",
         "canvasManager3.cpp",
+        "controlMasks.cpp",
         "controlMasks3.cpp",
     ],
     hdrs = [
         "canvasManager.h",
-        "controlMasks.h",
         "canvasManager3.h",
+        "controlMasks.h",
         "controlMasks3.h",
     ],
     copts = [
     ],
     include_prefix = INCLUDE_PREFIX,
     linkopts = [
-      "-ltiff",
-      "-lpng",
+        "-ltiff",
+        "-lpng",
     ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@opencv_linux//:opencv",
+    ],
+)
+
+cc_library(
+    name = "cv_types",
+    hdrs = ["cvTypes.h"],
+    include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
     deps = [
         "@opencv_linux//:opencv",
@@ -84,8 +95,8 @@ cc_library(
     include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
     deps = [
-        ":cuda_matrix",
+        ":cv_types",
         ":canvas",
+        ":cuda_matrix",
     ],
 )
-
