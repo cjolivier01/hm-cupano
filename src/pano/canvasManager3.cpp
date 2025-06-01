@@ -79,15 +79,15 @@ void CanvasManager3::updateMinimizeBlend(
 
     // 4) Finally, where should we place the **3‐way** blended region on the canvas?
     //    We take the intersection of the two overlap strips (0|1) and (1|2) in **canvas coords**:
-    int global_blend_x0 = std::max(x0 + remapped_image_roi_blend_0.x, x1 + remapped_image_roi_blend_1.x);
-    int global_blend_y0 = std::max(y0, y1); // assume y0,y1,y2 share same vertical alignment
+    // int global_blend_x0 = std::max(x0 + remapped_image_roi_blend_0.x, x1 + remapped_image_roi_blend_1.x);
+    int global_blend_y0 = std::max(std::max(y0, y1), y2); // assume y0,y1,y2 share same vertical alignment
     // width = intersection of [x1 - pad, x0 + w0 + pad] with [x2 - pad, x1 + w1 + pad]
     int left_bound = std::max(x1 - _overlap_pad, x2 - _overlap_pad);
-    int right_bound = std::min((x0 + _remapper_0.width) + _overlap_pad, (x1 + _remapper_1.width) + _overlap_pad);
+    // int right_bound = std::min((x0 + _remapper_0.width) + _overlap_pad, (x1 + _remapper_1.width) + _overlap_pad);
 
     left_bound = std::max(0, left_bound);
 
-    int blendW = std::max(0, right_bound - left_bound);
+    // int blendW = std::max(0, right_bound - left_bound);
 
     _x_blend_start = left_bound;
     _y_blend_start = global_blend_y0;
