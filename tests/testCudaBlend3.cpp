@@ -230,8 +230,8 @@ int main(int argc, char** argv) {
   }
   if (show) {
     // SHOW_SCALED(canvas, 0.25);
-    // SHOW_SCALED(canvas, 1.0);
-    hm::utils::show_surface("Canvas", canvas->surface(), /*wait=*/true);
+    SHOW_SCALED(canvas, 1.0);
+    // hm::utils::show_surface("Canvas", canvas->surface(), /*wait=*/true);
     usleep(10000);
   }
 
