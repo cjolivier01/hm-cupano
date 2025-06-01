@@ -314,6 +314,8 @@ cudaError_t CudaMat<T>::upload(const cv::Mat& cpu_mat, int batch_item, cudaStrea
   assert(batch_item >= 0 && batch_item < batch_size_);
   // Convert the stored CUDA pixel type to an OpenCV type constant.
   int cvType = cudaPixelTypeToCvType(type_);
+  assert(cvType == cpu_mat.type());
+  
   // Ensure the pitch is aligned to the size of T.
   assert(pitch() % sizeof(T) == 0);
   // Calculate the number of elements per row based on the pitch.

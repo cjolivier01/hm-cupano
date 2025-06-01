@@ -83,9 +83,9 @@ TEST(CudaStitchPano3_HardSeamTrivial, ThirdImageWins) {
 
   // 2e) Create three 1×1 host images (uchar):
   //     image1 pixel=10, image2 pixel=50, image3 pixel=200.
-  cv::Mat host1(1, 1, CV_8U, cv::Scalar(10));
-  cv::Mat host2(1, 1, CV_8U, cv::Scalar(50));
-  cv::Mat host3(1, 1, CV_8U, cv::Scalar(200));
+  cv::Mat host1(1, 1, CV_8UC3, cv::Scalar(10));
+  cv::Mat host2(1, 1, CV_8UC3, cv::Scalar(50));
+  cv::Mat host3(1, 1, CV_8UC3, cv::Scalar(200));
 
   // 2f) Upload them into CudaMat<uchar>:
   using CudaMatU = hm::CudaMat<uchar3>;
@@ -142,22 +142,22 @@ TEST(CudaStitchPano3_SoftSeamTrivial, OutputEqualsTripleAverage) {
   // 3b) Remap mats same as before:
   cv::Mat map1x(1, 1, CV_16U, cv::Scalar(0)), map1y(1, 1, CV_16U, cv::Scalar(0)), map2x(1, 1, CV_16U, cv::Scalar(0)),
       map2y(1, 1, CV_16U, cv::Scalar(0)), map3x(1, 1, CV_16U, cv::Scalar(0)), map3y(1, 1, CV_16U, cv::Scalar(0));
-  SpatialTiff3 pos0{0.0f, 0.0f}, pos1{0.0f, 0.0f}, pos2{0.0f, 0.0f};
-  std::vector<SpatialTiff3> positions = {pos0, pos1, pos2};
+  SpatialTiff pos0{0.0f, 0.0f}, pos1{0.0f, 0.0f}, pos2{0.0f, 0.0f};
+  std::vector<SpatialTiff> positions = {pos0, pos1, pos2};
 
   ControlMasks3 masks;
-  masks.img1_col = map1x;
-  masks.img1_row = map1y;
-  masks.img2_col = map2x;
-  masks.img2_row = map2y;
-  masks.img3_col = map3x;
-  masks.img3_row = map3y;
+  masks.img0_col = map1x;
+  masks.img0_row = map1y;
+  masks.img1_col = map2x;
+  masks.img1_row = map2y;
+  masks.img2_col = map3x;
+  masks.img2_row = map3y;
   masks.whole_seam_mask_image = seam_mask_f;
   masks.positions = positions;
   ASSERT_TRUE(masks.is_valid());
 
   // 3c) Create three 1×1 float images: image1=30.0, image2=60.0, image3=90.0
-  using CudaMatF = hm::CudaMat<float>;
+  using CudaMatF = hm::CudaMat<float3>;
   cv::Mat host1(1, 1, CV_32F, cv::Scalar(30.0f));
   cv::Mat host2(1, 1, CV_32F, cv::Scalar(60.0f));
   cv::Mat host3(1, 1, CV_32F, cv::Scalar(90.0f));
@@ -171,7 +171,7 @@ TEST(CudaStitchPano3_SoftSeamTrivial, OutputEqualsTripleAverage) {
   auto d_canvas = std::make_unique<CudaMatF>(1, 1, 1);
 
   // 3d) Instantiate with num_levels=1 (soft seam)
-  hm::pano::cuda::CudaStitchPano3<float, float> stitch(
+  hm::pano::cuda::CudaStitchPano3<float3, float3> stitch(
       /*batch_size=*/1,
       /*num_levels=*/1,
       masks,
@@ -203,16 +203,16 @@ TEST(CudaStitchPano3_InvalidSoftMask, ProcessReportsError) {
 
   cv::Mat map1x(1, 1, CV_16U, cv::Scalar(0)), map1y(1, 1, CV_16U, cv::Scalar(0)), map2x(1, 1, CV_16U, cv::Scalar(0)),
       map2y(1, 1, CV_16U, cv::Scalar(0)), map3x(1, 1, CV_16U, cv::Scalar(0)), map3y(1, 1, CV_16U, cv::Scalar(0));
-  SpatialTiff3 pos0{0.0f, 0.0f}, pos1{0.0f, 0.0f}, pos2{0.0f, 0.0f};
-  std::vector<SpatialTiff3> positions = {pos0, pos1, pos2};
+  SpatialTiff pos0{0.0f, 0.0f}, pos1{0.0f, 0.0f}, pos2{0.0f, 0.0f};
+  std::vector<SpatialTiff> positions = {pos0, pos1, pos2};
 
   ControlMasks3 masks;
-  masks.img1_col = map1x;
-  masks.img1_row = map1y;
-  masks.img2_col = map2x;
-  masks.img2_row = map2y;
-  masks.img3_col = map3x;
-  masks.img3_row = map3y;
+  masks.img0_col = map1x;
+  masks.img0_row = map1y;
+  masks.img1_col = map2x;
+  masks.img1_row = map2y;
+  masks.img2_col = map3x;
+  masks.img2_row = map3y;
   masks.whole_seam_mask_image = seam_mask_u;
   masks.positions = positions;
   ASSERT_TRUE(masks.is_valid());
