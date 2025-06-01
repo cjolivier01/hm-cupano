@@ -79,6 +79,10 @@ struct StitchingContext3 {
 template <typename T_pipeline, typename T_compute>
 class CudaStitchPano3 {
  public:
+
+  using pipeline_type = T_pipeline;
+  using compute_type = T_compute;
+
   CudaStitchPano3(
       int batch_size,
       int num_levels,

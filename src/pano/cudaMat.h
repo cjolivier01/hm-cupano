@@ -375,6 +375,9 @@ struct SurfaceInfo {
 template <typename T>
 class CudaMat {
  public:
+  using element_type = T;
+  using base_element_type = BaseScalar_t<T>;
+
   // Delete copy and move constructors.
   CudaMat(const CudaMat&) = delete;
   CudaMat(CudaMat&&) = delete;

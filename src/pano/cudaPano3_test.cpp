@@ -3,14 +3,18 @@
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
 #include <opencv2/opencv.hpp>
+#include <opencv4/opencv2/core/hal/interface.h>
 
 // Include your project headers; adjust include paths as needed:
 #include "cupano/pano/controlMasks3.h"
 #include "cupano/pano/cudaMat.h"
 #include "cupano/pano/cudaPano3.h"
+#include "cupano/pano/cvTypes.h"
 
 using ControlMasks3 = hm::pano::ControlMasks3;
 using SpatialTiff = hm::pano::SpatialTiff;
+
+using namespace hm;
 
 // ----------------------------------------------------------------------------
 // Utility macro to check CUDA calls in tests and fail on error.
@@ -115,11 +119,13 @@ TEST(CudaStitchPano3_HardSeamTrivial, ThirdImageWins) {
 
   // 2j) Download and verify:
   cv::Mat hostOut = d_out->download();
-  ASSERT_EQ(hostOut.type(), CV_8U);
+  ASSERT_EQ(hostOut.type(), CV_8UC3);
   uchar pixel = hostOut.at<uchar>(0, 0);
   EXPECT_EQ(pixel, static_cast<uchar>(200));
 }
+
 #if 0
+
 // ----------------------------------------------------------------------------
 // 3) Soft‐seam trivial: single 1×1 float “label” mask = 1.5 (meaning equal weights
 //    among all three?). For a 3-image float mask, assume soft‐seam logic interprets
