@@ -164,12 +164,14 @@ inline void CudaBatchLaplacianBlendContext3<T>::displayPyramids(int channels, fl
   }
 
   // Display different pyramids. (Adjust which ones you want to show.)
-  // displayPyramid("Gaussian 1", d_gauss1, channels);
-  // displayPyramid("Gaussian 2", d_gauss2, channels);
+  displayPyramid("Gaussian 1", d_gauss1, widths, heights, channels, scale);
+  displayPyramid("Gaussian 2", d_gauss2, widths, heights, channels, scale);
+  displayPyramid("Gaussian 3", d_gauss3, widths, heights, channels, scale);
   // displayPyramid("Mask Pyramid", d_maskPyr, widths, heights, 1, scale); // assuming mask is single channel
-  // displayPyramid("Laplacian 1", d_lap1, channels);
-  // displayPyramid("Laplacian 2", d_lap2, channels);
-  displayPyramid("Blended Pyramid", d_blend, widths, heights, channels, scale);
+  displayPyramid("Laplacian 1", d_lap1, widths, heights, channels, scale);
+  displayPyramid("Laplacian 2", d_lap2, widths, heights, channels, scale);
+  displayPyramid("Laplacian 3", d_lap3, widths, heights, channels, scale);
+  // displayPyramid("Blended Pyramid", d_blend, widths, heights, channels, scale);
   // Optionally, you could also display the reconstructed images from d_resonstruct if desired.
 
   // Wait for a key press to close the windows.
