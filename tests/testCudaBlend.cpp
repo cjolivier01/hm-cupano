@@ -2,7 +2,7 @@
 #include "cupano/pano/controlMasks.h"
 #include "cupano/pano/cudaMat.h"
 #include "cupano/pano/cudaPano.h"
-#include "cupano/pano/showImage.h"
+#include "cupano/utils/showImage.h"
 
 #include <cuda_runtime.h> // for CUDA vector types
 #include <opencv2/opencv.hpp>

@@ -42,7 +42,6 @@ cc_library(
     hdrs = [
         "cudaBlend.h",
         "cudaBlend3.h",
-        "cudaBlendShow.h",
         "cudaImageAdjust.h",
         "cudaMakeFull.h",
         "cudaRemap.h",

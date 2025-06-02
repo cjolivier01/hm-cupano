@@ -6,7 +6,7 @@
 #include "cupano/cuda/cudaRemap.h"
 #include "cupano/cuda/cudaTypes.h"
 #include "cupano/pano/cudaPano3.h"
-#include "cupano/pano/showImage.h" /*NOLINT*/
+#include "cupano/utils/showImage.h" /*NOLINT*/
 
 #include <csignal>
 #include <optional>

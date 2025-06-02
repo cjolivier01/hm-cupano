@@ -134,15 +134,6 @@ struct CudaBatchLaplacianBlendContext3 {
   std::vector<T*> d_reconstruct; ///< Device pointers for temporary reconstruction buffers.
 
   bool initialized{false}; ///< Flag indicating whether the context has been initialized.
-
-  ///////////////////////////////////////////////////////////////////////////////
-  // Member function to copy each pyramid level to host, build a composite image,
-  // and display it in an OpenCV window. The images are arranged vertically from
-  // smallest (top) to largest (bottom).
-  // For pyramids that hold multi-channel image data (e.g. Gaussian, Laplacian, Blended),
-  // pass the appropriate number of channels. For a 3-channel mask, use 3.
-  ///////////////////////////////////////////////////////////////////////////////
-  void displayPyramids(int channels, float scale = 1.0f) const;
 };
 
 /**
@@ -255,15 +246,3 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
       CudaBatchLaplacianBlendContext3<T>& context,                      \
       int channels,                                                     \
       cudaStream_t stream);
-
-// INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND3(float)
-// INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND3(unsigned char)
-
-// INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT3(float)
-// INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT3(unsigned char)
-
-// You can uncomment the following if you wish to support __half or __nv_bfloat16:
-// INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND3(__half)
-// INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND3(__nv_bfloat16)
-// INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT3(__half)
-// INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT3(__nv_bfloat16)

@@ -15,24 +15,15 @@ config_setting(
 cc_library(
     name = "cuda_matrix",
     srcs = [
-        "cudaGLWindow.cpp",
         "cudaMat.cpp",
-        "showImage.cpp",
     ],
     hdrs = [
-        "cudaGLWindow.h",
         "cudaMat.h",
         "cudaMat.inl",
-        "showImage.h",
     ],
     copts = [
     ],
     include_prefix = INCLUDE_PREFIX,
-    linkopts = [
-        "-lglfw",
-        "-lGLEW",
-        "-lGL",
-    ],
     visibility = ["//visibility:public"],
     deps = [
         ":cv_types",
@@ -98,6 +89,7 @@ cc_library(
         ":cv_types",
         ":canvas",
         ":cuda_matrix",
+        "//src/utils",
     ],
 )
 

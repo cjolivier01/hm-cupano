@@ -1,12 +1,11 @@
 #pragma once
 
 #include <opencv4/opencv2/imgproc.hpp>
-#include "cupano/cuda/cudaBlendShow.h"
 #include "cupano/cuda/cudaMakeFull.h"
 #include "cupano/cuda/cudaRemap.h"
 #include "cupano/cuda/cudaTypes.h"
 #include "cupano/pano/cudaPano.h"
-#include "cupano/pano/showImage.h" /*NOLINT*/
+#include "cupano/utils/showImage.h" /*NOLINT*/
 
 #include <csignal>
 #include <optional>
