@@ -4,6 +4,7 @@
 #include <tiffio.h> // For reading TIFF metadata
 #include <tiffio.h> // For TIFF metadata
 
+#include <filesystem>
 #include <limits>
 #include <optional>
 #include <stdexcept>
@@ -208,7 +209,7 @@ std::optional<cv::Mat> imreadPalettedAsIndex(const std::string& filename) {
   // 10) Wrap raw_data into a single‐channel Mat (CV_8U)
   cv::Mat indexed((int)height, (int)width, CV_8U, raw_data.data());
   // We must clone because raw_data is a local vector—once we leave this scope, raw_data goes away.
-  return indexed;
+  return indexed.clone();
 }
 
 /**
@@ -221,25 +222,32 @@ std::optional<cv::Mat> imreadPalettedAsIndex(const std::string& filename) {
  * @param filename The path to the seam mask image.
  * @return A processed 8-bit single-channel seam mask.
  */
-cv::Mat load_seam_mask(const std::string& filename) {
-  std::optional<cv::Mat> seam_mask = imreadPalettedAsIndex(filename);
-  if (!seam_mask) {
-    seam_mask = cv::imread(filename, cv::IMREAD_GRAYSCALE);
+std::optional<cv::Mat> load_seam_mask(const std::string& filename) {
+  if (!std::filesystem::exists(filename)) {
+    std::cerr << "Could not find seam file: " << filename << std::endl;
+    return std::nullopt;
   }
-  if (seam_mask && !seam_mask->empty()) {
+  std::optional<cv::Mat> opt_seam_mask = imreadPalettedAsIndex(filename);
+  cv::Mat seam_mask;
+  if (!opt_seam_mask) {
+    seam_mask = cv::imread(filename, cv::IMREAD_GRAYSCALE);
+  } else {
+    seam_mask = std::move(*opt_seam_mask);
+  }
+  if (!seam_mask.empty()) {
     double minVal, maxVal;
     cv::Point minLoc, maxLoc;
-    cv::minMaxLoc(*seam_mask, &minVal, &maxVal, &minLoc, &maxLoc);
+    cv::minMaxLoc(seam_mask, &minVal, &maxVal, &minLoc, &maxLoc);
 
     // Create masks for min and max values
-    cv::Mat minMask = (*seam_mask == static_cast<int>(minVal));
-    cv::Mat maxMask = (*seam_mask == static_cast<int>(maxVal));
+    cv::Mat minMask = (seam_mask == static_cast<int>(minVal));
+    cv::Mat maxMask = (seam_mask == static_cast<int>(maxVal));
 
     // Invert: set max locations to 0 and min locations to 1
-    seam_mask->setTo(0, maxMask);
-    seam_mask->setTo(1, minMask);
+    seam_mask.setTo(0, maxMask);
+    seam_mask.setTo(1, minMask);
   }
-  return *seam_mask;
+  return seam_mask;
 }
 
 } // namespace
@@ -302,11 +310,12 @@ bool ControlMasks::load(std::string game_dir) {
   }
 
   // Load and process the seam mask.
-  whole_seam_mask_image = load_seam_mask(whole_seam_mask);
-  if (whole_seam_mask_image.empty()) {
+  auto optional_whole_seam_mask_image = load_seam_mask(whole_seam_mask);
+  if (!optional_whole_seam_mask_image || optional_whole_seam_mask_image->empty()) {
     std::cerr << "Unable to load seam or masking file: " << whole_seam_mask << std::endl;
     return false;
   }
+  whole_seam_mask_image = std::move(*optional_whole_seam_mask_image);
 
   // Determine the geospatial positions of both images, then normalize them to start at (0,0).
   positions = normalize_positions({get_geo_tiff(mapping_0_pos), get_geo_tiff(mapping_1_pos)});
