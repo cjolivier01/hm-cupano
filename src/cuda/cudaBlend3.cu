@@ -8,6 +8,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <csignal>
 #include <cstdio>
 #include <iostream>
 #include <vector>
@@ -304,10 +305,19 @@ __global__ void BatchedBlendKernel3(
       m3 /= sum;
     }
     // If sum == 0, all three were skipped; leave m1=m2=m3=0 → contribution is zero.
-    // printf("d=%p, x=%d, y=%d, b=%d, m1=%f, m2=%f, m3=%f\n", blended, (int)x, (int)y, (int)b, (float)m1, (float)m2, (float)m3);
+    // printf("d=%p, x=%d, y=%d, b=%d, m1=%f, m2=%f, m3=%f\n", blended, (int)x, (int)y, (int)b, (float)m1, (float)m2,
+    // (float)m3);
     float summation = m1 + m2 + m3;
     if (std::abs(1.0f - summation) > 0.01f && summation > 0.01f) {
-      printf("d=%p, x=%d, y=%d, b=%d, m1=%f, m2=%f, m3=%f\n", blended, (int)x, (int)y, (int)b, (float)m1, (float)m2, (float)m3);
+      printf(
+          "d=%p, x=%d, y=%d, b=%d, m1=%f, m2=%f, m3=%f\n",
+          blended,
+          (int)x,
+          (int)y,
+          (int)b,
+          (float)m1,
+          (float)m2,
+          (float)m3);
     }
   }
 
@@ -321,7 +331,8 @@ __global__ void BatchedBlendKernel3(
     F_T v3 = static_cast<F_T>(lap3Image[idx + c]);
 
     F_T blendedVal = m1 * v1 + m2 * v2 + m3 * v3;
-    // printf("pos=%d, pix1=%f, pix2=%f, pix3=%f -> blended=%f\n", (int)idx + c, (float)v1, (float)v2, (float)v3, (float)blendedVal);
+    // printf("pos=%d, pix1=%f, pix2=%f, pix3=%f -> blended=%f\n", (int)idx + c, (float)v1, (float)v2, (float)v3,
+    // (float)blendedVal);
     blendImage[idx + c] = static_cast<T>(blendedVal);
   }
 
