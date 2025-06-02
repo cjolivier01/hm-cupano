@@ -276,6 +276,8 @@ bool ControlMasks::load(std::string game_dir) {
   }
 
   // Construct the file paths we want to load.
+  // The mapping files are saved by Hugin's 'nona' app,
+  // while the seam file is saved by either enblend or multiblend
   std::string mapping_0_pos = game_dir + "mapping_0000.tif";
   std::string mapping_0_x = game_dir + "mapping_0000_x.tif";
   std::string mapping_0_y = game_dir + "mapping_0000_y.tif";
