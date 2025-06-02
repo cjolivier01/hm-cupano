@@ -22,6 +22,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":gl_window",
+        "//src/cuda:cuda_blend_cuda_lib",
         "@opencv_linux//:opencv",
     ],
 )

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "cudaBlend.h"
-#include "cudaBlend3.h"
+#include "src/cuda/cudaBlend.h"
+#include "src/cuda/cudaBlend3.h"
 
 #include <string>
 #include <vector>
@@ -154,8 +154,9 @@ inline void displayPyramid(
 
 } // namespace
 
+
 template <typename T>
-inline void displayPyramids(int channels, float scale, bool wait) {
+inline void CudaBatchLaplacianBlendContext3<T>::displayPyramids(int channels, float scale, bool wait) const {
   // Determine the OpenCV type from T and the number of channels.
   const int cvType = getCVTypeForPixel<T>(channels);
   if (cvType == -1) {
@@ -169,7 +170,7 @@ inline void displayPyramids(int channels, float scale, bool wait) {
   // displayPyramid("Mask Pyramid", d_maskPyr, widths, heights, 1, scale); // assuming mask is single channel
   // displayPyramid("Laplacian 1", d_lap1, channels);
   // displayPyramid("Laplacian 2", d_lap2, channels);
-  displayPyramid("Blended Pyramid", d_blend, widths, heights, channels, scale);
+  // displayPyramid("Blended Pyramid", d_blend, widths, heights, channels, scale);
   // Optionally, you could also display the reconstructed images from d_resonstruct if desired.
 
   // Wait for a key press to close the windows.

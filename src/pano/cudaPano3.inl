@@ -6,6 +6,7 @@
 #include "cupano/cuda/cudaRemap.h"
 #include "cupano/cuda/cudaTypes.h"
 #include "cupano/pano/cudaPano3.h"
+#include "cupano/utils/cudaBlendShow.h"
 #include "cupano/utils/showImage.h" /*NOLINT*/
 
 #include <csignal>
@@ -158,7 +159,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
   // SHOW_IMAGE(&inputImage2);
 
   // We need all alphas to be zero to start
-  if constexpr(sizeof(T_pipeline) / sizeof(BaseScalar_t<T_pipeline>) == 4) {
+  if constexpr (sizeof(T_pipeline) / sizeof(BaseScalar_t<T_pipeline>) == 4) {
     cuerr = cudaMemsetAsync(canvas->data(), 0, canvas->size(), stream);
     CUDA_RETURN_IF_ERROR(cuerr);
   }
@@ -481,7 +482,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
 
-    // stitch_context.laplacian_blend_context->displayPyramids(stitch_context.cudaFull0->channels());
+    stitch_context.laplacian_blend_context->displayPyramids(
+        /*channels=*/stitch_context.cudaFull0->channels(), /*scale=*/1.0, /*wait=*/true);
 
     // SHOW_IMAGE(stitch_context.cudaFull0);
     // SHOW_IMAGE(stitch_context.cudaFull1);

@@ -134,6 +134,9 @@ struct CudaBatchLaplacianBlendContext3 {
   std::vector<T*> d_reconstruct; ///< Device pointers for temporary reconstruction buffers.
 
   bool initialized{false}; ///< Flag indicating whether the context has been initialized.
+
+  // Must link to utils for this
+  inline void displayPyramids(int channels, float scale, bool wait) const;
 };
 
 /**
