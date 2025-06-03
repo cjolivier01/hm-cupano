@@ -2,7 +2,7 @@
 
 #include <cuda_runtime.h>
 
-#include "cudaTypes.h"
+#include "src/cuda/cudaTypes.h"
 
 /**
  * @brief Interface function for launching the batched ROI copy kernel for images,

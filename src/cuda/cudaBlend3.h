@@ -16,7 +16,7 @@
  * __half, __nv_bfloat16) and uses CUDA streams for asynchronous execution.
  */
 
-#include "cudaTypes.h"
+#include "src/cuda/cudaTypes.h"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>

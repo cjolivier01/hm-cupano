@@ -26,9 +26,9 @@ cuda_library(
         "-keep",
         "-O0",
     ],
-    # includes = ["."],
     visibility = ["//visibility:public"],
     deps = [
+        "//src/utils:show_image",
         ":cuda_blend_cuda_lib_headers",
         "@local_cuda//:cuda_runtime",
         "@opencv_linux//:opencv",
@@ -46,11 +46,25 @@ cc_library(
         "cudaMakeFull.h",
         "cudaRemap.h",
         "cudaStatus.h",
-        "cudaTypes.h",
     ],
     include_prefix = INCLUDE_PREFIX,
     deps = [
         ":cuda_status",
+        ":cuda_types",
+    ],
+)
+
+cc_library(
+    name = "cuda_types",
+    srcs = [
+    ],
+    hdrs = [
+        "cudaTypes.h",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    visibility = ["//visibility:public"],
+    deps = [
+      "@local_cuda//:cuda_runtime",
     ],
 )
 
