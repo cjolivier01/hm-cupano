@@ -704,6 +704,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
         channels);
     CUDA_CHECK(cudaGetLastError());
 
+    context.show_image("d_gauss1", context.d_gauss1, level, channels, true);
+
     // Downsample the 3-channel mask
     dim3 gridMask((wL + block.x - 1) / block.x, (hL + block.y - 1) / block.y, 1);
 

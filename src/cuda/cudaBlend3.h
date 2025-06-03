@@ -140,9 +140,9 @@ struct CudaBatchLaplacianBlendContext3 {
   inline void displayPyramids(int channels, float scale, bool wait) const;
 
   void show_image(const std::string& label, std::vector<T*>& vec_d_ptrs, int level, int channels, bool wait) {
-    const T* d_ptr = vec_d_ptrs.at(level);
+    T* d_ptr = vec_d_ptrs.at(level);
     // CudaMat(T* dataptr, int B, int W, int H, int C = 1);
-    hm::CudaMat mat(d_ptr, 1, widths.at(level), heights.at(level), channels);
+    hm::CudaMat<T> mat(d_ptr, 1, widths.at(level), heights.at(level), channels);
     hm::utils::show_image(label, mat.download(), wait);
   }
 };
