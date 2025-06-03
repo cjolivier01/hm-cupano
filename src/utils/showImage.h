@@ -2,7 +2,7 @@
 
 #include <opencv2/opencv.hpp>
 #include <string>
-#include "cupano/pano/cudaMat.h"
+#include "cupano/cuda/cudaTypes.h"
 
 namespace hm {
 namespace utils {
@@ -17,8 +17,8 @@ bool destroy_surface_window();
 std::pair<double, double> get_min_max(const cv::Mat& mat);
 cv::Mat make_fake_mask_like(const cv::Mat& mask);
 
-#define SHOW_SURFACE(_mat$)                                                             \
-  do {                                                                                \
+#define SHOW_SURFACE(_mat$)                                                            \
+  do {                                                                                 \
     ::hm::utils::show_surface(std::string(#_mat$), (_mat$)->surface(), /*wait=*/true); \
   } while (false)
 

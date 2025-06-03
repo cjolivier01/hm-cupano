@@ -16,7 +16,8 @@
  * __half, __nv_bfloat16) and uses CUDA streams for asynchronous execution.
  */
 
-#include "src/cuda/cudaTypes.h"
+#include "src/pano/cudaMat.h"
+#include "src/utils/showImage.h"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -137,6 +138,13 @@ struct CudaBatchLaplacianBlendContext3 {
 
   // Must link to utils for this
   inline void displayPyramids(int channels, float scale, bool wait) const;
+
+  void show_image(const std::string& label, std::vector<T*>& vec_d_ptrs, int level, int channels, bool wait) {
+    const T* d_ptr = vec_d_ptrs.at(level);
+    // CudaMat(T* dataptr, int B, int W, int H, int C = 1);
+    hm::CudaMat mat(d_ptr, 1, widths.at(level), heights.at(level), channels);
+    hm::utils::show_image(label, mat.download(), wait);
+  }
 };
 
 /**

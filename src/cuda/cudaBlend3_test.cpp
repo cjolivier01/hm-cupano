@@ -1,14 +1,15 @@
+/* clang-format off */
 // cudaBlend3_test.cpp
 //
 // Google Test suite for cudaBlend3.h / cudaBlend3.cu
 // Verifies the correctness of the three-image Laplacian blending for simple scenarios.
 //
 // To compile (assuming CUDA, GTest, and your project are set up):
-// nvcc -std=c++14 -I<path-to-gtest>/include -L<path-to-gtest>/lib64 \
-//     cudaBlend3.cu cudaBlend3_test.cpp -lgtest -lgtest_main -lcudart -o cudaBlend3_test
+// nvcc -std=c++14 -I<path-to-gtest>/include -L<path-to-gtest>/lib64 cudaBlend3.cu cudaBlend3_test.cpp -lgtest -lgtest_main -lcudart -o cudaBlend3_test
 //
 // Then run:
 // ./cudaBlend3_test
+/* clang-format on */
 
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>

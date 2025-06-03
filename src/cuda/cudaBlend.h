@@ -14,6 +14,7 @@
 #pragma once
 
 #include "src/cuda/cudaTypes.h"
+#include "src/utils/showImage.h"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -116,6 +117,7 @@ struct CudaBatchLaplacianBlendContext {
   std::vector<T*> d_blend; ///< Device pointers for the blended Laplacian pyramid.
   std::vector<T*> d_resonstruct; ///< Device pointers for temporary reconstruction buffers.
   bool initialized{false}; ///< Flag indicating whether the context has been initialized.
+
 };
 /**
  * @brief Performs batched Laplacian blending on images.
@@ -174,3 +176,4 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     CudaBatchLaplacianBlendContext<T>& context,
     int channels,
     cudaStream_t stream);
+
