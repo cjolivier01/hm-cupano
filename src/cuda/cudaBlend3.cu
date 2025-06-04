@@ -608,6 +608,17 @@ cudaError_t cudaBatchedLaplacianBlend3(
   return cudaGetLastError();
 }
 
+#define SHOWIMG(_img$)                                                                                                 \
+  do {                                                                                                                 \
+    context.show_image(std::string(#_img$) + " level " + std::to_string(level), context._img$, level, channels, true); \
+  } while (false)
+
+#define SHOWIMGLVL(_img$, _level$)                                                                            \
+  do {                                                                                                        \
+    context.show_image(                                                                                       \
+        std::string(#_img$) + " level " + std::to_string(_level$), context._img$, (_level$), channels, true); \
+  } while (false)
+
 // -----------------------------------------------------------------------------
 // Templated version with context, now accepting three images and a 3-channel mask.
 template <typename T, typename F_T>
@@ -677,6 +688,10 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     }
   }
 
+  // SHOWIMGLVL(d_gauss1, 0);
+  // SHOWIMGLVL(d_gauss2, 0);
+  // SHOWIMGLVL(d_gauss3, 0);
+
   dim3 block(16, 16, 1);
 
   // --------------- Build Gaussian pyramids (downsample) ---------------
@@ -704,7 +719,10 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
         channels);
     CUDA_CHECK(cudaGetLastError());
 
-    context.show_image("d_gauss1", context.d_gauss1, level, channels, true);
+    // context.show_image(std::string("d_gauss1 level ") + std::to_string(level), context.d_gauss1, level, channels,
+    // true); context.show_image(std::string("d_gauss2 level ") + std::to_string(level), context.d_gauss2, level,
+    // channels, true); context.show_image(std::string("d_gauss3 level ") + std::to_string(level), context.d_gauss3,
+    // level, channels, true);
 
     // Downsample the 3-channel mask
     dim3 gridMask((wL + block.x - 1) / block.x, (hL + block.y - 1) / block.y, 1);
@@ -789,6 +807,10 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
         context.batchSize,
         channels);
     CUDA_CHECK(cudaGetLastError());
+    SHOWIMGLVL(d_lap1, last);
+    SHOWIMGLVL(d_lap2, last);
+    SHOWIMGLVL(d_lap3, last);
+    SHOWIMGLVL(d_blend, last);
   }
 
   // --------------- Reconstruct the final image ---------------

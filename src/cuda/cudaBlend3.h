@@ -139,13 +139,27 @@ struct CudaBatchLaplacianBlendContext3 {
   // Must link to utils for this
   inline void displayPyramids(int channels, float scale, bool wait) const;
 
-  void show_image(const std::string& label, std::vector<T*>& vec_d_ptrs, int level, int channels, bool wait) {
-    T* d_ptr = vec_d_ptrs.at(level);
-    // CudaMat(T* dataptr, int B, int W, int H, int C = 1);
-    hm::CudaMat<T> mat(d_ptr, 1, widths.at(level), heights.at(level), channels);
+  void show_image(const std::string& label, std::vector<T*>& vec_d_ptrs, int level, int channels, bool wait);
+};
+
+template <typename T>
+inline void CudaBatchLaplacianBlendContext3<T>::show_image(
+    const std::string& label,
+    std::vector<T*>& vec_d_ptrs,
+    int level,
+    int channels,
+    bool wait) {
+  T* d_ptr = vec_d_ptrs.at(level);
+  if (channels == 3) {
+    assert(sizeof(T) * channels == sizeof(float3));
+    hm::CudaMat<float3> mat((float3*)d_ptr, 1, widths.at(level), heights.at(level));
+    hm::utils::show_image(label, mat.download(), wait);
+  } else {
+    assert(sizeof(T) * channels == sizeof(float4));
+    hm::CudaMat<float4> mat((float4*)d_ptr, 1, widths.at(level), heights.at(level));
     hm::utils::show_image(label, mat.download(), wait);
   }
-};
+}
 
 /**
  * @brief Performs batched Laplacian blending on **three** images.

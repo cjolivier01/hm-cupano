@@ -500,8 +500,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     // SHOW_IMAGE(stitch_context.cudaFull1);
     // SHOW_IMAGE(stitch_context.cudaFull2);
 
-    stitch_context.laplacian_blend_context->displayPyramids(
-        /*channels=*/stitch_context.cudaFull0->channels(), /*scale=*/1.0, /*wait=*/true);
+    // stitch_context.laplacian_blend_context->displayPyramids(
+    //     /*channels=*/stitch_context.cudaFull0->channels(), /*scale=*/1.0, /*wait=*/true);
 
     // SHOW_IMAGE(stitch_context.cudaFull0);
     // SHOW_IMAGE(stitch_context.cudaFull1);
