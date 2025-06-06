@@ -1,7 +1,4 @@
 #include <cuda_runtime.h>
-// #if (CUDART_VERSION >= 11000)
-// #include <cuda_bf16.h>
-// #endif
 #include <cuda_fp16.h>
 #include <device_launch_parameters.h>
 #include "cudaImageAdjust.h"
@@ -9,6 +6,7 @@
 
 #include "cudaUtils.cuh"
 
+#include <cassert>
 #include <limits>
 
 using namespace hm::cupano::cuda;
@@ -118,6 +116,8 @@ __global__ void BatchedRemapKernelExOffset(
         // Has an alpha channel, so clear it
         if (srcX == kUnmappedPositionValue) {
           dest_pos->w = 0;
+        } else {
+          dest_pos->w = BaseScalar_t<T_out>(255);
         }
       }
     }
@@ -519,7 +519,7 @@ cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust(
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(float3, float3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(uchar3, float3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(uchar3, uchar3)
-INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(float, float)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(float1, float1)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(float4, float4)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(uchar4, float4)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(uchar4, uchar4)
@@ -534,7 +534,7 @@ INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(uchar4, uchar4)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX(float3, float3)
 
 // Instantiate for float input and float output:
-INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(float, float)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(float1, float1)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(float3, float3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(uchar1, uchar1)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(uchar3, uchar3)

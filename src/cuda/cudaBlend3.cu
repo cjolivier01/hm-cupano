@@ -334,6 +334,10 @@ __global__ void BatchedBlendKernel3(
     F_T v2 = static_cast<F_T>(lap2Image[idx + c]);
     F_T v3 = static_cast<F_T>(lap3Image[idx + c]);
 
+    // assert(v1 >= 0 && v1 <= 255);
+    // assert(v2 >= 0 && v2 <= 255);
+    // assert(v3 >= 0 && v3 <= 255);
+
     // v1 = clamp(F_T(0), v1, F_T(255));
     // v2 = clamp(F_T(0), v2, F_T(255));
     // v3 = clamp(F_T(0), v3, F_T(255));

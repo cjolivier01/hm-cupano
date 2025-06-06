@@ -3,6 +3,8 @@
 #include <cuda_runtime.h>
 #include "cudaTypes.h"
 
+#include <cstdint>
+
 namespace hm {
 namespace cupano {
 namespace cuda {
@@ -13,15 +15,15 @@ __device__ T clamp(const T& lo, const T& val, const T& hi) {
 }
 
 template <typename F_dest, typename F, typename COMPUTE_F = float>
-__device__ inline F_dest round_to_uchar(const F& x) {
-  COMPUTE_F x_rounded = static_cast<COMPUTE_F>(x) + 0.5f;
+__device__ inline unsigned char round_to_uchar(const F& x) {
+  COMPUTE_F x_rounded = static_cast<COMPUTE_F>(x) /* + 0.5f*/;
   if (x_rounded <= 0.0f) {
     return 0;
   }
   if (x_rounded >= 255.0f) {
     return 255;
   }
-  return static_cast<F_dest>(x_rounded); // Cast result to unsigned char
+  return static_cast<F_dest>(static_cast<unsigned char>(x_rounded)); // Cast result to unsigned char
 }
 
 // template <typename T_in, typename T_out>
