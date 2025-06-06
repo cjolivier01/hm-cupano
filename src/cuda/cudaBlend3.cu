@@ -800,9 +800,9 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     int h = context.heights[level];
     dim3 gridBlend((w + block.x - 1) / block.x, (h + block.y - 1) / block.y, context.batchSize);
 
-    SHOWIMGLVL(d_lap1, last);
-    SHOWIMGLVL(d_lap2, last);
-    SHOWIMGLVL(d_lap3, last);
+    // SHOWIMGLVL(d_lap1, last);
+    // SHOWIMGLVL(d_lap2, last);
+    // SHOWIMGLVL(d_lap3, last);
 
     BatchedBlendKernel3<T, F_T><<<gridBlend, block, 0, stream>>>(
         context.d_lap1[level],
@@ -815,7 +815,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
         context.batchSize,
         channels);
     CUDA_CHECK(cudaGetLastError());
-    SHOWIMGLVL(d_blend, last);
+    // SHOWIMGLVL(d_blend, last);
   }
 
   // --------------- Reconstruct the final image ---------------
