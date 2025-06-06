@@ -905,7 +905,10 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
         channels);
     CUDA_CHECK(cudaGetLastError());
 
-    SHOWIMGLVL_SCALED(d_blend, level, 2.0);
+    SHOWIMGLVL_SCALED(d_lap1, level, 4.0);
+    SHOWIMGLVL_SCALED(d_lap2, level, 4.0);
+    SHOWIMGLVL_SCALED(d_lap3, level, 4.0);
+    SHOWIMGLVL_SCALED(d_blend, level, 4.0);
 
     // print_min_max(context, context.d_lap1, level, channels);
     // print_min_max(context, context.d_lap2, level, channels);
