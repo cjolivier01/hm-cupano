@@ -37,5 +37,18 @@ cv::Mat make_fake_mask_like(const cv::Mat& mask);
     SHOW_SCALED(_mat$, 0.05); \
   } while (false)
 
+/**
+ * @brief Get the minimum and maximum pixel values for each channel in a multi‐channel cv::Mat.
+ *
+ * This function splits the image into its separate channels, then applies cv::minMaxLoc
+ * on each channel independently.
+ *
+ * @param mat   Input image (must be non‐empty and have at least two channels).
+ * @return      A vector of (min, max) pairs, one for each channel, in order.
+ *
+ * @throws std::invalid_argument if mat is empty or has only one channel.
+ */
+std::vector<std::pair<double, double>> getMinMaxPerChannel(const cv::Mat& mat);
+
 } // namespace utils
 } // namespace hm

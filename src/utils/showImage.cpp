@@ -214,5 +214,29 @@ cv::Mat make_fake_mask_like(const cv::Mat& mask) {
   return img;
 }
 
+std::vector<std::pair<double, double>> getMinMaxPerChannel(const cv::Mat& mat) {
+  if (mat.empty()) {
+    throw std::invalid_argument("getMinMaxPerChannel: Input cv::Mat is empty.");
+  }
+  int nChannels = mat.channels();
+  if (nChannels < 2) {
+    throw std::invalid_argument("getMinMaxPerChannel: Input must have multiple channels.");
+  }
+
+  // Split into individual channels
+  std::vector<cv::Mat> channels;
+  cv::split(mat, channels);
+
+  // Prepare a vector to hold (min,max) for each channel
+  std::vector<std::pair<double, double>> minsAndMaxs;
+  minsAndMaxs.reserve(nChannels);
+
+  for (int c = 0; c < nChannels; ++c) {
+    double minVal = 0.0, maxVal = 0.0;
+    cv::minMaxLoc(channels[c], &minVal, &maxVal);
+    minsAndMaxs.emplace_back(minVal, maxVal);
+  }
+  return minsAndMaxs;
+}
 } // namespace utils
 } // namespace hm

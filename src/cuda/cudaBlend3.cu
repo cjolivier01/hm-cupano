@@ -334,11 +334,11 @@ __global__ void BatchedBlendKernel3(
     F_T v2 = static_cast<F_T>(lap2Image[idx + c]);
     F_T v3 = static_cast<F_T>(lap3Image[idx + c]);
 
-    if (v1 < 0 || v1 > 255) {
-      printf("v1=%f at w=%d, h=%d\n", (float)v1, (int)width, (int)height);
-    }
+    // if (v1 < 0 || v1 > 255) {
+    //   printf("v1=%f at w=%d, h=%d\n", (float)v1, (int)width, (int)height);
+    // }
 
-    // assert(v1 >= 0 && v1 <= 255);
+    assert(v1 >= 0 && v1 <= 255);
     // assert(v2 >= 0 && v2 <= 255);
     // assert(v3 >= 0 && v3 <= 255);
 
@@ -661,6 +661,17 @@ cudaError_t cudaBatchedLaplacianBlend3(
         std::string(#_img$) + " level " + std::to_string(_level$), context._img$, (_level$), channels, true); \
   } while (false)
 
+template <typename T>
+void print_min_max(CudaBatchLaplacianBlendContext3<T>& context, const std::vector<T*>& vec, int level, int channels) {
+  std::vector<std::pair<double, double>> min_max =
+      hm::utils::getMinMaxPerChannel(context.download(vec, level, channels));
+  for (int i = 0; i < min_max.size(); ++i) {
+    const auto& itm = min_max[i];
+    std::cout << i << "] min=" << itm.first << ", max=" << itm.second << "\n";
+  }
+  std::cout << std::flush;
+}
+
 // -----------------------------------------------------------------------------
 // Templated version with context, now accepting three images and a 3-channel mask.
 template <typename T, typename F_T>
@@ -736,11 +747,21 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
         context.d_gauss1[0] = const_cast<T*>(d_image1);
         context.d_gauss2[0] = const_cast<T*>(d_image2);
         context.d_gauss3[0] = const_cast<T*>(d_image3);
+
         // The output pointer will be used for reconstruction when level==0
         context.d_reconstruct[0] = d_output;
       }
     }
   }
+
+  print_min_max(context, context.d_gauss1, 0, channels);
+  // std::vector<std::pair<double, double>> min_max0 =
+  //     hm::utils::getMinMaxPerChannel(context.download(context.d_gauss1, 0, channels));
+  // for (int i = 0; i < min_max0.size(); ++i) {
+  //   const auto& itm = min_max0[i];
+  //   std::cout << i << "] min=" << itm.first << ", max=" << itm.second << "\n";
+  // }
+  // std::cout << std::flush;
 
   // SHOWIMGLVL(d_gauss1, 0);
   // SHOWIMGLVL(d_gauss2, 0);

@@ -114,7 +114,7 @@
         "--game-id=3stitch",
         "--show",
         "--adjust=0",
-        "--levels=6",
+        "--levels=2",
         //"--perf",
         "--output=${workspaceRoot}/output.png",
       ],
