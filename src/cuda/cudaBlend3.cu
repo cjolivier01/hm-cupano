@@ -296,7 +296,9 @@ __global__ void BatchedBlendKernel3(
       m2 = static_cast<F_T>(0);
     if (alpha3 == static_cast<T>(0))
       m3 = static_cast<F_T>(0);
-
+    assert(m1 >= 0 && m1 <= 1);
+    assert(m2 >= 0 && m2 <= 1);
+    assert(m3 >= 0 && m3 <= 1);
     // Renormalize so that surviving weights sum to 1.0 (if any >0 remain)
     F_T sum = m1 + m2 + m3;
     if (sum > static_cast<F_T>(0)) {
@@ -307,8 +309,9 @@ __global__ void BatchedBlendKernel3(
     // If sum == 0, all three were skipped; leave m1=m2=m3=0 → contribution is zero.
     // printf("d=%p, x=%d, y=%d, b=%d, m1=%f, m2=%f, m3=%f\n", blended, (int)x, (int)y, (int)b, (float)m1, (float)m2,
     // (float)m3);
-    float summation = m1 + m2 + m3;
-    if (std::abs(1.0f - summation) > 0.01f && summation > 0.01f) {
+    // float summation = m1 + m2 + m3;
+    // if (std::abs(1.0f - summation) > 0.01f && summation > 0.01f) {
+    if (y == height * 2 / 3) {
       printf(
           "d=%p, x=%d, y=%d, b=%d, m1=%f, m2=%f, m3=%f\n",
           blended,
@@ -334,6 +337,7 @@ __global__ void BatchedBlendKernel3(
     // printf("pos=%d, pix1=%f, pix2=%f, pix3=%f -> blended=%f\n", (int)idx + c, (float)v1, (float)v2, (float)v3,
     // (float)blendedVal);
     blendImage[idx + c] = static_cast<T>(blendedVal);
+    // blendImage[idx + c] = 128;
   }
 
   // Finally, if we are in 4‐channel mode, force the output alpha to 255:
@@ -796,6 +800,10 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     int h = context.heights[level];
     dim3 gridBlend((w + block.x - 1) / block.x, (h + block.y - 1) / block.y, context.batchSize);
 
+    SHOWIMGLVL(d_lap1, last);
+    SHOWIMGLVL(d_lap2, last);
+    SHOWIMGLVL(d_lap3, last);
+
     BatchedBlendKernel3<T, F_T><<<gridBlend, block, 0, stream>>>(
         context.d_lap1[level],
         context.d_lap2[level],
@@ -807,9 +815,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
         context.batchSize,
         channels);
     CUDA_CHECK(cudaGetLastError());
-    SHOWIMGLVL(d_lap1, last);
-    SHOWIMGLVL(d_lap2, last);
-    SHOWIMGLVL(d_lap3, last);
     SHOWIMGLVL(d_blend, last);
   }
 

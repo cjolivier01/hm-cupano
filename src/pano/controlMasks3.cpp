@@ -1,4 +1,5 @@
 #include "controlMasks3.h"
+#include <opencv4/opencv2/highgui.hpp>
 #include <opencv4/opencv2/imgcodecs.hpp>
 #include <png.h>
 #include <tiffio.h> // For TIFF metadata
@@ -186,20 +187,31 @@ cv::Mat imreadPalettedAsIndex(const std::string& filename) {
 cv::Mat load_seam_mask3(const std::string& filename) {
   // cv::Mat seam_mask = cv::imread(filename, cv::IMREAD_ANYDEPTH);
   cv::Mat seam_mask = imreadPalettedAsIndex(filename);
-  cv::Mat seam_mask_dest = seam_mask.clone();
+  // cv::Mat seam_mask_dest = seam_mask.clone();
   if (!seam_mask.empty()) {
     std::vector<int> unique_values = get_unique_values(seam_mask);
     assert(unique_values.size() == 3);
 
+    cv::Mat seam_mask_dest = cv::Mat(cv::Size(seam_mask.cols, seam_mask.rows), CV_8UC3, cv::Scalar(0, 0, 0));
+
+    std::vector<cv::Mat> channels;
+    cv::split(seam_mask_dest, channels);
+
     for (size_t image_index = 0; image_index < unique_values.size(); ++image_index) {
       cv::Mat mask = (seam_mask == unique_values[image_index]);
-      seam_mask_dest.setTo(image_index, mask);
+      channels[image_index].setTo(1, mask);
     }
 
-    int pix = seam_mask_dest.at<uchar>(cv::Point(seam_mask_dest.cols / 2, 0));
-    std::cout << pix << std::endl;
+    // Merge channels back
+    cv::merge(channels, seam_mask_dest);
+
+    cv::imshow("seam mask", seam_mask_dest * 255);
+    cv::waitKey(0);
+    // int pix = seam_mask_dest.at<uchar>(cv::Point(seam_mask_dest.cols / 2, 0));
+    // std::cout << pix << std::endl;
+    return seam_mask_dest;
   }
-  return seam_mask_dest;
+  return seam_mask;
 }
 
 } // namespace
