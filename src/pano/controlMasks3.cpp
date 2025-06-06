@@ -205,8 +205,8 @@ cv::Mat load_seam_mask3(const std::string& filename) {
     // Merge channels back
     cv::merge(channels, seam_mask_dest);
 
-    cv::imshow("seam mask", seam_mask_dest * 255);
-    cv::waitKey(0);
+    // cv::imshow("seam mask", seam_mask_dest * 255);
+    // cv::waitKey(0);
     // int pix = seam_mask_dest.at<uchar>(cv::Point(seam_mask_dest.cols / 2, 0));
     // std::cout << pix << std::endl;
     return seam_mask_dest;
