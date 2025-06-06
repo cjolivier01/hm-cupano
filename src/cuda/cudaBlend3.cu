@@ -445,9 +445,35 @@ cudaError_t cudaBatchedLaplacianBlend3(
     int imageWidth,
     int imageHeight,
     int channels, // New parameter: 3 for RGB or 4 for RGBA
-    int numLevels,
+    int maxLevels,
     int batchSize,
     cudaStream_t stream) {
+  if (maxLevels < 1) {
+    return cudaErrorInvalidValue;
+  }
+
+  // Compute widths/heights of each pyramid level:
+  std::vector<int> widths(maxLevels), heights(maxLevels);
+  widths[0] = imageWidth;
+  heights[0] = imageHeight;
+  for (int i = 1; i < maxLevels; i++) {
+    int last_w = widths[i - 1];
+    int last_h = heights[i - 1];
+    // We can only go down so small
+    constexpr int kSmallestAllowableSide = 2; // maybe useful for unit tests only
+    if (last_w < kSmallestAllowableSide || last_h < kSmallestAllowableSide) {
+      std::cerr << "Adjusting max levels from " << maxLevels << " to " << i << '\n' << std::flush;
+      maxLevels = i;
+      break;
+    }
+    widths[i] = (last_w + 1) / 2;
+    heights[i] = (last_h + 1) / 2;
+  }
+
+  const int numLevels = maxLevels;
+  widths.resize(numLevels);
+  heights.resize(numLevels);
+
   // Size computations
   size_t imageSize = static_cast<size_t>(imageWidth) * imageHeight * channels * sizeof(T);
   // size_t maskSizeLevel = static_cast<size_t>(imageWidth) * imageHeight * 3 * sizeof(T); // 3-channel mask
@@ -457,15 +483,6 @@ cudaError_t cudaBatchedLaplacianBlend3(
   std::vector<T*> d_maskPyr(numLevels);
   std::vector<T*> d_lap1(numLevels), d_lap2(numLevels), d_lap3(numLevels);
   std::vector<T*> d_blend(numLevels);
-
-  // Compute widths/heights of each pyramid level:
-  std::vector<int> widths(numLevels), heights(numLevels);
-  widths[0] = imageWidth;
-  heights[0] = imageHeight;
-  for (int i = 1; i < numLevels; i++) {
-    widths[i] = (widths[i - 1] + 1) / 2;
-    heights[i] = (heights[i - 1] + 1) / 2;
-  }
 
   // --------------- Allocate level-0 arrays and copy input data to device ---------------
   size_t sizeImgLevel0 = static_cast<size_t>(widths[0]) * heights[0] * channels * batchSize * sizeof(T);
