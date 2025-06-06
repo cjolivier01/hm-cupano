@@ -225,12 +225,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     const T* d_image1,
     const T* d_image2,
     const T* d_image3,
-    const uint16_t* map1_x,
-    const uint16_t* map1_y,
-    const uint16_t* map2_x,
-    const uint16_t* map2_y,
-    const uint16_t* map3_x,
-    const uint16_t* map3_y,
     const T* d_mask,
     T* d_output,
     CudaBatchLaplacianBlendContext3<T>& context,
@@ -260,12 +254,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
       const T* d_image1,                                                \
       const T* d_image2,                                                \
       const T* d_image3,                                                \
-      const uint16_t* map1_x,                                           \
-      const uint16_t* map1_y,                                           \
-      const uint16_t* map2_x,                                           \
-      const uint16_t* map2_y,                                           \
-      const uint16_t* map3_x,                                           \
-      const uint16_t* map3_y,                                           \
       const T* d_mask,                                                  \
       T* d_output,                                                      \
       CudaBatchLaplacianBlendContext3<T>& context,                      \

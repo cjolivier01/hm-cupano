@@ -17,6 +17,42 @@ namespace pano {
 namespace cuda {
 
 /**
+ * @brief Get the minimum and maximum pixel values for each channel in a multi‐channel cv::Mat.
+ *
+ * This function splits the image into its separate channels, then applies cv::minMaxLoc
+ * on each channel independently.
+ *
+ * @param mat   Input image (must be non‐empty and have at least two channels).
+ * @return      A vector of (min, max) pairs, one for each channel, in order.
+ *
+ * @throws std::invalid_argument if mat is empty or has only one channel.
+ */
+inline std::vector<std::pair<double, double>> getMinMaxPerChannel(const cv::Mat& mat) {
+  if (mat.empty()) {
+    throw std::invalid_argument("getMinMaxPerChannel: Input cv::Mat is empty.");
+  }
+  int nChannels = mat.channels();
+  if (nChannels < 2) {
+    throw std::invalid_argument("getMinMaxPerChannel: Input must have multiple channels.");
+  }
+
+  // Split into individual channels
+  std::vector<cv::Mat> channels;
+  cv::split(mat, channels);
+
+  // Prepare a vector to hold (min,max) for each channel
+  std::vector<std::pair<double, double>> minsAndMaxs;
+  minsAndMaxs.reserve(nChannels);
+
+  for (int c = 0; c < nChannels; ++c) {
+    double minVal = 0.0, maxVal = 0.0;
+    cv::minMaxLoc(channels[c], &minVal, &maxVal);
+    minsAndMaxs.emplace_back(minVal, maxVal);
+  }
+  return minsAndMaxs;
+}
+
+/**
  * Constructor (same pattern as the 2‐image version, but now for THREE images).
  * - Loads three remap‐x/y TIFFs from control_masks, and a 3‐channel “soft seam” mask
  *   (or a single‐channel “hard seam” if num_levels==0).
@@ -158,6 +194,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
   // SHOW_IMAGE(&inputImage0);
   // SHOW_IMAGE(&inputImage1);
   // SHOW_IMAGE(&inputImage2);
+  // std::vector<std::pair<double, double>>  min_max = getMinMaxPerChannel(inputImage0.download());
 
   // We need all alphas to be zero to start
   if constexpr (sizeof(T_pipeline) / sizeof(BaseScalar_t<T_pipeline>) == 4) {
@@ -202,6 +239,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
           /*no_unmapped_write=*/false,
           stream);
     }
+    // std::vector<std::pair<double, double>>  min_max = getMinMaxPerChannel(canvas->download());
     CUDA_RETURN_IF_ERROR(cuerr);
 
     // Copy the region of canvas that is flagged for blending (ROI0) into cudaFull0:
@@ -217,6 +255,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         /*batchSize=*/stitch_context.batch_size(),
         stitch_context.cudaFull0->surface(),
         stream);
+
     CUDA_RETURN_IF_ERROR(cuerr);
   } else {
     // HARD-SEAM for image0 (first of three): use remap_ex_offset_with_dest_map, using mask channel 0
@@ -466,16 +505,14 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     // SHOW_IMAGE(stitch_context.cudaFull1);
     // SHOW_IMAGE(stitch_context.cudaFull2);
 
+    std::vector<std::pair<double, double>> min_max0 = getMinMaxPerChannel(stitch_context.cudaFull0->download());
+    std::vector<std::pair<double, double>> min_max1 = getMinMaxPerChannel(stitch_context.cudaFull1->download());
+    std::vector<std::pair<double, double>> min_max2 = getMinMaxPerChannel(stitch_context.cudaFull2->download());
+
     cuerr = cudaBatchedLaplacianBlendWithContext3(
         stitch_context.cudaFull0->data_raw(),
         stitch_context.cudaFull1->data_raw(),
         stitch_context.cudaFull2->data_raw(),
-        stitch_context.remap_0_x->data(),
-        stitch_context.remap_0_y->data(),
-        stitch_context.remap_1_x->data(),
-        stitch_context.remap_1_y->data(),
-        stitch_context.remap_2_x->data(),
-        stitch_context.remap_2_y->data(),
         stitch_context.cudaBlendSoftSeam->data_raw(),
         cudaBlendedFull.data_raw(),
         *stitch_context.laplacian_blend_context,

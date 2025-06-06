@@ -334,6 +334,10 @@ __global__ void BatchedBlendKernel3(
     F_T v2 = static_cast<F_T>(lap2Image[idx + c]);
     F_T v3 = static_cast<F_T>(lap3Image[idx + c]);
 
+    if (v1 < 0 || v1 > 255) {
+      printf("v1=%f at w=%d, h=%d\n", (float)v1, (int)width, (int)height);
+    }
+
     // assert(v1 >= 0 && v1 <= 255);
     // assert(v2 >= 0 && v2 <= 255);
     // assert(v3 >= 0 && v3 <= 255);
@@ -664,12 +668,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     const T* d_image1,
     const T* d_image2,
     const T* d_image3,
-    const uint16_t* map1_x,
-    const uint16_t* map1_y,
-    const uint16_t* map2_x,
-    const uint16_t* map2_y,
-    const uint16_t* map3_x,
-    const uint16_t* map3_y,
     const T* d_mask,
     T* d_output,
     CudaBatchLaplacianBlendContext3<T>& context,
@@ -967,12 +965,6 @@ template cudaError_t cudaBatchedLaplacianBlendWithContext3<float, float>(
     const float* d_image1,
     const float* d_image2,
     const float* d_image3,
-    const uint16_t* map1_x,
-    const uint16_t* map1_y,
-    const uint16_t* map2_x,
-    const uint16_t* map2_y,
-    const uint16_t* map3_x,
-    const uint16_t* map3_y,
     const float* d_mask,
     float* d_output,
     CudaBatchLaplacianBlendContext3<float>& context,
@@ -983,12 +975,6 @@ template cudaError_t cudaBatchedLaplacianBlendWithContext3<unsigned char, float>
     const unsigned char* d_image1,
     const unsigned char* d_image2,
     const unsigned char* d_image3,
-    const uint16_t* map1_x,
-    const uint16_t* map1_y,
-    const uint16_t* map2_x,
-    const uint16_t* map2_y,
-    const uint16_t* map3_x,
-    const uint16_t* map3_y,
     const unsigned char* d_mask,
     unsigned char* d_output,
     CudaBatchLaplacianBlendContext3<unsigned char>& context,
