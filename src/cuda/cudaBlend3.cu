@@ -311,17 +311,17 @@ __global__ void BatchedBlendKernel3(
     // (float)m3);
     // float summation = m1 + m2 + m3;
     // if (std::abs(1.0f - summation) > 0.01f && summation > 0.01f) {
-    if (y == height * 2 / 3) {
-      printf(
-          "d=%p, x=%d, y=%d, b=%d, m1=%f, m2=%f, m3=%f\n",
-          blended,
-          (int)x,
-          (int)y,
-          (int)b,
-          (float)m1,
-          (float)m2,
-          (float)m3);
-    }
+    // if (y == height * 2 / 3) {
+    //   printf(
+    //       "d=%p, x=%d, y=%d, b=%d, m1=%f, m2=%f, m3=%f\n",
+    //       blended,
+    //       (int)x,
+    //       (int)y,
+    //       (int)b,
+    //       (float)m1,
+    //       (float)m2,
+    //       (float)m3);
+    // }
   }
 
   // We only blend up to min(4,channels). In practice, for channels==4: blend_channels=4.
