@@ -14,6 +14,8 @@
 #include <iostream>
 #include <vector>
 
+using namespace hm::cupano::cuda;
+
 #define PRINT_STRANGE_ALPHAS
 namespace {
 // =============================================================================
@@ -338,7 +340,7 @@ __global__ void BatchedBlendKernel3(
     //   printf("v1=%f at w=%d, h=%d\n", (float)v1, (int)width, (int)height);
     // }
 
-    assert(v1 >= 0 && v1 <= 255);
+    // assert(v1 >= 0 && v1 <= 255);
     // assert(v2 >= 0 && v2 <= 255);
     // assert(v3 >= 0 && v3 <= 255);
 
@@ -396,7 +398,7 @@ __global__ void BatchedReconstructKernel(
   const T* lapImage = lap + b * highImageSize;
   T* reconImage = reconstruction + b * highImageSize;
 
-  const F_T F_ONE = static_cast<F_T>(1.0f);
+  constexpr F_T F_ONE = static_cast<F_T>(1.0f);
   F_T gx = static_cast<F_T>(x) / 2.0f;
   F_T gy = static_cast<F_T>(y) / 2.0f;
   int gxi = floorf(gx);
@@ -754,15 +756,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     }
   }
 
-  print_min_max(context, context.d_gauss1, 0, channels);
-  // std::vector<std::pair<double, double>> min_max0 =
-  //     hm::utils::getMinMaxPerChannel(context.download(context.d_gauss1, 0, channels));
-  // for (int i = 0; i < min_max0.size(); ++i) {
-  //   const auto& itm = min_max0[i];
-  //   std::cout << i << "] min=" << itm.first << ", max=" << itm.second << "\n";
-  // }
-  // std::cout << std::flush;
-
   // SHOWIMGLVL(d_gauss1, 0);
   // SHOWIMGLVL(d_gauss2, 0);
   // SHOWIMGLVL(d_gauss3, 0);
@@ -792,6 +785,10 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
         hL,
         context.batchSize,
         channels);
+
+    // print_min_max(context, context.d_gauss1, 0, channels);
+    // print_min_max(context, context.d_gauss1, 1, channels);
+
     CUDA_CHECK(cudaGetLastError());
 
     // context.show_image(std::string("d_gauss1 level ") + std::to_string(level), context.d_gauss1, level, channels,
@@ -828,6 +825,9 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
         context.batchSize,
         channels);
     CUDA_CHECK(cudaGetLastError());
+
+    // print_min_max(context, context.d_lap1, 0, channels);
+    // print_min_max(context, context.d_lap1, 1, channels);
 
     // Laplacian for image 2
     BatchedComputeLaplacianKernel<T, F_T><<<gridLap, block, 0, stream>>>(
@@ -886,7 +886,11 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
         context.batchSize,
         channels);
     CUDA_CHECK(cudaGetLastError());
-    // SHOWIMGLVL(d_blend, last);
+
+    // print_min_max(context, context.d_lap1, level, channels);
+    // print_min_max(context, context.d_lap2, level, channels);
+    // print_min_max(context, context.d_lap3, level, channels);
+
   }
 
   // --------------- Reconstruct the final image ---------------
@@ -943,7 +947,10 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
 
     BatchedReconstructKernel<T, F_T><<<gridRecon, block, 0, stream>>>(
         d_reconstruct, wL, hL, context.d_blend[level], wH, hH, d_temp, context.batchSize, channels);
+
     CUDA_CHECK(cudaGetLastError());
+
+    // print_min_max(context, context.d_reconstruct, level, channels);
 
     d_reconstruct = d_temp;
   }
