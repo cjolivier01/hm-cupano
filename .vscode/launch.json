@@ -137,7 +137,7 @@
       "cwd": "${workspaceFolder}",
       "debuggerPath": "/usr/local/cuda/bin/cuda-gdb",
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend3",
-      "args": "--game-id=3stitch --show --adjust=0 --levels=1",
+      "args": "--game-id=3stitch --show --adjust=0 --levels=6",
       "initCommands": [
         "directory ${workspaceFolder}",
       ],

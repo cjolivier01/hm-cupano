@@ -673,14 +673,32 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     cudaStream_t stream) {
   // --------------- Initialization: allocate buffers if needed ---------------
   if (!context.initialized) {
+    int maxLevels = context.numLevels;
     // Set up pyramid dimensions
+    if (maxLevels < 1) {
+      return cudaErrorInvalidValue;
+    }
+
+    // Compute widths/heights of each pyramid level:
+    std::vector<int> widths(maxLevels), heights(maxLevels);
     context.widths[0] = context.imageWidth;
     context.heights[0] = context.imageHeight;
-    for (int i = 1; i < context.numLevels; i++) {
-      context.widths[i] = (context.widths[i - 1] + 1) / 2;
-      context.heights[i] = (context.heights[i - 1] + 1) / 2;
-      assert(context.widths[i] && context.heights[i]);
+    for (int i = 1; i < maxLevels; i++) {
+      int last_w = context.widths[i - 1];
+      int last_h = context.heights[i - 1];
+      // We can only go down so small
+      constexpr int kSmallestAllowableSide = 2; // maybe useful for unit tests only
+      if (last_w < kSmallestAllowableSide || last_h < kSmallestAllowableSide) {
+        std::cerr << "Adjusting max levels from " << maxLevels << " to " << i << '\n' << std::flush;
+        maxLevels = i;
+        break;
+      }
+      context.widths[i] = (last_w + 1) / 2;
+      context.heights[i] = (last_h + 1) / 2;
     }
+    context.numLevels = maxLevels;
+    widths.resize(context.numLevels);
+    heights.resize(context.numLevels);
 
     for (int level = 0; level < context.numLevels; level++) {
       int w = context.widths[level];

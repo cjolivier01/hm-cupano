@@ -55,22 +55,22 @@ struct CudaBatchLaplacianBlendContext3 {
    * @param num_levels Number of pyramid levels to build.
    * @param batch_size Number of images in the batch.
    */
-  CudaBatchLaplacianBlendContext3(int image_width, int image_height, int num_levels, int batch_size)
-      : numLevels(num_levels),
+  CudaBatchLaplacianBlendContext3(int image_width, int image_height, int max_levels, int batch_size)
+      : numLevels(max_levels),
         imageWidth(image_width),
         imageHeight(image_height),
         batchSize(batch_size),
-        widths(num_levels),
-        heights(num_levels),
-        d_gauss1(num_levels, nullptr),
-        d_gauss2(num_levels, nullptr),
-        d_gauss3(num_levels, nullptr),
-        d_maskPyr(num_levels, nullptr),
-        d_lap1(num_levels, nullptr),
-        d_lap2(num_levels, nullptr),
-        d_lap3(num_levels, nullptr),
-        d_blend(num_levels, nullptr),
-        d_reconstruct(num_levels, nullptr) {}
+        widths(max_levels),
+        heights(max_levels),
+        d_gauss1(max_levels, nullptr),
+        d_gauss2(max_levels, nullptr),
+        d_gauss3(max_levels, nullptr),
+        d_maskPyr(max_levels, nullptr),
+        d_lap1(max_levels, nullptr),
+        d_lap2(max_levels, nullptr),
+        d_lap3(max_levels, nullptr),
+        d_blend(max_levels, nullptr),
+        d_reconstruct(max_levels, nullptr) {}
 
   /**
    * @brief Helper function to free a CUDA pointer if it is non-null.
@@ -110,7 +110,7 @@ struct CudaBatchLaplacianBlendContext3 {
     }
   }
 
-  const int numLevels; ///< Number of pyramid levels.
+  int numLevels; ///< Number of pyramid levels.
   const int imageWidth; ///< Width of the full-resolution image.
   const int imageHeight; ///< Height of the full-resolution image.
   const int batchSize; ///< Number of images in the batch.
@@ -180,7 +180,7 @@ inline void CudaBatchLaplacianBlendContext3<T>::show_image(
  * @param imageWidth Width of each full-resolution image.
  * @param imageHeight Height of each full-resolution image.
  * @param channels Number of image channels (e.g. 3 for RGB, 4 for RGBA).
- * @param numLevels Number of pyramid levels.
+ * @param maxLevels Number of pyramid levels.
  * @param batchSize Number of images in the batch.
  * @param stream CUDA stream to use for all kernel launches and memory copies (default is 0).
  * @return cudaError_t CUDA error code.
@@ -195,7 +195,7 @@ cudaError_t cudaBatchedLaplacianBlend3(
     int imageWidth,
     int imageHeight,
     int channels,
-    int numLevels,
+    int maxLevels,
     int batchSize,
     cudaStream_t stream);
 
@@ -251,7 +251,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
       int imageWidth,                                        \
       int imageHeight,                                       \
       int channels,                                          \
-      int numLevels,                                         \
+      int maxLevels,                                         \
       int batchSize,                                         \
       cudaStream_t stream);
 
