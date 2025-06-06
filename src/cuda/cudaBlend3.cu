@@ -2,6 +2,7 @@
 #include "cudaBlend3.h"
 #include "cudaTypes.h"
 #include "cudaUtils.cuh"
+#include "src/utils/_virtual_includes/show_image/cupano/utils/showImage.h"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -429,9 +430,15 @@ __global__ void BatchedReconstructKernel(
       F_T val01 = static_cast<F_T>(lowImage[idx01]);
       F_T val11 = static_cast<F_T>(lowImage[idx11]);
 
+      // val00 = clamp(0, val00, 255);
+      // val10 = clamp(0, val10, 255);
+      // val01 = clamp(0, val01, 255);
+      // val11 = clamp(0, val11, 255);
+
       // bilinear upsampling
       F_T upVal = (val00 * (F_ONE - dx) + val10 * dx) * (F_ONE - dy) + (val01 * (F_ONE - dx) + val11 * dx) * dy;
       reconImage[idxOut + c] = static_cast<T>(upVal + static_cast<F_T>(lapImage[idxOut + c]));
+      // reconImage[idxOut + c] = clamp(0, reconImage[idxOut + c], 255);
     }
   }
 }
@@ -655,6 +662,11 @@ cudaError_t cudaBatchedLaplacianBlend3(
 #define SHOWIMG(_img$)                                                                                                 \
   do {                                                                                                                 \
     context.show_image(std::string(#_img$) + " level " + std::to_string(level), context._img$, level, channels, true); \
+  } while (false)
+
+#define SHOWIMGLOCAL(_img$, _level$)                                                                               \
+  do {                                                                                                             \
+    context.show_image(std::string(#_img$) + " level " + std::to_string(_level$), _img$, _level$, channels, true); \
   } while (false)
 
 #define SHOWIMGLVL(_img$, _level$)                                                                            \
@@ -890,7 +902,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     // print_min_max(context, context.d_lap1, level, channels);
     // print_min_max(context, context.d_lap2, level, channels);
     // print_min_max(context, context.d_lap3, level, channels);
-
   }
 
   // --------------- Reconstruct the final image ---------------
@@ -950,10 +961,11 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
 
     CUDA_CHECK(cudaGetLastError());
 
-    // print_min_max(context, context.d_reconstruct, level, channels);
-
     d_reconstruct = d_temp;
+    SHOWIMGLOCAL(d_reconstruct, level);
   }
+
+  print_min_max(context, context.d_reconstruct, 0, channels);
 
   context.initialized = true;
   return cudaSuccess;

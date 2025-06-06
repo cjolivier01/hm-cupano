@@ -142,6 +142,7 @@ struct CudaBatchLaplacianBlendContext3 {
   inline void displayPyramids(int channels, float scale, bool wait) const;
 
   void show_image(const std::string& label, const std::vector<T*>& vec_d_ptrs, int level, int channels, bool wait);
+  void show_image(const std::string& label, const T* vec_d_ptrs, int level, int channels, bool wait);
 
   cv::Mat download(const std::vector<T*>& vec_d_ptrs, int level, int channels) const;
 };
@@ -163,11 +164,10 @@ cv::Mat CudaBatchLaplacianBlendContext3<T>::download(const std::vector<T*>& vec_
 template <typename T>
 inline void CudaBatchLaplacianBlendContext3<T>::show_image(
     const std::string& label,
-    const std::vector<T*>& vec_d_ptrs,
+    const T* d_ptr,
     int level,
     int channels,
     bool wait) {
-  T* d_ptr = vec_d_ptrs.at(level);
   if (channels == 3) {
     assert(sizeof(T) * channels == sizeof(float3));
     hm::CudaMat<float3> mat((float3*)d_ptr, 1, widths.at(level), heights.at(level));
@@ -177,6 +177,16 @@ inline void CudaBatchLaplacianBlendContext3<T>::show_image(
     hm::CudaMat<float4> mat((float4*)d_ptr, 1, widths.at(level), heights.at(level));
     hm::utils::show_image(label, mat.download(), wait);
   }
+}
+
+template <typename T>
+inline void CudaBatchLaplacianBlendContext3<T>::show_image(
+    const std::string& label,
+    const std::vector<T*>& vec_d_ptrs,
+    int level,
+    int channels,
+    bool wait) {
+  show_image(label, vec_d_ptrs.at(level), level, channels, wait);
 }
 
 /**

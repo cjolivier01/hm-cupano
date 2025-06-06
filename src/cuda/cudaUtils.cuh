@@ -9,9 +9,9 @@ namespace hm {
 namespace cupano {
 namespace cuda {
 
-template <typename T>
-__device__ T clamp(const T& lo, const T& val, const T& hi) {
-  return val < lo ? lo : (val > hi ? hi : val);
+template <typename T, typename TLO, typename THI>
+__device__ T clamp(const TLO& lo, const T& val, const THI& hi) {
+  return val < T(lo) ? T(lo) : (val > T(hi) ? T(hi) : val);
 }
 
 template <typename F_dest, typename F, typename COMPUTE_F = float>
