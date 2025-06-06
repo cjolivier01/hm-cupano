@@ -9,8 +9,6 @@
 
 #include "cudaUtils.cuh"
 
-#include <cstdint>
-#include <iostream>
 #include <limits>
 
 using namespace hm::cupano::cuda;

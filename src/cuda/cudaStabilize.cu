@@ -1,6 +1,5 @@
 #include <cuda_runtime.h>
 #include <math.h>
-#include <stdio.h>
 #include <vector>
 
 // Define CUDA block size
