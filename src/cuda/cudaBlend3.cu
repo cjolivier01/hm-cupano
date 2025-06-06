@@ -961,6 +961,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
 
     CUDA_CHECK(cudaGetLastError());
 
+    SHOWIMGLVL(d_blend, level);
+
     d_reconstruct = d_temp;
     SHOWIMGLOCAL(d_reconstruct, level);
   }
