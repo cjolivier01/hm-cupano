@@ -681,6 +681,18 @@ cudaError_t cudaBatchedLaplacianBlend3(
         std::string(#_img$) + " level " + std::to_string(_level$), context._img$, (_level$), channels, true, _scale$); \
   } while (false)
 
+#define SHOWIMGLVL_SCALEDSQ(_img$, _level$, _scale$)               \
+  do {                                                             \
+    context.show_image(                                            \
+        std::string(#_img$) + " level " + std::to_string(_level$), \
+        context._img$,                                             \
+        (_level$),                                                 \
+        channels,                                                  \
+        /*wait=*/true,                                             \
+        (_scale$),                                                 \
+        /*squished=*/true);                                        \
+  } while (false)
+
 template <typename T>
 void print_min_max(CudaBatchLaplacianBlendContext3<T>& context, const std::vector<T*>& vec, int level, int channels) {
   std::vector<std::pair<double, double>> min_max =
@@ -905,10 +917,15 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
         channels);
     CUDA_CHECK(cudaGetLastError());
 
-    SHOWIMGLVL_SCALED(d_lap1, level, 4.0);
-    SHOWIMGLVL_SCALED(d_lap2, level, 4.0);
-    SHOWIMGLVL_SCALED(d_lap3, level, 4.0);
-    SHOWIMGLVL_SCALED(d_blend, level, 4.0);
+    // SHOWIMGLVL_SCALED(d_lap1, level, 4.0);
+    // SHOWIMGLVL_SCALED(d_lap2, level, 4.0);
+    // SHOWIMGLVL_SCALED(d_lap3, level, 4.0);
+    // SHOWIMGLVL_SCALED(d_blend, level, 4.0);
+
+    SHOWIMGLVL_SCALEDSQ(d_lap1, level, 4.0);
+    // SHOWIMGLVL_SCALEDSQ(d_lap2, level, 4.0);
+    // SHOWIMGLVL_SCALEDSQ(d_lap3, level, 4.0);
+    // SHOWIMGLVL_SCALEDSQ(d_blend, level, 4.0);
 
     // print_min_max(context, context.d_lap1, level, channels);
     // print_min_max(context, context.d_lap2, level, channels);

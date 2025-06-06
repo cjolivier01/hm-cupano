@@ -1,7 +1,12 @@
-load("@rules_cuda//cuda:defs.bzl", "cuda_library")
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cuda//cuda:defs.bzl", "cuda_library")
 
 INCLUDE_PREFIX = "cupano/cuda"
+
+config_setting(
+    name = "debug_build",
+    values = {"compilation_mode": "dbg"},
+)
 
 cuda_library(
     name = "cuda_blend_cuda_lib",
@@ -20,18 +25,31 @@ cuda_library(
     copts = [
         "-Xcompiler=-fPIC",
         "-Wno-deprecated-gpu-targets",
-
-        "-Xcompiler=-O0",
-        "-Xcompiler=-g",
-        "-G",
-        "-g",
-        "-keep",
-        "-O0",
-    ],
+        "-Xcompiler=-fdiagnostics-color=always",
+        # Debug-only flags
+        # "-Xcompiler=-O0",
+        # "-Xcompiler=-g",
+        # "-G",
+        # "-g",
+        # "-keep",
+        # "-O0",
+    ] + select({
+        # only in debug mode:
+        ":debug_build": [
+            "-Xcompiler=-O0",
+            "-Xcompiler=-g",
+            "-G",
+            "-g",
+            "-keep",
+            "-O0",
+        ],
+        # in all other modes, no extra flags
+        "//conditions:default": [],
+    }),
     visibility = ["//visibility:public"],
     deps = [
-        "//src/utils:show_image",
         ":cuda_blend_cuda_lib_headers",
+        "//src/utils:show_image",
         "@local_cuda//:cuda_runtime",
         "@opencv_linux//:opencv",
     ],
@@ -66,7 +84,7 @@ cc_library(
     include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
     deps = [
-      "@local_cuda//:cuda_runtime",
+        "@local_cuda//:cuda_runtime",
     ],
 )
 
@@ -79,12 +97,11 @@ cc_library(
 )
 
 cc_test(
-  name = "cudaBlend3_test",
-  srcs = ["cudaBlend3_test.cpp"],
-  deps = [
-    ":cuda_blend_cuda_lib",
-    "@googletest//:gtest",
-    "@googletest//:gtest_main",
-  ]
+    name = "cudaBlend3_test",
+    srcs = ["cudaBlend3_test.cpp"],
+    deps = [
+        ":cuda_blend_cuda_lib",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
 )
-

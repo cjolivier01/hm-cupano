@@ -103,7 +103,7 @@ cv::Mat convert_to_uchar(cv::Mat image) {
   return image;
 }
 
-void show_image(const std::string& label, const cv::Mat& img, bool wait, float scale) {
+void show_image(const std::string& label, const cv::Mat& img, bool wait, float scale, bool squish) {
   if (scale != 0 && scale != 1) {
     cv::Size newSize(static_cast<int>(scale * (img.cols + 0.5f)), static_cast<int>(scale * (img.rows + 0.5f)));
     cv::Mat dest;
@@ -142,7 +142,7 @@ bool destroy_surface_window() {
   return true;
 }
 
-void display_scaled_image(const std::string& label, cv::Mat image, float scale, bool wait) {
+void display_scaled_image(const std::string& label, cv::Mat image, float scale, bool wait, bool squish) {
   if (scale != 1.0f) {
     // Calculate new dimensions
     int newWidth = static_cast<int>(image.cols * scale);
@@ -151,7 +151,9 @@ void display_scaled_image(const std::string& label, cv::Mat image, float scale, 
     // Resize the image
     cv::resize(image, image, cv::Size(newWidth, newHeight));
   }
-
+  if (squish) {
+    stretch(image, 0.0f, 255.0f);
+  }
   // Display the image
   cv::imshow(label, convert_to_uchar(image));
   cv::waitKey(wait ? 0 : 1); // Wait for a keystroke in the window
@@ -189,32 +191,6 @@ std::set<T> get_unique_values(const cv::Mat& mat, const std::unordered_set<T>& i
   return unique_values;
 }
 
-// cv::Mat load_position_mask(const std::string& filename, double* minVal, double* maxVal) {
-//   cv::Mat pos_mask = cv::imread(filename, cv::IMREAD_ANYDEPTH);
-//   if (!pos_mask.empty()) {
-//     if (minVal || maxVal) {
-//       cv::Point minLoc, maxLoc;
-//       // Get the minimum and maximum values and their locations
-//       double min, max;
-//       cv::minMaxLoc(pos_mask, &min, &max, &minLoc, &maxLoc);
-//       if (minVal) {
-//         *minVal = min;
-//       }
-//       if (maxVal) {
-//         *maxVal = max;
-//       }
-//     }
-//   } else {
-//     if (minVal) {
-//       *minVal = std::nan("");
-//     }
-//     if (maxVal) {
-//       *maxVal = std::nan("");
-//     }
-//   }
-//   return pos_mask;
-// }
-
 cv::Mat make_fake_mask_like(const cv::Mat& mask) {
   cv::Mat img(mask.rows, mask.cols, CV_32FC1, cv::Scalar(0));
 
@@ -250,5 +226,47 @@ std::vector<std::pair<double, double>> getMinMaxPerChannel(const cv::Mat& mat) {
   }
   return minsAndMaxs;
 }
+
+// Clamp all pixel values in-place to [minVal, maxVal]
+void clamp(cv::Mat& img, float minVal, float maxVal)
+{
+    CV_Assert(img.type() == CV_32FC3);
+    cv::Scalar sMin(minVal, minVal, minVal);
+    cv::Scalar sMax(maxVal, maxVal, maxVal);
+    // first clamp below
+    cv::max(img, sMin, img);
+    // then clamp above
+    cv::min(img, sMax, img);
+}
+
+// Linearly stretch/squish all pixel values in-place so that
+// the overall min→max range maps to [lo, hi]
+void stretch(cv::Mat& img, float lo, float hi)
+{
+    CV_Assert(img.type() == CV_32FC3);
+
+    // flatten to single-channel view for min/max computation
+    cv::Mat flat = img.reshape(1);
+    double imgMin, imgMax;
+    cv::minMaxLoc(flat, &imgMin, &imgMax);
+
+    // if constant image, set to midpoint
+    if (imgMin == imgMax) {
+        float mid = 0.5f * (lo + hi);
+        img.setTo(cv::Scalar(mid, mid, mid));
+        return;
+    }
+
+    // compute scale and bias
+    float scale = (hi - lo) / static_cast<float>(imgMax - imgMin);
+    cv::Scalar sMin(imgMin, imgMin, imgMin);
+    cv::Scalar sLo(lo, lo, lo);
+
+    // (img - imgMin) * scale + lo
+    cv::subtract(img, sMin, img);       // img -= imgMin
+    cv::multiply(img, scale, img);      // img *= scale
+    cv::add(img, sLo, img);             // img += lo
+}
+
 } // namespace utils
 } // namespace hm

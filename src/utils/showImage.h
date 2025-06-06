@@ -7,8 +7,18 @@
 namespace hm {
 namespace utils {
 
-void show_image(const std::string& label, const cv::Mat& img, bool wait = true, float scale = 0.0f);
-void display_scaled_image(const std::string& label, cv::Mat image, float scale = 1.0, bool wait = true);
+void show_image(
+    const std::string& label,
+    const cv::Mat& img,
+    bool wait = true,
+    float scale = 0.0f,
+    bool squish = false);
+void display_scaled_image(
+    const std::string& label,
+    cv::Mat image,
+    float scale = 1.0,
+    bool wait = true,
+    bool squish = false);
 
 template <typename PIXEL_T>
 void show_surface(const std::string& label, const CudaSurface<PIXEL_T>& surface, bool wait);
@@ -49,6 +59,13 @@ cv::Mat make_fake_mask_like(const cv::Mat& mask);
  * @throws std::invalid_argument if mat is empty or has only one channel.
  */
 std::vector<std::pair<double, double>> getMinMaxPerChannel(const cv::Mat& mat);
+
+// Clamp all pixel values in-place to [minVal, maxVal]
+void clamp(cv::Mat& img, float minVal = 0.0f, float maxVal = 255.0f);
+
+// Linearly stretch/squish all pixel values in-place so that
+// the overall min→max range maps to [lo, hi]
+void stretch(cv::Mat& img, float lo = 0.0f, float hi = 255.0f);
 
 } // namespace utils
 } // namespace hm

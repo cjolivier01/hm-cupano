@@ -147,14 +147,16 @@ struct CudaBatchLaplacianBlendContext3 {
       int level,
       int channels,
       bool wait,
-      float scale = 0.0f);
+      float scale = 0.0f,
+      bool squish = false);
   void show_image(
       const std::string& label,
       const T* vec_d_ptrs,
       int level,
       int channels,
       bool wait,
-      float scale = 0.0f);
+      float scale = 0.0f,
+      bool squish = false);
 
   cv::Mat download(const std::vector<T*>& vec_d_ptrs, int level, int channels) const;
 };
@@ -180,15 +182,16 @@ inline void CudaBatchLaplacianBlendContext3<T>::show_image(
     int level,
     int channels,
     bool wait,
-    float scale) {
+    float scale,
+    bool squish) {
   if (channels == 3) {
     assert(sizeof(T) * channels == sizeof(float3));
     hm::CudaMat<float3> mat((float3*)d_ptr, 1, widths.at(level), heights.at(level));
-    hm::utils::show_image(label, mat.download(), wait, scale);
+    hm::utils::show_image(label, mat.download(), wait, scale, squish);
   } else {
     assert(sizeof(T) * channels == sizeof(float4));
     hm::CudaMat<float4> mat((float4*)d_ptr, 1, widths.at(level), heights.at(level));
-    hm::utils::show_image(label, mat.download(), wait, scale);
+    hm::utils::show_image(label, mat.download(), wait, scale, squish);
   }
 }
 
@@ -199,8 +202,9 @@ inline void CudaBatchLaplacianBlendContext3<T>::show_image(
     int level,
     int channels,
     bool wait,
-    float scale) {
-  show_image(label, vec_d_ptrs.at(level), level, channels, wait, scale);
+    float scale,
+    bool squish) {
+  show_image(label, vec_d_ptrs.at(level), level, channels, wait, scale, squish);
 }
 
 /**
