@@ -1,6 +1,7 @@
 // cudaBlend3.cu
 #include "cudaBlend3.h"
 #include "cudaTypes.h"
+#include "cudaUtils.cuh"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -242,11 +243,6 @@ __global__ void BatchedComputeLaplacianKernel(
   }
 }
 
-template <typename T>
-__device__ T clamp(const T& lo, const T& val, const T& hi) {
-  return val < lo ? lo : (val > hi ? hi : val);
-}
-
 // -----------------------------------------------------------------------------
 // Batched blend kernel for THREE images.
 // For each channel, the three Laplacian pyramids are blended with a weighted average
@@ -338,9 +334,9 @@ __global__ void BatchedBlendKernel3(
     F_T v2 = static_cast<F_T>(lap2Image[idx + c]);
     F_T v3 = static_cast<F_T>(lap3Image[idx + c]);
 
-    v1 = clamp(F_T(0), v1, F_T(255));
-    v2 = clamp(F_T(0), v2, F_T(255));
-    v3 = clamp(F_T(0), v3, F_T(255));
+    // v1 = clamp(F_T(0), v1, F_T(255));
+    // v2 = clamp(F_T(0), v2, F_T(255));
+    // v3 = clamp(F_T(0), v3, F_T(255));
 
     // v1 = 0;
     // v2 = 0;
@@ -349,7 +345,7 @@ __global__ void BatchedBlendKernel3(
     F_T blendedVal = m1 * v1 + m2 * v2 + m3 * v3;
     // printf("pos=%d, pix1=%f, pix2=%f, pix3=%f -> blended=%f\n", (int)idx + c, (float)v1, (float)v2, (float)v3,
     // (float)blendedVal);
-    blendedVal = clamp(F_T(0), blendedVal, F_T(255));
+    // blendedVal = clamp(F_T(0), blendedVal, F_T(255));
     // if (v < 0)
     //   printf("v=%f", (float)v);
     // else if (v > 255) v = 255;

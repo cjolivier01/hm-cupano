@@ -12,8 +12,10 @@ cuda_library(
         "cudaMakeFull.cu",
         "cudaRemap.cu",
         "cudaStabilize.cu",
+        "cudaUtils.cu",
     ],
     hdrs = [
+        "cudaUtils.cuh",
     ],
     copts = [
         "-Xcompiler=-fPIC",

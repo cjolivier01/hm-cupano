@@ -7,36 +7,16 @@
 #include "cudaImageAdjust.h"
 #include "cudaRemap.h" // Assumed to declare these host functions
 
-#include <cstdint>
-#include <limits>
-#include <iostream>
+#include "cudaUtils.cuh"
 
+#include <cstdint>
+#include <iostream>
+#include <limits>
+
+using namespace hm::cupano::cuda;
 namespace {
 
 constexpr unsigned short kUnmappedPositionValue = std::numeric_limits<unsigned short>::max();
-
-template <typename T_in, typename T_out>
-inline T_out __device__ cast_to(const T_in& in) {
-  return static_cast<T_out>(in);
-}
-
-template <>
-inline float3 __device__ cast_to(const uchar3& in) {
-  return float3{
-      .x = static_cast<float>(in.x),
-      .y = static_cast<float>(in.y),
-      .z = static_cast<float>(in.z),
-  };
-}
-
-template <>
-inline float4 __device__ cast_to(const uchar4& in) {
-  return float4{
-      .x = static_cast<float>(in.x),
-      .y = static_cast<float>(in.y),
-      .z = static_cast<float>(in.z),
-      .w = static_cast<float>(in.w)};
-}
 
 //------------------------------------------------------------------------------
 // Templated Batched Remap Kernel EX (unchanged)
@@ -132,10 +112,10 @@ __global__ void BatchedRemapKernelExOffset(
     int srcImageSizeBytes = src.height * src.pitch;
     const T_in* srcImage = advance_bytes(src.d_ptr, b * srcImageSizeBytes);
     const T_in* src_pos = advance_bytes(srcImage, srcY * src.pitch) + srcX;
-    *dest_pos = cast_to<T_in, T_out>(*src_pos);
+    *dest_pos = perform_cast<T_out>(*src_pos);
   } else {
     if (!no_unmapped_write || srcX != kUnmappedPositionValue) {
-      *dest_pos = cast_to<T_in, T_out>(deflt);
+      *dest_pos = perform_cast<T_out>(deflt);
       if constexpr (sizeof(T_out) / sizeof(BaseScalar_t<T_out>) == 4) {
         // Has an alpha channel, so clear it
         if (srcX == kUnmappedPositionValue) {
@@ -199,7 +179,7 @@ __global__ void BatchedRemapKernelExOffsetAdjust(
     *dest_pos = PixelAdjuster<T_out>::adjust(static_cast<T_out>(*src_pos), adjustment);
   } else {
     if (!no_unmapped_write || srcX != kUnmappedPositionValue) {
-      *dest_pos = cast_to<T_in, T_out>(deflt);
+      *dest_pos = perform_cast<T_out>(deflt);
       if constexpr (sizeof(T_out) / sizeof(BaseScalar_t<T_out>) == 4) {
         // Has an alpha channel, so clear it
         if (srcX == kUnmappedPositionValue) {
