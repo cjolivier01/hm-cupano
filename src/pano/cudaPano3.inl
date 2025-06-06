@@ -72,11 +72,12 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
 
   // Load the seam mask (3‐channel) if soft‐seam, else load single‐channel:
   cv::Mat seam_indexed = control_masks.whole_seam_mask_image; // CV_8UC3 if soft-seam
-  assert(seam_indexed.type() == CV_8UC1);
 
   if (!stitch_context_->is_hard_seam()) {
-    int n_channels = sizeof(T_compute) / sizeof(BaseScalar_t<T_compute>);
-    cv::Mat seam_color = make_n_channel_seam_image(seam_indexed, n_channels);
+    assert(seam_indexed.type() == CV_8UC3);
+    // int n_channels = sizeof(T_compute) / sizeof(BaseScalar_t<T_compute>);
+    // cv::Mat seam_color = make_n_channel_seam_image(seam_indexed, n_channels);
+    cv::Mat seam_color = seam_indexed;
     // Convert to T_compute type (float, etc.) but keep 3 channels
     seam_color.convertTo(seam_color, cudaPixelTypeToCvType(CudaTypeToPixelType<T_compute>::value));
     // Allocate cudaFull0/1/2 with the seam dimensions:
