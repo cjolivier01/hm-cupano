@@ -7,7 +7,7 @@
 namespace hm {
 namespace utils {
 
-void show_image(const std::string& label, const cv::Mat& img, bool wait = true);
+void show_image(const std::string& label, const cv::Mat& img, bool wait = true, float scale = 0.0f);
 void display_scaled_image(const std::string& label, cv::Mat image, float scale = 1.0, bool wait = true);
 
 template <typename PIXEL_T>

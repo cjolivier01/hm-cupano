@@ -8,6 +8,7 @@
 #include <opencv2/opencv.hpp>
 
 #include <fcntl.h>
+#include <opencv4/opencv2/imgproc.hpp>
 #include <stdio.h>
 #include <termios.h>
 #include <unistd.h>
@@ -102,8 +103,19 @@ cv::Mat convert_to_uchar(cv::Mat image) {
   return image;
 }
 
-void show_image(const std::string& label, const cv::Mat& img, bool wait) {
-  cv::imshow(label, convert_to_uchar(img.clone()));
+void show_image(const std::string& label, const cv::Mat& img, bool wait, float scale) {
+  if (scale != 0 && scale != 1) {
+    cv::Size newSize(static_cast<int>(scale * (img.cols + 0.5f)), static_cast<int>(scale * (img.rows + 0.5f)));
+    cv::Mat dest;
+    if (scale < 1) {
+      cv::resize(img, dest, newSize, 0.0, 0.0, cv::INTER_NEAREST);
+    } else {
+      cv::resize(img, dest, newSize, 0.0, 0.0, cv::INTER_LINEAR);
+    }
+    cv::imshow(label, convert_to_uchar(std::move(dest)));
+  } else {
+    cv::imshow(label, convert_to_uchar(img.clone()));
+  }
   cv::waitKey(wait ? 0 : 1);
 }
 
