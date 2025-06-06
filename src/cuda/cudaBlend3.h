@@ -22,6 +22,8 @@
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 
+#include <opencv2/opencv.hpp>
+
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -140,7 +142,23 @@ struct CudaBatchLaplacianBlendContext3 {
   inline void displayPyramids(int channels, float scale, bool wait) const;
 
   void show_image(const std::string& label, std::vector<T*>& vec_d_ptrs, int level, int channels, bool wait);
+
+  cv::Mat download(std::vector<T*>& vec_d_ptrs, int level, int channels);
 };
+
+template <typename T>
+cv::Mat CudaBatchLaplacianBlendContext3<T>::download(std::vector<T*>& vec_d_ptrs, int level, int channels) {
+  T* d_ptr = vec_d_ptrs.at(level);
+  if (channels == 3) {
+    assert(sizeof(T) * channels == sizeof(float3));
+    hm::CudaMat<float3> mat((float3*)d_ptr, 1, widths.at(level), heights.at(level));
+    return mat.download();
+  } else {
+    assert(sizeof(T) * channels == sizeof(float4));
+    hm::CudaMat<float4> mat((float4*)d_ptr, 1, widths.at(level), heights.at(level));
+    return mat.download();
+  }
+}
 
 template <typename T>
 inline void CudaBatchLaplacianBlendContext3<T>::show_image(
