@@ -110,7 +110,7 @@ void show_image(const std::string& label, const cv::Mat& img, bool wait, float s
     if (scale < 1) {
       cv::resize(img, dest, newSize, 0.0, 0.0, cv::INTER_NEAREST);
     } else {
-      cv::resize(img, dest, newSize, 0.0, 0.0, cv::INTER_LINEAR);
+      cv::resize(img, dest, newSize, 0.0, 0.0, cv::INTER_NEAREST/*cv::INTER_LINEAR*/);
     }
     cv::imshow(label, convert_to_uchar(std::move(dest)));
   } else {
