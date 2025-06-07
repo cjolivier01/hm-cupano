@@ -97,8 +97,8 @@ __global__ void FusedBatchedDownsampleKernel(
       bool keep1 = true;
       if (channels == 4) {
         T a1 = in1[idx + 3];
-        alpha1 = max(alpha1, a1);
-        keep1 = (a1 != 0);
+        alpha1 = std::max(alpha1, a1);
+        keep1 = (a1 != T(0));
       }
       if (keep1) {
         for (int c = 0; c < sumCh; ++c)
@@ -110,8 +110,8 @@ __global__ void FusedBatchedDownsampleKernel(
       bool keep2 = true;
       if (channels == 4) {
         T a2 = in2[idx + 3];
-        alpha2 = max(alpha2, a2);
-        keep2 = (a2 != 0);
+        alpha2 = std::max(alpha2, a2);
+        keep2 = (a2 != T(0));
       }
       if (keep2) {
         for (int c = 0; c < sumCh; ++c)
@@ -548,7 +548,7 @@ __global__ void BatchedBlendKernel(
   F_T mm1 = F_ONE - m;
   int max_channel = std::min(channels, 3);
   if (channels == 4) {
-    constexpr T T_ZERO = static_cast<T>(0);
+    const T T_ZERO = static_cast<T>(0);
     const T alpha1 = lap1Image[idx + 3];
     const T alpha2 = lap2Image[idx + 3];
     if (alpha1 == T_ZERO) {
@@ -1042,11 +1042,13 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
       int channels,                                                    \
       cudaStream_t stream);
 
+INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(half)
 INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(float)
 INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(unsigned char)
 // INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(__half)
 // INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(__nv_bfloat16)
 
+INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT(half)
 INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT(float)
 INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT(unsigned char)
 // INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT(__half)
