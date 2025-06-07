@@ -17,6 +17,8 @@
 
 #define PRINT_STRANGE_ALPHAS
 
+// #define EXTRA_ALPHA_CHECKS
+
 // =============================================================================
 // Macro to check CUDA calls and return on error.
 #define CUDA_CHECK(call)                                                                          \
@@ -38,7 +40,7 @@
 // -----------------------------------------------------------------------------
 // Fused downsample kernel for two images.
 // "channels" is either 3 (RGB) or 4 (RGBA). Each output pixel is computed by averaging a 2x2 block.
-#if 1
+#ifdef EXTRA_ALPHA_CHECKS
 // Fused downsample kernel for TWO images (RGB or RGBA).
 // Each output pixel is the average of a 2×2 block in each input.
 // If channels==4, any pixel with alpha==0 is omitted from its image’s average.
@@ -349,7 +351,7 @@ __global__ void BatchedDownsampleKernelMask(
 // Batched computation of the Laplacian.
 // For each channel, compute Laplacian = gaussHigh - upsample(gaussLow).
 // For RGBA images (channels==4), the alpha channel (c==3) is simply copied.
-#if 1
+#ifdef EXTRA_ALPHA_CHECKS
 template <typename T, typename F_T>
 __global__ void BatchedComputeLaplacianKernel(
     const T* __restrict__ gaussHigh,
