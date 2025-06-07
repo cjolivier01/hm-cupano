@@ -1,10 +1,6 @@
 #include "cudaBlend.h"
 #include "cudaTypes.h"
 
-// #if (CUDART_VERSION >= 11000)
-// #include <cuda_bf16.h>
-// #endif
-
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 
@@ -17,7 +13,7 @@
 
 #define PRINT_STRANGE_ALPHAS
 
-#define EXTRA_ALPHA_CHECKS
+// #define EXTRA_ALPHA_CHECKS
 
 // =============================================================================
 // Macro to check CUDA calls and return on error.
