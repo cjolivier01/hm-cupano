@@ -17,7 +17,7 @@
 
 #define PRINT_STRANGE_ALPHAS
 
-// #define EXTRA_ALPHA_CHECKS
+#define EXTRA_ALPHA_CHECKS
 
 // =============================================================================
 // Macro to check CUDA calls and return on error.
