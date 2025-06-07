@@ -247,6 +247,109 @@ __global__ void BatchedDownsampleKernelMask(
 // Batched computation of the Laplacian.
 // For each channel, compute Laplacian = gaussHigh - upsample(gaussLow).
 // For RGBA images (channels==4), the alpha channel (c==3) is simply copied.
+#if 1
+template <typename T, typename F_T>
+__global__ void BatchedComputeLaplacianKernel(
+    const T* __restrict__ gaussHigh,
+    int highWidth,
+    int highHeight,
+    const T* __restrict__ gaussLow,
+    int lowWidth,
+    int lowHeight,
+    T* __restrict__ laplacian,
+    int batchSize,
+    int channels) {
+  int b = blockIdx.z;
+  if (b >= batchSize)
+    return;
+
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x >= highWidth || y >= highHeight)
+    return;
+
+  int highImageSize = highWidth * highHeight * channels;
+  int lowImageSize = lowWidth * lowHeight * channels;
+  const T* highImage = gaussHigh + b * highImageSize;
+  const T* lowImage = gaussLow + b * lowImageSize;
+  T* lapImage = laplacian + b * highImageSize;
+
+  // map (x,y) in high-res to fractional coord in low-res
+  F_T gx = static_cast<F_T>(x) / 2.0f;
+  F_T gy = static_cast<F_T>(y) / 2.0f;
+  int gxi = floorf(gx);
+  int gyi = floorf(gy);
+  F_T dx = gx - static_cast<F_T>(gxi);
+  F_T dy = gy - static_cast<F_T>(gyi);
+  int gxi1 = min(gxi + 1, lowWidth - 1);
+  int gyi1 = min(gyi + 1, lowHeight - 1);
+
+  int idxHigh = (y * highWidth + x) * channels;
+
+  for (int c = 0; c < channels; ++c) {
+    if (channels == 4 && c == 3) {
+      // alpha channel: just copy high-res alpha
+      lapImage[idxHigh + c] = highImage[idxHigh + c];
+    } else {
+      // gather neighbor indices
+      int base00 = (gyi * lowWidth + gxi) * channels;
+      int base10 = (gyi * lowWidth + gxi1) * channels;
+      int base01 = (gyi1 * lowWidth + gxi) * channels;
+      int base11 = (gyi1 * lowWidth + gxi1) * channels;
+      int idx00 = base00 + c;
+      int idx10 = base10 + c;
+      int idx01 = base01 + c;
+      int idx11 = base11 + c;
+
+      // sample values
+      F_T v00 = static_cast<F_T>(lowImage[idx00]);
+      F_T v10 = static_cast<F_T>(lowImage[idx10]);
+      F_T v01 = static_cast<F_T>(lowImage[idx01]);
+      F_T v11 = static_cast<F_T>(lowImage[idx11]);
+
+      F_T upVal;
+      if (channels == 4) {
+        // compute bilinear weights
+        F_T w00 = (1 - dx) * (1 - dy);
+        F_T w10 = dx * (1 - dy);
+        F_T w01 = (1 - dx) * dy;
+        F_T w11 = dx * dy;
+
+        // accumulate only non-transparent neighbors
+        F_T sumW = 0, sumV = 0;
+        // alpha offsets
+        int aOff = 3;
+        if (lowImage[base00 + aOff] != T(0)) {
+          sumW += w00;
+          sumV += v00 * w00;
+        }
+        if (lowImage[base10 + aOff] != T(0)) {
+          sumW += w10;
+          sumV += v10 * w10;
+        }
+        if (lowImage[base01 + aOff] != T(0)) {
+          sumW += w01;
+          sumV += v01 * w01;
+        }
+        if (lowImage[base11 + aOff] != T(0)) {
+          sumW += w11;
+          sumV += v11 * w11;
+        }
+
+        upVal = (sumW > 0) ? (sumV / sumW) : F_T(0);
+      } else {
+        // standard bilinear
+        F_T v0 = v00 * (1 - dx) + v10 * dx;
+        F_T v1 = v01 * (1 - dx) + v11 * dx;
+        upVal = v0 * (1 - dy) + v1 * dy;
+      }
+
+      // laplacian = high-res - upsampled
+      lapImage[idxHigh + c] = static_cast<T>(static_cast<F_T>(highImage[idxHigh + c]) - upVal);
+    }
+  }
+}
+#else
 template <typename T, typename F_T>
 __global__ void BatchedComputeLaplacianKernel(
     const T* __restrict__ gaussHigh,
@@ -304,7 +407,7 @@ __global__ void BatchedComputeLaplacianKernel(
     }
   }
 }
-
+#endif
 // -----------------------------------------------------------------------------
 // Batched blend kernel for images.
 // For each channel the two Laplacian pyramids are blended with a weighted average.

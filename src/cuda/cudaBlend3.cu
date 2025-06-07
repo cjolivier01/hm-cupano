@@ -92,7 +92,6 @@ inline __device__ bool is_strange_alpha(const T& alpha) {
 // Fused downsample kernel for THREE images (RGB or RGBA).
 // Each output pixel is computed by averaging a 2×2 block in each of the three inputs.
 // "channels" is either 3 (RGB) or 4 (RGBA). Alpha channel is max-pooled.
-#if 1
 template <typename T, typename F_T = float>
 __global__ void FusedBatchedDownsampleKernel3(
     const T* __restrict__ input1,
@@ -210,100 +209,7 @@ __global__ void FusedBatchedDownsampleKernel3(
   finalize(out2, sums2, count2, alpha2);
   finalize(out3, sums3, count3, alpha3);
 }
-#else
-template <typename T, typename F_T = float>
-__global__ void FusedBatchedDownsampleKernel3(
-    const T* __restrict__ input1,
-    const T* __restrict__ input2,
-    const T* __restrict__ input3,
-    int inWidth,
-    int inHeight,
-    T* __restrict__ output1,
-    T* __restrict__ output2,
-    T* __restrict__ output3,
-    int outWidth,
-    int outHeight,
-    int batchSize,
-    int channels) {
-  int b = blockIdx.z;
-  if (b >= batchSize)
-    return;
 
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= outWidth || y >= outHeight)
-    return;
-
-  int inImageSize = inWidth * inHeight * channels;
-  int outImageSize = outWidth * outHeight * channels;
-  const T* inImage1 = input1 + b * inImageSize;
-  const T* inImage2 = input2 + b * inImageSize;
-  const T* inImage3 = input3 + b * inImageSize;
-  T* outImage1 = output1 + b * outImageSize;
-  T* outImage2 = output2 + b * outImageSize;
-  T* outImage3 = output3 + b * outImageSize;
-
-  int inX = x * 2;
-  int inY = y * 2;
-  assert(channels <= 4);
-  F_T sums1[3] = {0, 0, 0};
-  F_T sums2[3] = {0, 0, 0};
-  F_T sums3[3] = {0, 0, 0};
-  T alpha1 = 0, alpha2 = 0, alpha3 = 0;
-  const int sum_channels = std::min(channels, 3);
-  int count = 0;
-
-  for (int dy = 0; dy < 2; dy++) {
-    for (int dx = 0; dx < 2; dx++) {
-      int ix = inX + dx;
-      int iy = inY + dy;
-      if (ix < inWidth && iy < inHeight) {
-        int idx = (iy * inWidth + ix) * channels;
-        for (int c = 0; c < sum_channels; c++) {
-          sums1[c] += static_cast<F_T>(inImage1[idx + c]);
-          sums2[c] += static_cast<F_T>(inImage2[idx + c]);
-          sums3[c] += static_cast<F_T>(inImage3[idx + c]);
-        }
-        if (channels == 4) {
-          alpha1 = max(alpha1, inImage1[idx + 3]);
-          // if (is_strange_alpha(alpha1)) {
-          //   printf("FusedBatchedDownsampleKernel3(): Strange alpha1: %f\n", (float)alpha1);
-          // }
-          alpha2 = max(alpha2, inImage2[idx + 3]);
-          // if (is_strange_alpha(alpha2)) {
-          //   printf("FusedBatchedDownsampleKernel3(): Strange alpha2: %f\n", (float)alpha2);
-          // }
-          alpha3 = max(alpha3, inImage3[idx + 3]);
-          // if (is_strange_alpha(alpha3)) {
-          //   printf("FusedBatchedDownsampleKernel3(): Strange alpha3: %f\n", (float)alpha3);
-          // }
-        }
-        count++;
-      }
-    }
-  }
-
-  int outIdx = (y * outWidth + x) * channels;
-  for (int c = 0; c < sum_channels; c++) {
-    outImage1[outIdx + c] = static_cast<T>(sums1[c] / count);
-    outImage2[outIdx + c] = static_cast<T>(sums2[c] / count);
-    outImage3[outIdx + c] = static_cast<T>(sums3[c] / count);
-  }
-  if (channels == 4) {
-    outImage1[outIdx + 3] = alpha1;
-    outImage2[outIdx + 3] = alpha2;
-    outImage3[outIdx + 3] = alpha3;
-
-#ifdef PRINT_STRANGE_ALPHAS
-    if ((alpha1 != T_CONST(0) && alpha1 != T_CONST(255)) || (alpha2 != T_CONST(0) && alpha2 != T_CONST(255)) ||
-        (alpha3 != T_CONST(0) && alpha3 != T_CONST(255))) {
-      printf(
-          "FusedBatchedDownsampleKernel3(): Strange alphas %f, %f, %f\n", (float)alpha1, (float)alpha2, (float)alpha3);
-    }
-#endif
-  }
-}
-#endif
 // -----------------------------------------------------------------------------
 // Fused downsample kernel for a **3-channel mask**.
 // Each output mask-pixel is the per-channel average over the 2×2 block.
@@ -348,7 +254,6 @@ __global__ void FusedBatchedDownsampleMask3(
 // -----------------------------------------------------------------------------
 // Batched computation of the Laplacian for **one** image (RGB or RGBA).
 // We will launch this separately for each of the three Gaussian pyramids.
-#if 1
 template <typename T, typename F_T>
 __global__ void BatchedComputeLaplacianKernel(
     const T* __restrict__ gaussHigh,
@@ -450,70 +355,7 @@ __global__ void BatchedComputeLaplacianKernel(
     }
   }
 }
-#else
-template <typename T, typename F_T>
-__global__ void BatchedComputeLaplacianKernel(
-    const T* __restrict__ gaussHigh,
-    int highWidth,
-    int highHeight,
-    const T* __restrict__ gaussLow,
-    int lowWidth,
-    int lowHeight,
-    T* __restrict__ laplacian,
-    int batchSize,
-    int channels) {
-  int b = blockIdx.z;
-  if (b >= batchSize)
-    return;
 
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= highWidth || y >= highHeight)
-    return;
-
-  int highImageSize = highWidth * highHeight * channels;
-  int lowImageSize = lowWidth * lowHeight * channels;
-  const T* highImage = gaussHigh + b * highImageSize;
-  const T* lowImage = gaussLow + b * lowImageSize;
-  T* lapImage = laplacian + b * highImageSize;
-
-  F_T gx = static_cast<F_T>(x) / 2.0f;
-  F_T gy = static_cast<F_T>(y) / 2.0f;
-  int gxi = floorf(gx);
-  int gyi = floorf(gy);
-  F_T dx = gx - static_cast<F_T>(gxi);
-  F_T dy = gy - static_cast<F_T>(gyi);
-  int gxi1 = min(gxi + 1, lowWidth - 1);
-  int gyi1 = min(gyi + 1, lowHeight - 1);
-
-  int idxHigh = (y * highWidth + x) * channels;
-  for (int c = 0; c < channels; c++) {
-    if (channels == 4 && c == 3) {
-      // For the alpha channel, copy the high-res value.
-      lapImage[idxHigh + c] = highImage[idxHigh + c];
-      // if (is_strange_alpha(lapImage[idxHigh + c])) {
-      //   printf("BatchedComputeLaplacianKernel(): Strange lapImage[idxHigh + c]: %f\n", (float)lapImage[idxHigh + c]);
-      // }
-    } else {
-      int idx00 = (gyi * lowWidth + gxi) * channels + c;
-      int idx10 = (gyi * lowWidth + gxi1) * channels + c;
-      int idx01 = (gyi1 * lowWidth + gxi) * channels + c;
-      int idx11 = (gyi1 * lowWidth + gxi1) * channels + c;
-      F_T val00 = static_cast<F_T>(lowImage[idx00]);
-      F_T val10 = static_cast<F_T>(lowImage[idx10]);
-      F_T val01 = static_cast<F_T>(lowImage[idx01]);
-      F_T val11 = static_cast<F_T>(lowImage[idx11]);
-
-      // bilinear interpolation from low to high
-      F_T val0 = val00 * (1.0f - dx) + val10 * dx;
-      F_T val1 = val01 * (1.0f - dx) + val11 * dx;
-      F_T upVal = val0 * (1.0f - dy) + val1 * dy;
-
-      lapImage[idxHigh + c] = static_cast<T>(static_cast<F_T>(highImage[idxHigh + c]) - upVal);
-    }
-  }
-}
-#endif
 // -----------------------------------------------------------------------------
 // Batched blend kernel for THREE images.
 // For each channel, the three Laplacian pyramids are blended with a weighted average
