@@ -851,7 +851,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     }
   }
 
-  SHOWIMGLVL_SCALED(d_gauss1, 0, 10);
+  // SHOWIMGLVL_SCALED(d_gauss1, 0, 10);
   // SHOWIMGLVL(d_gauss2, 0);
   // SHOWIMGLVL(d_gauss3, 0);
 
@@ -886,7 +886,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
 
     CUDA_CHECK(cudaGetLastError());
 
-    SHOWIMGLVL_SCALEDSQ(d_gauss1, level, 4.0);
+    // SHOWIMGLVL_SCALEDSQ(d_gauss1, level, 4.0);
 
     // context.show_image(std::string("d_gauss1 level ") + std::to_string(level), context.d_gauss1, level, channels,
     // true); context.show_image(std::string("d_gauss2 level ") + std::to_string(level), context.d_gauss2, level,
@@ -989,7 +989,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     // SHOWIMGLVL_SCALED(d_lap3, level, 4.0);
     // SHOWIMGLVL_SCALED(d_blend, level, 4.0);
 
-    SHOWIMGLVL_SCALEDSQ(d_lap1, level, 4.0);
+    // SHOWIMGLVL_SCALEDSQ(d_lap1, level, 4.0);
     // SHOWIMGLVL_SCALEDSQ(d_lap2, level, 4.0);
     // SHOWIMGLVL_SCALEDSQ(d_lap3, level, 4.0);
     // SHOWIMGLVL_SCALEDSQ(d_blend, level, 4.0);
@@ -1062,7 +1062,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     // SHOWIMGLOCAL(d_reconstruct, level);
   }
 
-  print_min_max(context, context.d_reconstruct, 0, channels);
+  // print_min_max(context, context.d_reconstruct, 0, channels);
 
   context.initialized = true;
   return cudaSuccess;
