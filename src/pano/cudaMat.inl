@@ -318,11 +318,14 @@ cudaError_t CudaMat<T>::upload(const cv::Mat& cpu_mat, int batch_item, cudaStrea
   
   // Ensure the pitch is aligned to the size of T.
   assert(pitch() % sizeof(T) == 0);
+
+#ifndef NDEBUG
   // Calculate the number of elements per row based on the pitch.
   int pitch_cols = pitch() / sizeof(T);
   // Verify that the pitch is sufficient for the expected number of columns.
   
   assert(pitch_cols == cols_);  // not supporting differeing pitch atm
+#endif
 
   size_t elemSize = cudaPixelElementSize(type_);
   size_t size_each = static_cast<size_t>(rows_ * cols_) * elemSize;

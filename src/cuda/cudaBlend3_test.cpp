@@ -37,14 +37,17 @@ struct CudaVector {
   using Type = float;
   CudaVector(std::vector<Type>& vec) : vec_(vec) {
     cudaError_t cuerr = cudaMalloc(&d_ptr, vec_.size() * sizeof(Type));
+    (void)cuerr;
     assert(cuerr == cudaError_t::cudaSuccess);
     cuerr = cudaMemcpy(d_ptr, vec_.data(), vec_.size() * sizeof(Type), cudaMemcpyKind::cudaMemcpyHostToDevice);
+    (void)cuerr;
     assert(cuerr == cudaError_t::cudaSuccess);
   }
   ~CudaVector() {
     if (d_ptr) {
       cudaError_t cuerr =
           cudaMemcpy(vec_.data(), d_ptr, vec_.size() * sizeof(Type), cudaMemcpyKind::cudaMemcpyDeviceToHost);
+      (void)cuerr;
       assert(cuerr == cudaError_t::cudaSuccess);
       cudaFree(d_ptr);
     }

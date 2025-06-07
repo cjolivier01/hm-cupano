@@ -26,13 +26,6 @@ cuda_library(
         "-Xcompiler=-fPIC",
         "-Wno-deprecated-gpu-targets",
         "-Xcompiler=-fdiagnostics-color=always",
-        # Debug-only flags
-        # "-Xcompiler=-O0",
-        # "-Xcompiler=-g",
-        # "-G",
-        # "-g",
-        # "-keep",
-        # "-O0",
     ] + select({
         # only in debug mode:
         ":debug_build": [

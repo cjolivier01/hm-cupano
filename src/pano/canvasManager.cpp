@@ -39,11 +39,11 @@ void CanvasManager::updateMinimizeBlend(const cv::Size& remapped_size_1, const c
 
     // Define the seam box (the region to be blended) with extra padding.
     int box_x1 = _x2 - _overlap_pad;
-    int box_y1 = std::max(0, std::min(_y1, _y2) - _overlap_pad);
+    // int box_y1 = std::max(0, std::min(_y1, _y2) - _overlap_pad);
 
     int box_x2 = width_1 + _overlap_pad;
-    int box_y2 =
-        std::min(canvas_info_.height, std::max(_y1 + _remapper_1.height, _y2 + _remapper_2.height) + _overlap_pad);
+    // int box_y2 =
+    //     std::min(canvas_info_.height, std::max(_y1 + _remapper_1.height, _y2 + _remapper_2.height) + _overlap_pad);
 
     // _padded_blended_tlbr = {box_x1, box_y1, box_x2, box_y2};
 
