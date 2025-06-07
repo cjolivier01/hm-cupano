@@ -2,7 +2,8 @@
 #include "cudaBlend3.h"
 #include "cudaTypes.h"
 #include "cudaUtils.cuh"
-#include "src/utils/_virtual_includes/show_image/cupano/utils/showImage.h"
+#include "cupano/utils/showImage.h"
+#include "cupano/utils/imageUtils.h"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
