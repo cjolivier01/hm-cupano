@@ -333,6 +333,10 @@ def main() -> None:
             print(f"[sync] skipping for {tgt} (not a video pair)")
             offsets.append(0.0)
 
+    # shift all offsets so that the minimum is 0 (making every offset ≥ 0)
+    min_offset: float = min(offsets)
+    offsets = [off - min_offset for off in offsets]
+
     # extract frames
     frames: List[np.ndarray] = [
         extract_frame(path, off) for path, off in zip(files, offsets)
