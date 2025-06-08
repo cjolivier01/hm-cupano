@@ -2,8 +2,8 @@
 #include "cudaBlend3.h"
 #include "cudaTypes.h"
 #include "cudaUtils.cuh"
-#include "cupano/utils/showImage.h"
 #include "cupano/utils/imageUtils.h"
+#include "cupano/utils/showImage.h"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -93,7 +93,7 @@ inline __device__ bool is_strange_alpha(const T& alpha) {
 // Fused downsample kernel for THREE images (RGB or RGBA).
 // Each output pixel is computed by averaging a 2×2 block in each of the three inputs.
 // "channels" is either 3 (RGB) or 4 (RGBA). Alpha channel is max-pooled.
-template <typename T, typename F_T = float>
+template <typename T, typename F_T = float, int CHANNELS>
 __global__ void FusedBatchedDownsampleKernel3(
     const T* __restrict__ input1,
     const T* __restrict__ input2,
@@ -105,8 +105,7 @@ __global__ void FusedBatchedDownsampleKernel3(
     T* __restrict__ output3,
     int outWidth,
     int outHeight,
-    int batchSize,
-    int channels) {
+    int batchSize) {
   int b = blockIdx.z;
   if (b >= batchSize)
     return;
@@ -116,8 +115,8 @@ __global__ void FusedBatchedDownsampleKernel3(
   if (x >= outWidth || y >= outHeight)
     return;
 
-  const int inImageSize = inWidth * inHeight * channels;
-  const int outImageSize = outWidth * outHeight * channels;
+  const int inImageSize = inWidth * inHeight * CHANNELS;
+  const int outImageSize = outWidth * outHeight * CHANNELS;
   const T* in1 = input1 + b * inImageSize;
   const T* in2 = input2 + b * inImageSize;
   const T* in3 = input3 + b * inImageSize;
@@ -129,7 +128,7 @@ __global__ void FusedBatchedDownsampleKernel3(
   int inY = y * 2;
 
   // we only average RGB channels
-  const int sumCh = std::min(channels, 3);
+  const int sumCh = CHANNELS > 3 ? 3 : CHANNELS;
 
   // accumulators for each image
   F_T sums1[3] = {0}, sums2[3] = {0}, sums3[3] = {0};
@@ -145,11 +144,11 @@ __global__ void FusedBatchedDownsampleKernel3(
       if (ix >= inWidth || iy >= inHeight)
         continue;
 
-      int idx = (iy * inWidth + ix) * channels;
+      int idx = (iy * inWidth + ix) * CHANNELS;
 
       // --- IMAGE 1 ---
       bool keep1 = true;
-      if (channels == 4) {
+      if constexpr (CHANNELS == 4) {
         T a = in1[idx + 3];
         alpha1 = max(alpha1, a);
         keep1 = (a != 0);
@@ -162,7 +161,7 @@ __global__ void FusedBatchedDownsampleKernel3(
 
       // --- IMAGE 2 ---
       bool keep2 = true;
-      if (channels == 4) {
+      if constexpr (CHANNELS == 4) {
         T a = in2[idx + 3];
         alpha2 = max(alpha2, a);
         keep2 = (a != 0);
@@ -175,7 +174,7 @@ __global__ void FusedBatchedDownsampleKernel3(
 
       // --- IMAGE 3 ---
       bool keep3 = true;
-      if (channels == 4) {
+      if constexpr (CHANNELS == 4) {
         T a = in3[idx + 3];
         alpha3 = max(alpha3, a);
         keep3 = (a != 0);
@@ -189,7 +188,7 @@ __global__ void FusedBatchedDownsampleKernel3(
   }
 
   // write out
-  int outIdx = (y * outWidth + x) * channels;
+  int outIdx = (y * outWidth + x) * CHANNELS;
 
   // helper lambda to finalize each image
   auto finalize = [&](T* outImg, F_T sums[3], int count, T alpha) {
@@ -201,7 +200,7 @@ __global__ void FusedBatchedDownsampleKernel3(
       for (int c = 0; c < sumCh; ++c)
         outImg[outIdx + c] = T(0);
     }
-    if (channels == 4) {
+    if constexpr (CHANNELS == 4) {
       outImg[outIdx + 3] = alpha; // still max‐pooled over entire block
     }
   };
@@ -640,21 +639,36 @@ cudaError_t cudaBatchedLaplacianBlend3(
     int outH = heights[level + 1];
 
     dim3 gridImg((outW + block.x - 1) / block.x, (outH + block.y - 1) / block.y, batchSize);
-
-    // Downsample the three image sets
-    FusedBatchedDownsampleKernel3<T><<<gridImg, block, 0, stream>>>(
-        d_gauss1[level],
-        d_gauss2[level],
-        d_gauss3[level],
-        inW,
-        inH,
-        d_gauss1[level + 1],
-        d_gauss2[level + 1],
-        d_gauss3[level + 1],
-        outW,
-        outH,
-        batchSize,
-        channels);
+    assert(channels == 3 || channels == 4);
+    if (channels == 3) {
+      // Downsample the three image sets
+      FusedBatchedDownsampleKernel3<T, F_T, 3><<<gridImg, block, 0, stream>>>(
+          d_gauss1[level],
+          d_gauss2[level],
+          d_gauss3[level],
+          inW,
+          inH,
+          d_gauss1[level + 1],
+          d_gauss2[level + 1],
+          d_gauss3[level + 1],
+          outW,
+          outH,
+          batchSize);
+    } else {
+      // Downsample the three image sets
+      FusedBatchedDownsampleKernel3<T, F_T, 4><<<gridImg, block, 0, stream>>>(
+          d_gauss1[level],
+          d_gauss2[level],
+          d_gauss3[level],
+          inW,
+          inH,
+          d_gauss1[level + 1],
+          d_gauss2[level + 1],
+          d_gauss3[level + 1],
+          outW,
+          outH,
+          batchSize);
+    }
     CUDA_CHECK(cudaGetLastError());
 
     // Downsample the 3-channel mask (non-batched)
@@ -867,20 +881,38 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
 
     dim3 gridImg((wL + block.x - 1) / block.x, (hL + block.y - 1) / block.y, context.batchSize);
 
-    // Downsample the three image sets
-    FusedBatchedDownsampleKernel3<T><<<gridImg, block, 0, stream>>>(
-        context.d_gauss1[level],
-        context.d_gauss2[level],
-        context.d_gauss3[level],
-        wH,
-        hH,
-        context.d_gauss1[level + 1],
-        context.d_gauss2[level + 1],
-        context.d_gauss3[level + 1],
-        wL,
-        hL,
-        context.batchSize,
-        channels);
+    assert(channels == 3 || channels == 4);
+    if (channels == 3) {
+      // Downsample the three image sets
+      // Downsample the three image sets
+      FusedBatchedDownsampleKernel3<T, F_T, 3><<<gridImg, block, 0, stream>>>(
+          context.d_gauss1[level],
+          context.d_gauss2[level],
+          context.d_gauss3[level],
+          wH,
+          hH,
+          context.d_gauss1[level + 1],
+          context.d_gauss2[level + 1],
+          context.d_gauss3[level + 1],
+          wL,
+          hL,
+          context.batchSize);
+    } else {
+      // Downsample the three image sets
+      // Downsample the three image sets
+      FusedBatchedDownsampleKernel3<T, F_T, 4><<<gridImg, block, 0, stream>>>(
+          context.d_gauss1[level],
+          context.d_gauss2[level],
+          context.d_gauss3[level],
+          wH,
+          hH,
+          context.d_gauss1[level + 1],
+          context.d_gauss2[level + 1],
+          context.d_gauss3[level + 1],
+          wL,
+          hL,
+          context.batchSize);
+    }
 
     // print_min_max(context, context.d_gauss1, 0, channels);
     // print_min_max(context, context.d_gauss1, 1, channels);

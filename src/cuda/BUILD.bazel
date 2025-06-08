@@ -24,6 +24,7 @@ cuda_library(
     ],
     copts = [
         "-Xcompiler=-fPIC",
+        "-Xcompiler=-std=c++17",
         "-Wno-deprecated-gpu-targets",
         "-Xcompiler=-fdiagnostics-color=always",
     ] + select({
