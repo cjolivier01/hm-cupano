@@ -16,26 +16,19 @@ cc_library(
     name = "cuda_matrix",
     srcs = [
         "cudaMat.cpp",
-        "showImage.cpp",
-        "cudaGLWindow.cpp",
     ],
     hdrs = [
         "cudaMat.h",
         "cudaMat.inl",
-        "showImage.h",
-        "cudaGLWindow.h",
     ],
     copts = [
-    ],
-    linkopts = [
-      "-lglfw",
-      "-lGLEW",
-      "-lGL",
     ],
     include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
     deps = [
-        "//src/cuda:cuda_blend_cuda_lib",
+        ":cv_types",
+        "//src/cuda:cuda_types",
+        "@local_cuda//:cuda_runtime",
         "@opencv_linux//:opencv",
     ],
 )
@@ -44,18 +37,33 @@ cc_library(
     name = "canvas",
     srcs = [
         "canvasManager.cpp",
+        "canvasManager3.cpp",
         "controlMasks.cpp",
+        "controlMasks3.cpp",
     ],
     hdrs = [
         "canvasManager.h",
+        "canvasManager3.h",
         "controlMasks.h",
+        "controlMasks3.h",
     ],
     copts = [
     ],
     include_prefix = INCLUDE_PREFIX,
     linkopts = [
-      "-ltiff",
+        "-ltiff",
+        "-lpng",
     ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@opencv_linux//:opencv",
+    ],
+)
+
+cc_library(
+    name = "cv_types",
+    hdrs = ["cvTypes.h"],
+    include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
     deps = [
         "@opencv_linux//:opencv",
@@ -66,18 +74,32 @@ cc_library(
     name = "cuda_pano",
     srcs = [
         "cudaPano.cpp",
+        "cudaPano3.cpp",
     ],
     hdrs = [
         "cudaPano.h",
         "cudaPano.inl",
+        "cudaPano3.h",
+        "cudaPano3.inl",
     ],
     copts = [
     ],
     include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
     deps = [
-        ":cuda_matrix",
+        ":cv_types",
         ":canvas",
+        ":cuda_matrix",
+        "//src/utils",
     ],
 )
 
+cc_test(
+  name = "cudaPano3_test",
+  srcs = ["cudaPano3_test.cpp"],
+  deps = [
+    ":cuda_pano",
+    "@googletest//:gtest",
+    "@googletest//:gtest_main",
+  ]
+)

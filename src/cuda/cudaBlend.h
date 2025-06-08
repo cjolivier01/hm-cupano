@@ -13,7 +13,8 @@
 
 #pragma once
 
-#include "cudaTypes.h"
+#include "src/cuda/cudaTypes.h"
+#include "src/utils/showImage.h"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -117,14 +118,6 @@ struct CudaBatchLaplacianBlendContext {
   std::vector<T*> d_resonstruct; ///< Device pointers for temporary reconstruction buffers.
   bool initialized{false}; ///< Flag indicating whether the context has been initialized.
 
-  ///////////////////////////////////////////////////////////////////////////////
-  // Member function to copy each pyramid level to host, build a composite image,
-  // and display it in an OpenCV window. The images are arranged vertically from
-  // smallest (top) to largest (bottom).
-  // For pyramids that hold multi-channel image data (e.g. Gaussian, Laplacian, Blended),
-  // pass the appropriate number of channels. For a mask, use 1.
-  ///////////////////////////////////////////////////////////////////////////////
-  void displayPyramids(int channels, float scale = 1.0) const;
 };
 /**
  * @brief Performs batched Laplacian blending on images.
@@ -183,3 +176,4 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     CudaBatchLaplacianBlendContext<T>& context,
     int channels,
     cudaStream_t stream);
+

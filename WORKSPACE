@@ -30,3 +30,11 @@ new_git_repository(
     tag="0.8.0",
     remote = "https://github.com/jbeder/yaml-cpp.git",
 )
+
+# Choose the most recent version available at
+# https://registry.bazel.build/modules/googletest
+new_git_repository(
+    name = "googletest",
+    tag = "v1.17.0",
+    remote = "https://github.com/google/googletest.git",
+)

@@ -1,36 +1,50 @@
-load("@rules_cuda//cuda:defs.bzl", "cuda_library")
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cuda//cuda:defs.bzl", "cuda_library")
 
 INCLUDE_PREFIX = "cupano/cuda"
+
+config_setting(
+    name = "debug_build",
+    values = {"compilation_mode": "dbg"},
+)
 
 cuda_library(
     name = "cuda_blend_cuda_lib",
     srcs = [
         "cudaBlend.cu",
+        "cudaBlend3.cu",
+        "cudaBlendN.cu",
         "cudaImageAdjust.cu",
         "cudaMakeFull.cu",
         "cudaRemap.cu",
         "cudaStabilize.cu",
+        "cudaUtils.cu",
     ],
     hdrs = [
+        "cudaUtils.cuh",
     ],
     copts = [
-        # "-std=c++17",
-        # "-Xcompiler=-std=c++17",
         "-Xcompiler=-fPIC",
-        # "-Xcompiler=-rdynamic",
-        #"-Xcompiler=-O0",
-        "-Xcompiler=-g",
+        "-Xcompiler=-std=c++17",
         "-Wno-deprecated-gpu-targets",
-        #"-G",
-        "-g",
-        #"-keep",
-        #"-O0",
-    ],
-    # includes = ["."],
+        "-Xcompiler=-fdiagnostics-color=always",
+    ] + select({
+        # only in debug mode:
+        ":debug_build": [
+            "-Xcompiler=-O0",
+            "-Xcompiler=-g",
+            "-G",
+            "-g",
+            "-keep",
+            "-O0",
+        ],
+        # in all other modes, no extra flags
+        "//conditions:default": [],
+    }),
     visibility = ["//visibility:public"],
     deps = [
         ":cuda_blend_cuda_lib_headers",
+        "//src/utils:show_image",
         "@local_cuda//:cuda_runtime",
         "@opencv_linux//:opencv",
     ],
@@ -42,16 +56,31 @@ cc_library(
     ],
     hdrs = [
         "cudaBlend.h",
-        "cudaBlendShow.h",
+        "cudaBlend3.h",
+        "cudaBlendN.h",
         "cudaImageAdjust.h",
         "cudaMakeFull.h",
         "cudaRemap.h",
         "cudaStatus.h",
-        "cudaTypes.h",
     ],
     include_prefix = INCLUDE_PREFIX,
     deps = [
         ":cuda_status",
+        ":cuda_types",
+    ],
+)
+
+cc_library(
+    name = "cuda_types",
+    srcs = [
+    ],
+    hdrs = [
+        "cudaTypes.h",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    visibility = ["//visibility:public"],
+    deps = [
+        "@local_cuda//:cuda_runtime",
     ],
 )
 
@@ -61,4 +90,14 @@ cc_library(
         "cudaStatus.h",
     ],
     include_prefix = INCLUDE_PREFIX,
+)
+
+cc_test(
+    name = "cudaBlend3_test",
+    srcs = ["cudaBlend3_test.cpp"],
+    deps = [
+        ":cuda_blend_cuda_lib",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
 )

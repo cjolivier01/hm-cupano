@@ -1,8 +1,9 @@
 #pragma once
 
-#include "cudaBlend.h"
+#include "src/cuda/cudaBlend.h"
+#include "src/cuda/cudaBlend3.h"
+#include "src/utils/showImage.h"
 
-#include <memory>
 #include <string>
 #include <vector>
 
@@ -47,7 +48,7 @@ inline int getCVTypeForPixel(int channels) {
   return -1; // error
 }
 
-inline void set_alpha_pixels(cv::Mat& image, const cv::Vec3b& color) {
+inline void set_transparent_pixels_to_color(cv::Mat& image, const cv::Vec3b& color) {
   // Check that the image is non-empty and has 4 channels.
   if (image.empty() || image.channels() != 4) {
     return;
@@ -71,12 +72,12 @@ inline void set_alpha_pixels(cv::Mat& image, const cv::Vec3b& color) {
 
 inline cv::Mat convert_to_uchar(cv::Mat& image) {
   if (image.depth() == CV_32F || image.depth() == CV_64F) {
-    image.convertTo(image, image.depth(), 1.0 / 255.0);
-    set_alpha_pixels(image, {255, 0, 0});
+    image.convertTo(image, image.depth(), 1.0 /* / 255.0*/);
+    set_transparent_pixels_to_color(image, {255, 0, 0});
     return image;
   }
   // For non-floating point images, return a copy (or handle as needed)
-  set_alpha_pixels(image, {255, 0, 0});
+  set_transparent_pixels_to_color(image, {255, 0, 0});
   return image;
 }
 
@@ -136,7 +137,6 @@ inline void displayPyramid(
     mat.copyTo(composite(roi));
     // cv::rectangle(composite, roi, cv::Scalar(0, 255, 0), 8);
     currentY += mat.rows;
-    break;
   }
 
   if (scale != 1.0f) {
@@ -155,7 +155,7 @@ inline void displayPyramid(
 } // namespace
 
 template <typename T>
-inline void CudaBatchLaplacianBlendContext<T>::displayPyramids(int channels, float scale) const {
+inline void CudaBatchLaplacianBlendContext3<T>::displayPyramids(int channels, float scale, bool wait) const {
   // Determine the OpenCV type from T and the number of channels.
   const int cvType = getCVTypeForPixel<T>(channels);
   if (cvType == -1) {
@@ -164,12 +164,14 @@ inline void CudaBatchLaplacianBlendContext<T>::displayPyramids(int channels, flo
   }
 
   // Display different pyramids. (Adjust which ones you want to show.)
-  // displayPyramid("Gaussian 1", d_gauss1, channels);
-  // displayPyramid("Gaussian 2", d_gauss2, channels);
+  displayPyramid("Gaussian 1", d_gauss1, widths, heights, channels, scale);
+  displayPyramid("Gaussian 2", d_gauss2, widths, heights, channels, scale);
+  displayPyramid("Gaussian 3", d_gauss3, widths, heights, channels, scale);
   // displayPyramid("Mask Pyramid", d_maskPyr, widths, heights, 1, scale); // assuming mask is single channel
-  // displayPyramid("Laplacian 1", d_lap1, channels);
-  // displayPyramid("Laplacian 2", d_lap2, channels);
-  displayPyramid("Blended Pyramid", d_blend, widths, heights, channels, scale);
+  displayPyramid("Laplacian 1", d_lap1, widths, heights, channels, scale);
+  displayPyramid("Laplacian 2", d_lap2, widths, heights, channels, scale);
+  displayPyramid("Laplacian 3", d_lap3, widths, heights, channels, scale);
+  // displayPyramid("Blended Pyramid", d_blend, widths, heights, channels, scale);
   // Optionally, you could also display the reconstructed images from d_resonstruct if desired.
 
   // Wait for a key press to close the windows.

@@ -62,7 +62,7 @@
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
       "args": [
         //"--game-id=stitch-fix",
-        "--game-id=mlk-heat-1",
+        "--game-id=foxes",
         //"--game-id=ev-tv-1a",
         //"--game-id=mylive",
         // "--game-id=pdp",
@@ -76,7 +76,6 @@
       "sourceMap": {
         "/proc/self/cwd": "${workspaceFolder}",
         "~/src": "${env:HOME}/src",
-        "external/deepstream/sources": "${env:HOME}/src/hstream/external/deepstream/sources",
         "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils",
       },
       "env": {
@@ -106,6 +105,51 @@
       ],
     },
     {
+      "name": "(LLDB) cudaBlend3",
+      "type": "lldb",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend3",
+      "args": [
+        "--game-id=3stitch",
+        "--show",
+        "--adjust=0",
+        "--levels=6",
+        //"--perf",
+        "--output=${workspaceRoot}/output.png",
+      ],
+      "sourceMap": {
+        "/proc/self/cwd": "${workspaceFolder}",
+        "~/src": "${env:HOME}/src",
+        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils",
+      },
+      "env": {
+        "DISPLAY": ":1",
+        "CUDA_LAUNCH_BLOCKING": "1",
+      },
+      //"stopOnEntry": true,
+      "preLaunchTask": "Build All",
+    },
+    {
+      "name": "(CUDA) cudaBlend3",
+      "type": "cuda-gdb",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "debuggerPath": "/usr/local/cuda/bin/cuda-gdb",
+      "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend3",
+      "args": "--game-id=3stitch --show --adjust=0 --levels=2",
+      "initCommands": [
+        "directory ${workspaceFolder}",
+      ],
+      "preLaunchTask": "Build All",
+      "environment": [
+        {
+          "name": "CUDA_LAUNCH_BLOCKING",
+          "value": "1"
+        }
+      ],
+    },
+    {
       "name": "(LLDB) Stabilization",
       "type": "lldb",
       "request": "launch",
@@ -118,7 +162,6 @@
       "sourceMap": {
         "/proc/self/cwd": "${workspaceFolder}",
         "~/src": "${env:HOME}/src",
-        "external/deepstream/sources": "${env:HOME}/src/hstream/external/deepstream/sources",
         "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils",
       },
       "env": {
@@ -127,6 +170,63 @@
       },
       //"stopOnEntry": true,
       "preLaunchTask": "Build All",
+    },
+    {
+      "name": "(LLDB) cudaBlend3_test",
+      "type": "lldb",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "program": "${workspaceFolder}/bazel-bin/src/cuda/cudaBlend3_test",
+      "args": [],
+      "sourceMap": {
+        "/proc/self/cwd": "${workspaceFolder}",
+        "~/src": "${env:HOME}/src",
+        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils",
+      },
+      "env": {
+        "DISPLAY": ":1",
+        "CUDA_LAUNCH_BLOCKING": "1",
+      },
+      //"stopOnEntry": true,
+      "preLaunchTask": "Build All",
+    },
+    {
+      "name": "(LLDB) cudaPano3_test",
+      "type": "lldb",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "program": "${workspaceFolder}/bazel-bin/src/pano/cudaPano3_test",
+      "args": [],
+      "sourceMap": {
+        "/proc/self/cwd": "${workspaceFolder}",
+        "~/src": "${env:HOME}/src",
+        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils",
+      },
+      "env": {
+        "DISPLAY": ":1",
+        "CUDA_LAUNCH_BLOCKING": "1",
+      },
+      //"stopOnEntry": true,
+      "preLaunchTask": "Build All",
+    },
+    {
+      "name": "(CUDA) cudaPano3_test",
+      "type": "cuda-gdb",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "debuggerPath": "/usr/local/cuda/bin/cuda-gdb",
+      "program": "${workspaceFolder}/bazel-bin/src/pano/cudaPano3_test",
+      "args": "",
+      "initCommands": [
+        "directory ${workspaceFolder}",
+      ],
+      "preLaunchTask": "Build All",
+      "environment": [
+        {
+          "name": "CUDA_LAUNCH_BLOCKING",
+          "value": "1"
+        }
+      ],
     },
   ]
 }

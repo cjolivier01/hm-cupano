@@ -18,6 +18,7 @@ build:debug --copt=-fdiagnostics-color=always
 # build:debug --linkopt=-v
 build:debug --linkopt=-Wl,-g
 build:debug --linkopt=-Wl,--discard-none
+build:debug --copt=-fdiagnostics-color=always
 
 
 # build:opt -c opt --strip="always"

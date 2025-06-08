@@ -1,10 +1,6 @@
 #include "cudaBlend.h"
 #include "cudaTypes.h"
 
-// #if (CUDART_VERSION >= 11000)
-// #include <cuda_bf16.h>
-// #endif
-
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 
@@ -16,6 +12,8 @@
 #include <vector>
 
 #define PRINT_STRANGE_ALPHAS
+
+#define EXTRA_ALPHA_CHECKS
 
 // =============================================================================
 // Macro to check CUDA calls and return on error.
@@ -38,6 +36,108 @@
 // -----------------------------------------------------------------------------
 // Fused downsample kernel for two images.
 // "channels" is either 3 (RGB) or 4 (RGBA). Each output pixel is computed by averaging a 2x2 block.
+#ifdef EXTRA_ALPHA_CHECKS
+// Fused downsample kernel for TWO images (RGB or RGBA).
+// Each output pixel is the average of a 2×2 block in each input.
+// If channels==4, any pixel with alpha==0 is omitted from its image’s average.
+// Alpha is still max‐pooled.
+template <typename T, typename F_T = float>
+__global__ void FusedBatchedDownsampleKernel(
+    const T* __restrict__ input1,
+    const T* __restrict__ input2,
+    int inWidth,
+    int inHeight,
+    T* __restrict__ output1,
+    T* __restrict__ output2,
+    int outWidth,
+    int outHeight,
+    int batchSize,
+    int channels) {
+  int b = blockIdx.z;
+  if (b >= batchSize)
+    return;
+
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x >= outWidth || y >= outHeight)
+    return;
+
+  const int inImageSize = inWidth * inHeight * channels;
+  const int outImageSize = outWidth * outHeight * channels;
+  const T* in1 = input1 + b * inImageSize;
+  const T* in2 = input2 + b * inImageSize;
+  T* out1 = output1 + b * outImageSize;
+  T* out2 = output2 + b * outImageSize;
+
+  int inX = x * 2;
+  int inY = y * 2;
+
+  const int sumCh = std::min(channels, 3);
+
+  // accumulators and counters for each image
+  F_T sums1[3] = {0}, sums2[3] = {0};
+  int count1 = 0, count2 = 0;
+  // max-pooled alpha
+  T alpha1 = 0, alpha2 = 0;
+
+  // loop over the 2×2 block
+  for (int dy = 0; dy < 2; ++dy) {
+    for (int dx = 0; dx < 2; ++dx) {
+      int ix = inX + dx, iy = inY + dy;
+      if (ix >= inWidth || iy >= inHeight)
+        continue;
+
+      int idx = (iy * inWidth + ix) * channels;
+
+      // IMAGE 1
+      bool keep1 = true;
+      if (channels == 4) {
+        T a1 = in1[idx + 3];
+        alpha1 = std::max(alpha1, a1);
+        keep1 = (a1 != T(0));
+      }
+      if (keep1) {
+        for (int c = 0; c < sumCh; ++c)
+          sums1[c] += static_cast<F_T>(in1[idx + c]);
+        ++count1;
+      }
+
+      // IMAGE 2
+      bool keep2 = true;
+      if (channels == 4) {
+        T a2 = in2[idx + 3];
+        alpha2 = std::max(alpha2, a2);
+        keep2 = (a2 != T(0));
+      }
+      if (keep2) {
+        for (int c = 0; c < sumCh; ++c)
+          sums2[c] += static_cast<F_T>(in2[idx + c]);
+        ++count2;
+      }
+    }
+  }
+
+  int outIdx = (y * outWidth + x) * channels;
+
+  // write RGB averages (or zero if no contributors)
+  for (int c = 0; c < sumCh; ++c) {
+    out1[outIdx + c] = count1 > 0 ? static_cast<T>(sums1[c] / count1) : T(0);
+    out2[outIdx + c] = count2 > 0 ? static_cast<T>(sums2[c] / count2) : T(0);
+  }
+
+  // write alpha as max-pooled
+  if (channels == 4) {
+    out1[outIdx + 3] = alpha1;
+    out2[outIdx + 3] = alpha2;
+  }
+
+#ifdef PRINT_STRANGE_ALPHAS
+  if ((alpha1 != T_CONST(0) && alpha1 != T_CONST(255)) || (alpha2 != T_CONST(0) && alpha2 != T_CONST(255))) {
+    printf("FusedBatchedDownsampleKernel(): Strange alphas %f and %f\n", (float)alpha1, (float)alpha2);
+  }
+#endif
+}
+#else
 template <typename T, typename F_T = float>
 __global__ void FusedBatchedDownsampleKernel(
     const T* __restrict__ input1,
@@ -108,7 +208,7 @@ __global__ void FusedBatchedDownsampleKernel(
   }
 #endif
 }
-
+#endif
 // -----------------------------------------------------------------------------
 // Batched downsample kernel for a single image (RGB or RGBA).
 // template <typename T>
@@ -247,6 +347,109 @@ __global__ void BatchedDownsampleKernelMask(
 // Batched computation of the Laplacian.
 // For each channel, compute Laplacian = gaussHigh - upsample(gaussLow).
 // For RGBA images (channels==4), the alpha channel (c==3) is simply copied.
+#ifdef EXTRA_ALPHA_CHECKS
+template <typename T, typename F_T>
+__global__ void BatchedComputeLaplacianKernel(
+    const T* __restrict__ gaussHigh,
+    int highWidth,
+    int highHeight,
+    const T* __restrict__ gaussLow,
+    int lowWidth,
+    int lowHeight,
+    T* __restrict__ laplacian,
+    int batchSize,
+    int channels) {
+  int b = blockIdx.z;
+  if (b >= batchSize)
+    return;
+
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x >= highWidth || y >= highHeight)
+    return;
+
+  int highImageSize = highWidth * highHeight * channels;
+  int lowImageSize = lowWidth * lowHeight * channels;
+  const T* highImage = gaussHigh + b * highImageSize;
+  const T* lowImage = gaussLow + b * lowImageSize;
+  T* lapImage = laplacian + b * highImageSize;
+
+  // map (x,y) in high-res to fractional coord in low-res
+  F_T gx = static_cast<F_T>(x) / 2.0f;
+  F_T gy = static_cast<F_T>(y) / 2.0f;
+  int gxi = floorf(gx);
+  int gyi = floorf(gy);
+  F_T dx = gx - static_cast<F_T>(gxi);
+  F_T dy = gy - static_cast<F_T>(gyi);
+  int gxi1 = min(gxi + 1, lowWidth - 1);
+  int gyi1 = min(gyi + 1, lowHeight - 1);
+
+  int idxHigh = (y * highWidth + x) * channels;
+
+  for (int c = 0; c < channels; ++c) {
+    if (channels == 4 && c == 3) {
+      // alpha channel: just copy high-res alpha
+      lapImage[idxHigh + c] = highImage[idxHigh + c];
+    } else {
+      // gather neighbor indices
+      int base00 = (gyi * lowWidth + gxi) * channels;
+      int base10 = (gyi * lowWidth + gxi1) * channels;
+      int base01 = (gyi1 * lowWidth + gxi) * channels;
+      int base11 = (gyi1 * lowWidth + gxi1) * channels;
+      int idx00 = base00 + c;
+      int idx10 = base10 + c;
+      int idx01 = base01 + c;
+      int idx11 = base11 + c;
+
+      // sample values
+      F_T v00 = static_cast<F_T>(lowImage[idx00]);
+      F_T v10 = static_cast<F_T>(lowImage[idx10]);
+      F_T v01 = static_cast<F_T>(lowImage[idx01]);
+      F_T v11 = static_cast<F_T>(lowImage[idx11]);
+
+      F_T upVal;
+      if (channels == 4) {
+        // compute bilinear weights
+        F_T w00 = (1 - dx) * (1 - dy);
+        F_T w10 = dx * (1 - dy);
+        F_T w01 = (1 - dx) * dy;
+        F_T w11 = dx * dy;
+
+        // accumulate only non-transparent neighbors
+        F_T sumW = 0, sumV = 0;
+        // alpha offsets
+        int aOff = 3;
+        if (lowImage[base00 + aOff] != T(0)) {
+          sumW += w00;
+          sumV += v00 * w00;
+        }
+        if (lowImage[base10 + aOff] != T(0)) {
+          sumW += w10;
+          sumV += v10 * w10;
+        }
+        if (lowImage[base01 + aOff] != T(0)) {
+          sumW += w01;
+          sumV += v01 * w01;
+        }
+        if (lowImage[base11 + aOff] != T(0)) {
+          sumW += w11;
+          sumV += v11 * w11;
+        }
+
+        upVal = (sumW > 0) ? (sumV / sumW) : F_T(0);
+      } else {
+        // standard bilinear
+        F_T v0 = v00 * (1 - dx) + v10 * dx;
+        F_T v1 = v01 * (1 - dx) + v11 * dx;
+        upVal = v0 * (1 - dy) + v1 * dy;
+      }
+
+      // laplacian = high-res - upsampled
+      lapImage[idxHigh + c] = static_cast<T>(static_cast<F_T>(highImage[idxHigh + c]) - upVal);
+    }
+  }
+}
+#else
 template <typename T, typename F_T>
 __global__ void BatchedComputeLaplacianKernel(
     const T* __restrict__ gaussHigh,
@@ -304,7 +507,7 @@ __global__ void BatchedComputeLaplacianKernel(
     }
   }
 }
-
+#endif
 // -----------------------------------------------------------------------------
 // Batched blend kernel for images.
 // For each channel the two Laplacian pyramids are blended with a weighted average.
@@ -341,7 +544,7 @@ __global__ void BatchedBlendKernel(
   F_T mm1 = F_ONE - m;
   int max_channel = std::min(channels, 3);
   if (channels == 4) {
-    constexpr T T_ZERO = static_cast<T>(0);
+    const T T_ZERO = static_cast<T>(0);
     const T alpha1 = lap1Image[idx + 3];
     const T alpha2 = lap2Image[idx + 3];
     if (alpha1 == T_ZERO) {
@@ -835,11 +1038,13 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
       int channels,                                                    \
       cudaStream_t stream);
 
+INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(half)
 INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(float)
 INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(unsigned char)
 // INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(__half)
 // INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(__nv_bfloat16)
 
+INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT(half)
 INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT(float)
 INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT(unsigned char)
 // INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT(__half)

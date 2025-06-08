@@ -14,3 +14,20 @@ cc_binary(
         "@opencv_linux//:opencv",
     ],
 )
+
+cc_binary(
+    name = "test_cuda_blend3",
+    srcs = [
+        "testCudaBlend3.cpp",
+    ],
+    linkopts = [
+        "-ltiff",
+        "-lopencv_imgproc",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/pano:cuda_pano",
+        "@local_cuda//:cuda_runtime",
+        "@opencv_linux//:opencv",
+    ],
+)

@@ -135,8 +135,8 @@ class CudaGLWindow {
   template <typename PIXEL_T>
   void render(const CudaSurface<PIXEL_T>& d_img, cudaStream_t stream = nullptr) {
     assert(sizeof(PIXEL_T) == channels_);
-    assert(d_img.width == width_);
-    assert(d_img.height == height_);
+    assert((int)d_img.width == width_);
+    assert((int)d_img.height == height_);
 
     // Map the GL texture as a CUDA array
     CHECK_CUDA_ERR(cudaGraphicsMapResources(1, &cudaRes_, 0));

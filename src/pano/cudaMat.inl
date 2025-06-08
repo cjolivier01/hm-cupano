@@ -308,6 +308,38 @@ cv::Mat CudaMat<T>::download(int batch_item) const {
   return mat;
 }
 
+template <typename T>
+cudaError_t CudaMat<T>::upload(const cv::Mat& cpu_mat, int batch_item, cudaStream_t stream) {
+  // Validate that the requested batch index is within range.
+  assert(batch_item >= 0 && batch_item < batch_size_);
+  // Convert the stored CUDA pixel type to an OpenCV type constant.
+  int cvType = cudaPixelTypeToCvType(type_);
+  assert(cvType == cpu_mat.type());
+  
+  // Ensure the pitch is aligned to the size of T.
+  assert(pitch() % sizeof(T) == 0);
+
+#ifndef NDEBUG
+  // Calculate the number of elements per row based on the pitch.
+  int pitch_cols = pitch() / sizeof(T);
+  // Verify that the pitch is sufficient for the expected number of columns.
+  
+  assert(pitch_cols == cols_);  // not supporting differeing pitch atm
+#endif
+
+  size_t elemSize = cudaPixelElementSize(type_);
+  size_t size_each = static_cast<size_t>(rows_ * cols_) * elemSize;
+  // Calculate the starting address for the desired batch item.
+  assert(d_data_);
+  uint8_t* src_ptr = reinterpret_cast<uint8_t*>(d_data_) + batch_item * size_each;
+  // Copy the data from device memory (GPU) to the host memory (CPU).
+  if (!stream) {
+    return cudaMemcpy(src_ptr, cpu_mat.data, size_each, cudaMemcpyHostToDevice);
+  } else {
+    return cudaMemcpyAsync(src_ptr, cpu_mat.data, size_each, cudaMemcpyHostToDevice, stream);
+  }
+}
+
 /**
  * @brief Returns a pointer to the device memory.
  *

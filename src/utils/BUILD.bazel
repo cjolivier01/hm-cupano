@@ -1,0 +1,93 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+INCLUDE_PREFIX = "cupano/utils"
+
+cc_library(
+    name = "utils",
+    srcs = [
+        "cudaBlendShow.cpp",
+    ],
+    hdrs = [
+        "cudaBlendShow.h",
+    ],
+    copts = [
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    linkopts = [
+        "-ltiff",
+        "-lpng",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":show_image",
+        "//src/cuda:cuda_blend_cuda_lib",
+        "@opencv_linux//:opencv",
+    ],
+)
+
+cc_library(
+    name = "gl_window",
+    srcs = [
+        "cudaGLWindow.cpp",
+    ],
+    hdrs = [
+        "cudaGLWindow.h",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    linkopts = [
+        "-lglfw",
+        "-lGLEW",
+        "-lGL",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+      "//src/pano:cuda_matrix",
+      "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_library(
+    name = "image_utils",
+    srcs = [
+        "imageUtils.cpp",
+    ],
+    hdrs = [
+        "imageUtils.h",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    linkopts = [
+        "-lglfw",
+        "-lGLEW",
+        "-lGL",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+      ":gl_window",
+      "//src/pano:cuda_matrix",
+      "@local_cuda//:cuda_runtime",
+    ],
+)
+
+
+cc_library(
+    name = "show_image",
+    srcs = [
+        "showImage.cpp",
+    ],
+    hdrs = [
+        "showImage.h",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    linkopts = [
+        "-lglfw",
+        "-lGLEW",
+        "-lGL",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+      ":image_utils",
+      ":gl_window",
+      "//src/pano:cuda_matrix",
+      "@local_cuda//:cuda_runtime",
+    ],
+)

@@ -1,41 +1,18 @@
 #include <cuda_runtime.h>
-// #if (CUDART_VERSION >= 11000)
-// #include <cuda_bf16.h>
-// #endif
 #include <cuda_fp16.h>
 #include <device_launch_parameters.h>
 #include "cudaImageAdjust.h"
 #include "cudaRemap.h" // Assumed to declare these host functions
 
-#include <cstdint>
+#include "cudaUtils.cuh"
+
+#include <cassert>
 #include <limits>
 
+using namespace hm::cupano::cuda;
 namespace {
 
 constexpr unsigned short kUnmappedPositionValue = std::numeric_limits<unsigned short>::max();
-
-template <typename T_in, typename T_out>
-inline T_out __device__ cast_to(const T_in& in) {
-  return static_cast<T_out>(in);
-}
-
-template <>
-inline float3 __device__ cast_to(const uchar3& in) {
-  return float3{
-      .x = static_cast<float>(in.x),
-      .y = static_cast<float>(in.y),
-      .z = static_cast<float>(in.z),
-  };
-}
-
-template <>
-inline float4 __device__ cast_to(const uchar4& in) {
-  return float4{
-      .x = static_cast<float>(in.x),
-      .y = static_cast<float>(in.y),
-      .z = static_cast<float>(in.z),
-      .w = static_cast<float>(in.w)};
-}
 
 //------------------------------------------------------------------------------
 // Templated Batched Remap Kernel EX (unchanged)
@@ -120,18 +97,27 @@ __global__ void BatchedRemapKernelExOffset(
   int srcX = static_cast<int>(mapX[mapIdx]);
   int srcY = static_cast<int>(mapY[mapIdx]);
 
+  if constexpr (sizeof(T_out) / sizeof(BaseScalar_t<T_out>) == 4) {
+    if (no_unmapped_write && srcX == kUnmappedPositionValue) {
+      // Don't write anything for alpha 0
+      return;
+    }
+  }
+
   if (srcX < src.width && srcY < src.height) {
     int srcImageSizeBytes = src.height * src.pitch;
     const T_in* srcImage = advance_bytes(src.d_ptr, b * srcImageSizeBytes);
     const T_in* src_pos = advance_bytes(srcImage, srcY * src.pitch) + srcX;
-    *dest_pos = cast_to<T_in, T_out>(*src_pos);
+    *dest_pos = perform_cast<T_out>(*src_pos);
   } else {
     if (!no_unmapped_write || srcX != kUnmappedPositionValue) {
-      *dest_pos = cast_to<T_in, T_out>(deflt);
+      *dest_pos = perform_cast<T_out>(deflt);
       if constexpr (sizeof(T_out) / sizeof(BaseScalar_t<T_out>) == 4) {
         // Has an alpha channel, so clear it
         if (srcX == kUnmappedPositionValue) {
           dest_pos->w = 0;
+        } else {
+          dest_pos->w = BaseScalar_t<T_out>(255);
         }
       }
     }
@@ -177,6 +163,13 @@ __global__ void BatchedRemapKernelExOffsetAdjust(
   int srcX = static_cast<int>(mapX[mapIdx]);
   int srcY = static_cast<int>(mapY[mapIdx]);
 
+  // if constexpr (sizeof(T_out) / sizeof(BaseScalar_t<T_out>) == 4) {
+  //   if (no_unmapped_write && srcX == kUnmappedPositionValue) {
+  //     // Don't write anything for alpha 0
+  //     return;
+  //   }
+  // }
+
   if (srcX < src.width && srcY < src.height) {
     int srcImageSizeBytes = src.height * src.pitch;
     const T_in* srcImage = advance_bytes(src.d_ptr, b * srcImageSizeBytes);
@@ -184,7 +177,7 @@ __global__ void BatchedRemapKernelExOffsetAdjust(
     *dest_pos = PixelAdjuster<T_out>::adjust(static_cast<T_out>(*src_pos), adjustment);
   } else {
     if (!no_unmapped_write || srcX != kUnmappedPositionValue) {
-      *dest_pos = cast_to<T_in, T_out>(deflt);
+      *dest_pos = perform_cast<T_out>(deflt);
       if constexpr (sizeof(T_out) / sizeof(BaseScalar_t<T_out>) == 4) {
         // Has an alpha channel, so clear it
         if (srcX == kUnmappedPositionValue) {
@@ -228,8 +221,7 @@ __global__ void BatchedRemapKernelExOffsetWithDestMap(
     return;
 
   // No pitch on the mask right now
-  int checkIdx = (offsetY + y) * dest.width + (offsetX + x);
-
+  int checkIdx = destY * dest.width + destX;
   if (dest_image_map[checkIdx] == this_image_index) {
     int destImageSizeBytes = dest.width * dest.pitch;
     T_out* destImage = advance_bytes(dest.d_ptr, b * destImageSizeBytes);
@@ -527,7 +519,7 @@ cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust(
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(float3, float3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(uchar3, float3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(uchar3, uchar3)
-INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(float, float)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(float1, float1)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(float4, float4)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(uchar4, float4)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(uchar4, uchar4)
@@ -542,7 +534,7 @@ INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(uchar4, uchar4)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX(float3, float3)
 
 // Instantiate for float input and float output:
-INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(float, float)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(float1, float1)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(float3, float3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(uchar1, uchar1)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(uchar3, uchar3)

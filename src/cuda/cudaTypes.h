@@ -101,6 +101,11 @@ struct BaseScalar<float> {
 };
 
 template <>
+struct BaseScalar<float1> {
+  using type = float;
+};
+
+template <>
 struct BaseScalar<__half> {
   using type = __half;
 };

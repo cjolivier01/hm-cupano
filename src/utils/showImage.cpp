@@ -1,5 +1,6 @@
-#include "cupano/pano/showImage.h"
-#include "cupano/pano/cudaGLWindow.h"
+#include "cupano/utils/showImage.h"
+#include "cupano/utils/imageUtils.h"
+#include "cupano/utils/cudaGLWindow.h"
 
 #include <set>
 #include <unordered_set>
@@ -8,6 +9,7 @@
 #include <opencv2/opencv.hpp>
 
 #include <fcntl.h>
+#include <opencv4/opencv2/imgproc.hpp>
 #include <stdio.h>
 #include <termios.h>
 #include <unistd.h>
@@ -65,45 +67,19 @@ int wait_key(CudaGLWindow* window = nullptr) {
   return c;
 }
 
-void set_alpha_pixels(cv::Mat& image, const cv::Vec3b& color) {
-  // Check that the image is non-empty and has 4 channels.
-  if (image.empty() || image.channels() != 4) {
-    return;
-  }
-
-  // Iterate over each row.
-  for (int y = 0; y < image.rows; y++) {
-    // Get pointer to the beginning of row 'y'. Each pixel is a Vec4b.
-    cv::Vec4b* rowPtr = image.ptr<cv::Vec4b>(y);
-    for (int x = 0; x < image.cols; x++) {
-      // Check if alpha channel is 0.
-      if (rowPtr[x][3] == 0) {
-        // Set B, G, R channels to the specified color.
-        rowPtr[x][0] = color[0]; // Blue channel.
-        rowPtr[x][1] = color[1]; // Green channel.
-        rowPtr[x][2] = color[2]; // Red channel.
-        rowPtr[x][2] = 255;
-      }
+void show_image(const std::string& label, const cv::Mat& img, bool wait, float scale, bool squish) {
+  if (scale != 0 && scale != 1) {
+    cv::Size newSize(static_cast<int>(scale * (img.cols + 0.5f)), static_cast<int>(scale * (img.rows + 0.5f)));
+    cv::Mat dest;
+    if (scale < 1) {
+      cv::resize(img, dest, newSize, 0.0, 0.0, cv::INTER_NEAREST);
+    } else {
+      cv::resize(img, dest, newSize, 0.0, 0.0, cv::INTER_NEAREST/*cv::INTER_LINEAR*/);
     }
+    cv::imshow(label, convert_to_uchar(std::move(dest)));
+  } else {
+    cv::imshow(label, convert_to_uchar(img.clone()));
   }
-}
-
-cv::Mat convert_to_uchar(cv::Mat image) {
-  // Check if the image is of a floating-point type
-  if (image.depth() == CV_32F || image.depth() == CV_64F) {
-    cv::Mat ucharImage;
-    // convertTo automatically applies saturate_cast, clamping values to [0, 255]
-    image.convertTo(ucharImage, CV_8U);
-    set_alpha_pixels(ucharImage, {255, 0, 0});
-    return ucharImage;
-  }
-  // For non-floating point images, return a copy (or handle as needed)
-  set_alpha_pixels(image, {255, 0, 0});
-  return image;
-}
-
-void show_image(const std::string& label, const cv::Mat& img, bool wait) {
-  cv::imshow(label, convert_to_uchar(img.clone()));
   cv::waitKey(wait ? 0 : 1);
 }
 
@@ -130,7 +106,7 @@ bool destroy_surface_window() {
   return true;
 }
 
-void display_scaled_image(const std::string& label, cv::Mat image, float scale, bool wait) {
+void display_scaled_image(const std::string& label, cv::Mat image, float scale, bool wait, bool squish) {
   if (scale != 1.0f) {
     // Calculate new dimensions
     int newWidth = static_cast<int>(image.cols * scale);
@@ -139,7 +115,9 @@ void display_scaled_image(const std::string& label, cv::Mat image, float scale, 
     // Resize the image
     cv::resize(image, image, cv::Size(newWidth, newHeight));
   }
-
+  if (squish) {
+    stretch(image, 0.0f, 255.0f);
+  }
   // Display the image
   cv::imshow(label, convert_to_uchar(image));
   cv::waitKey(wait ? 0 : 1); // Wait for a keystroke in the window
@@ -175,43 +153,6 @@ std::set<T> get_unique_values(const cv::Mat& mat, const std::unordered_set<T>& i
   }
 
   return unique_values;
-}
-
-// cv::Mat load_position_mask(const std::string& filename, double* minVal, double* maxVal) {
-//   cv::Mat pos_mask = cv::imread(filename, cv::IMREAD_ANYDEPTH);
-//   if (!pos_mask.empty()) {
-//     if (minVal || maxVal) {
-//       cv::Point minLoc, maxLoc;
-//       // Get the minimum and maximum values and their locations
-//       double min, max;
-//       cv::minMaxLoc(pos_mask, &min, &max, &minLoc, &maxLoc);
-//       if (minVal) {
-//         *minVal = min;
-//       }
-//       if (maxVal) {
-//         *maxVal = max;
-//       }
-//     }
-//   } else {
-//     if (minVal) {
-//       *minVal = std::nan("");
-//     }
-//     if (maxVal) {
-//       *maxVal = std::nan("");
-//     }
-//   }
-//   return pos_mask;
-// }
-
-cv::Mat make_fake_mask_like(const cv::Mat& mask) {
-  cv::Mat img(mask.rows, mask.cols, CV_32FC1, cv::Scalar(0));
-
-  // Define a region of interest (ROI) for the left half of the image.
-  cv::Rect leftHalfROI(0, 0, mask.cols / 2, mask.rows);
-
-  // Set all pixels in the left half to 1.
-  img(leftHalfROI).setTo(1.0f);
-  return img;
 }
 
 } // namespace utils

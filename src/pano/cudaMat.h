@@ -375,6 +375,9 @@ struct SurfaceInfo {
 template <typename T>
 class CudaMat {
  public:
+  using element_type = T;
+  using base_element_type = BaseScalar_t<T>;
+
   // Delete copy and move constructors.
   CudaMat(const CudaMat&) = delete;
   CudaMat(CudaMat&&) = delete;
@@ -444,6 +447,8 @@ class CudaMat {
    * @return A cv::Mat containing the downloaded image.
    */
   cv::Mat download(int batch_item = 0) const;
+
+  cudaError_t upload(const cv::Mat& cpu_mat, int batch_item = 0, cudaStream_t stream = 0);
 
   /// @brief Returns a pointer to the device memory.
   T* data();
