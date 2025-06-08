@@ -294,7 +294,7 @@ def configure_stitching_multi(
         f"nona --bigtiff -m TIFF_m -z NONE -c -o {os.path.join(directory, 'mapping_')} {autoopt}"
     )
     os.system(
-        f"multiblend --save-seams={os.path.join(directory, 'seam_file.png')} -o {os.path.join(directory, 'panorama.tif')} mapping_????.tif"
+        f"multiblend --save-seams={os.path.join(directory, 'seam_file.png')} -o {os.path.join(directory, 'panorama.tif')} {os.path.join(directory, 'mapping_????.tif')}"
     )
 
 
