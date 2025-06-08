@@ -13,6 +13,7 @@ cuda_library(
     srcs = [
         "cudaBlend.cu",
         "cudaBlend3.cu",
+        "cudaBlendN.cu",
         "cudaImageAdjust.cu",
         "cudaMakeFull.cu",
         "cudaRemap.cu",
@@ -56,6 +57,7 @@ cc_library(
     hdrs = [
         "cudaBlend.h",
         "cudaBlend3.h",
+        "cudaBlendN.h",
         "cudaImageAdjust.h",
         "cudaMakeFull.h",
         "cudaRemap.h",
