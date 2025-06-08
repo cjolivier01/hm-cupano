@@ -18,7 +18,10 @@
 
 using namespace hm::cupano::cuda;
 
+#ifndef NDEBUG
 #define PRINT_STRANGE_ALPHAS
+#endif
+
 namespace {
 
 #define SHOWIMG(_img$)                                                                                                 \
@@ -213,7 +216,7 @@ __global__ void FusedBatchedDownsampleKernel3(
 // -----------------------------------------------------------------------------
 // Fused downsample kernel for a **3-channel mask**.
 // Each output mask-pixel is the per-channel average over the 2×2 block.
-template <typename T>
+template <typename T, int CHANNELS = 3>
 __global__ void FusedBatchedDownsampleMask3(
     const T* __restrict__ input, // [H×W×3], single (non-batched) mask
     int inWidth,
@@ -228,7 +231,11 @@ __global__ void FusedBatchedDownsampleMask3(
 
   int inX = x * 2;
   int inY = y * 2;
-  float sums[3] = {0.0f, 0.0f, 0.0f};
+  float sums[CHANNELS] = {
+      0.0f,
+      0.0f,
+      0.0f,
+  };
   int count = 0;
 
   for (int dy = 0; dy < 2; dy++) {
@@ -236,8 +243,8 @@ __global__ void FusedBatchedDownsampleMask3(
       int ix = inX + dx;
       int iy = inY + dy;
       if (ix < inWidth && iy < inHeight) {
-        int idx = (iy * inWidth + ix) * 3;
-        for (int c = 0; c < 3; c++) {
+        int idx = (iy * inWidth + ix) * CHANNELS;
+        for (int c = 0; c < CHANNELS; c++) {
           sums[c] += static_cast<float>(input[idx + c]);
         }
         count++;
@@ -245,8 +252,8 @@ __global__ void FusedBatchedDownsampleMask3(
     }
   }
 
-  int outIdx = (y * outWidth + x) * 3;
-  for (int c = 0; c < 3; c++) {
+  int outIdx = (y * outWidth + x) * CHANNELS;
+  for (int c = 0; c < CHANNELS; c++) {
     output[outIdx + c] = static_cast<T>(sums[c] / count);
   }
 }
@@ -254,7 +261,7 @@ __global__ void FusedBatchedDownsampleMask3(
 // -----------------------------------------------------------------------------
 // Batched computation of the Laplacian for **one** image (RGB or RGBA).
 // We will launch this separately for each of the three Gaussian pyramids.
-template <typename T, typename F_T>
+template <typename T, typename F_T, int CHANNELS>
 __global__ void BatchedComputeLaplacianKernel(
     const T* __restrict__ gaussHigh,
     int highWidth,
@@ -263,8 +270,7 @@ __global__ void BatchedComputeLaplacianKernel(
     int lowWidth,
     int lowHeight,
     T* __restrict__ laplacian,
-    int batchSize,
-    int channels) {
+    int batchSize) {
   int b = blockIdx.z;
   if (b >= batchSize)
     return;
@@ -274,8 +280,8 @@ __global__ void BatchedComputeLaplacianKernel(
   if (x >= highWidth || y >= highHeight)
     return;
 
-  int highImageSize = highWidth * highHeight * channels;
-  int lowImageSize = lowWidth * lowHeight * channels;
+  int highImageSize = highWidth * highHeight * CHANNELS;
+  int lowImageSize = lowWidth * lowHeight * CHANNELS;
   const T* highImage = gaussHigh + b * highImageSize;
   const T* lowImage = gaussLow + b * lowImageSize;
   T* lapImage = laplacian + b * highImageSize;
@@ -290,18 +296,18 @@ __global__ void BatchedComputeLaplacianKernel(
   int gxi1 = min(gxi + 1, lowWidth - 1);
   int gyi1 = min(gyi + 1, lowHeight - 1);
 
-  int idxHigh = (y * highWidth + x) * channels;
+  int idxHigh = (y * highWidth + x) * CHANNELS;
 
-  for (int c = 0; c < channels; ++c) {
-    if (channels == 4 && c == 3) {
+  for (int c = 0; c < CHANNELS; ++c) {
+    if (CHANNELS == 4 && c == 3) {
       // alpha channel: just copy high-res alpha
       lapImage[idxHigh + c] = highImage[idxHigh + c];
     } else {
       // gather neighbor indices
-      int base00 = (gyi * lowWidth + gxi) * channels;
-      int base10 = (gyi * lowWidth + gxi1) * channels;
-      int base01 = (gyi1 * lowWidth + gxi) * channels;
-      int base11 = (gyi1 * lowWidth + gxi1) * channels;
+      int base00 = (gyi * lowWidth + gxi) * CHANNELS;
+      int base10 = (gyi * lowWidth + gxi1) * CHANNELS;
+      int base01 = (gyi1 * lowWidth + gxi) * CHANNELS;
+      int base11 = (gyi1 * lowWidth + gxi1) * CHANNELS;
       int idx00 = base00 + c;
       int idx10 = base10 + c;
       int idx01 = base01 + c;
@@ -314,7 +320,7 @@ __global__ void BatchedComputeLaplacianKernel(
       F_T v11 = static_cast<F_T>(lowImage[idx11]);
 
       F_T upVal;
-      if (channels == 4) {
+      if constexpr (CHANNELS == 4) {
         // compute bilinear weights
         F_T w00 = (1 - dx) * (1 - dy);
         F_T w10 = dx * (1 - dy);
@@ -539,12 +545,6 @@ __global__ void BatchedReconstructKernel(
       F_T val10 = static_cast<F_T>(lowImage[idx10]);
       F_T val01 = static_cast<F_T>(lowImage[idx01]);
       F_T val11 = static_cast<F_T>(lowImage[idx11]);
-
-      // val00 = clamp(0, val00, 255);
-      // val10 = clamp(0, val10, 255);
-      // val01 = clamp(0, val01, 255);
-      // val11 = clamp(0, val11, 255);
-
       // bilinear upsampling
       F_T upVal = (val00 * (F_ONE - dx) + val10 * dx) * (F_ONE - dy) + (val01 * (F_ONE - dx) + val11 * dx) * dy;
       reconImage[idxOut + c] = static_cast<T>(upVal + static_cast<F_T>(lapImage[idxOut + c]));
@@ -694,21 +694,40 @@ cudaError_t cudaBatchedLaplacianBlend3(
     int wL = widths[level + 1];
     int hL = heights[level + 1];
     dim3 gridLap((wH + block.x - 1) / block.x, (hH + block.y - 1) / block.y, batchSize);
+    assert(channels == 3 || channels == 4);
+    if (channels == 3) {
+      // Laplacian for image 1
+      BatchedComputeLaplacianKernel<T, F_T, 3><<<gridLap, block, 0, stream>>>(
+          d_gauss1[level], wH, hH, d_gauss1[level + 1], wL, hL, d_lap1[level], batchSize);
+      CUDA_CHECK(cudaGetLastError());
 
-    // Laplacian for image 1
-    BatchedComputeLaplacianKernel<T, F_T><<<gridLap, block, 0, stream>>>(
-        d_gauss1[level], wH, hH, d_gauss1[level + 1], wL, hL, d_lap1[level], batchSize, channels);
-    CUDA_CHECK(cudaGetLastError());
+      // Laplacian for image 2
+      BatchedComputeLaplacianKernel<T, F_T, 3><<<gridLap, block, 0, stream>>>(
+          d_gauss2[level], wH, hH, d_gauss2[level + 1], wL, hL, d_lap2[level], batchSize);
+      CUDA_CHECK(cudaGetLastError());
 
-    // Laplacian for image 2
-    BatchedComputeLaplacianKernel<T, F_T><<<gridLap, block, 0, stream>>>(
-        d_gauss2[level], wH, hH, d_gauss2[level + 1], wL, hL, d_lap2[level], batchSize, channels);
-    CUDA_CHECK(cudaGetLastError());
+      // Laplacian for image 3
+      BatchedComputeLaplacianKernel<T, F_T, 3><<<gridLap, block, 0, stream>>>(
+          d_gauss3[level], wH, hH, d_gauss3[level + 1], wL, hL, d_lap3[level], batchSize);
+      CUDA_CHECK(cudaGetLastError());
+    } else if (channels == 4) {
+      // Laplacian for image 1
+      BatchedComputeLaplacianKernel<T, F_T, 4><<<gridLap, block, 0, stream>>>(
+          d_gauss1[level], wH, hH, d_gauss1[level + 1], wL, hL, d_lap1[level], batchSize);
+      CUDA_CHECK(cudaGetLastError());
 
-    // Laplacian for image 3
-    BatchedComputeLaplacianKernel<T, F_T><<<gridLap, block, 0, stream>>>(
-        d_gauss3[level], wH, hH, d_gauss3[level + 1], wL, hL, d_lap3[level], batchSize, channels);
-    CUDA_CHECK(cudaGetLastError());
+      // Laplacian for image 2
+      BatchedComputeLaplacianKernel<T, F_T, 4><<<gridLap, block, 0, stream>>>(
+          d_gauss2[level], wH, hH, d_gauss2[level + 1], wL, hL, d_lap2[level], batchSize);
+      CUDA_CHECK(cudaGetLastError());
+
+      // Laplacian for image 3
+      BatchedComputeLaplacianKernel<T, F_T, 4><<<gridLap, block, 0, stream>>>(
+          d_gauss3[level], wH, hH, d_gauss3[level + 1], wL, hL, d_lap3[level], batchSize);
+      CUDA_CHECK(cudaGetLastError());
+    } else {
+      assert(false);
+    }
   }
 
   // For the last (coarsest) level, copy Gaussian → Laplacian directly
@@ -943,47 +962,83 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
 
     dim3 gridLap((wH + block.x - 1) / block.x, (hH + block.y - 1) / block.y, context.batchSize);
 
-    // Laplacian for image 1
-    BatchedComputeLaplacianKernel<T, F_T><<<gridLap, block, 0, stream>>>(
-        context.d_gauss1[level],
-        wH,
-        hH,
-        context.d_gauss1[level + 1],
-        wL,
-        hL,
-        context.d_lap1[level],
-        context.batchSize,
-        channels);
-    CUDA_CHECK(cudaGetLastError());
+    assert(channels == 3 || channels == 4);
 
-    // print_min_max(context, context.d_lap1, 0, channels);
-    // print_min_max(context, context.d_lap1, 1, channels);
+    if (channels == 3) {
+      // Laplacian for image 1
+      BatchedComputeLaplacianKernel<T, F_T, 3><<<gridLap, block, 0, stream>>>(
+          context.d_gauss1[level],
+          wH,
+          hH,
+          context.d_gauss1[level + 1],
+          wL,
+          hL,
+          context.d_lap1[level],
+          context.batchSize);
+      CUDA_CHECK(cudaGetLastError());
 
-    // Laplacian for image 2
-    BatchedComputeLaplacianKernel<T, F_T><<<gridLap, block, 0, stream>>>(
-        context.d_gauss2[level],
-        wH,
-        hH,
-        context.d_gauss2[level + 1],
-        wL,
-        hL,
-        context.d_lap2[level],
-        context.batchSize,
-        channels);
-    CUDA_CHECK(cudaGetLastError());
+      // Laplacian for image 2
+      BatchedComputeLaplacianKernel<T, F_T, 3><<<gridLap, block, 0, stream>>>(
+          context.d_gauss2[level],
+          wH,
+          hH,
+          context.d_gauss2[level + 1],
+          wL,
+          hL,
+          context.d_lap2[level],
+          context.batchSize);
+      CUDA_CHECK(cudaGetLastError());
 
-    // Laplacian for image 3
-    BatchedComputeLaplacianKernel<T, F_T><<<gridLap, block, 0, stream>>>(
-        context.d_gauss3[level],
-        wH,
-        hH,
-        context.d_gauss3[level + 1],
-        wL,
-        hL,
-        context.d_lap3[level],
-        context.batchSize,
-        channels);
-    CUDA_CHECK(cudaGetLastError());
+      // Laplacian for image 3
+      BatchedComputeLaplacianKernel<T, F_T, 3><<<gridLap, block, 0, stream>>>(
+          context.d_gauss3[level],
+          wH,
+          hH,
+          context.d_gauss3[level + 1],
+          wL,
+          hL,
+          context.d_lap3[level],
+          context.batchSize);
+      CUDA_CHECK(cudaGetLastError());
+    } else if (channels == 4) {
+      // Laplacian for image 1
+      BatchedComputeLaplacianKernel<T, F_T, 4><<<gridLap, block, 0, stream>>>(
+          context.d_gauss1[level],
+          wH,
+          hH,
+          context.d_gauss1[level + 1],
+          wL,
+          hL,
+          context.d_lap1[level],
+          context.batchSize);
+      CUDA_CHECK(cudaGetLastError());
+
+      // Laplacian for image 2
+      BatchedComputeLaplacianKernel<T, F_T, 4><<<gridLap, block, 0, stream>>>(
+          context.d_gauss2[level],
+          wH,
+          hH,
+          context.d_gauss2[level + 1],
+          wL,
+          hL,
+          context.d_lap2[level],
+          context.batchSize);
+      CUDA_CHECK(cudaGetLastError());
+
+      // Laplacian for image 3
+      BatchedComputeLaplacianKernel<T, F_T, 4><<<gridLap, block, 0, stream>>>(
+          context.d_gauss3[level],
+          wH,
+          hH,
+          context.d_gauss3[level + 1],
+          wL,
+          hL,
+          context.d_lap3[level],
+          context.batchSize);
+      CUDA_CHECK(cudaGetLastError());
+    } else {
+      assert(false);
+    }
   }
 
   // Coarsest level copy (Gaussian → Laplacian)
@@ -1001,10 +1056,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     int h = context.heights[level];
     dim3 gridBlend((w + block.x - 1) / block.x, (h + block.y - 1) / block.y, context.batchSize);
 
-    // SHOWIMGLVL(d_lap1, last);
-    // SHOWIMGLVL(d_lap2, last);
-    // SHOWIMGLVL(d_lap3, last);
-
     BatchedBlendKernel3<T, F_T><<<gridBlend, block, 0, stream>>>(
         context.d_lap1[level],
         context.d_lap2[level],
@@ -1016,20 +1067,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
         context.batchSize,
         channels);
     CUDA_CHECK(cudaGetLastError());
-
-    // SHOWIMGLVL_SCALED(d_lap1, level, 4.0);
-    // SHOWIMGLVL_SCALED(d_lap2, level, 4.0);
-    // SHOWIMGLVL_SCALED(d_lap3, level, 4.0);
-    // SHOWIMGLVL_SCALED(d_blend, level, 4.0);
-
-    // SHOWIMGLVL_SCALEDSQ(d_lap1, level, 4.0);
-    // SHOWIMGLVL_SCALEDSQ(d_lap2, level, 4.0);
-    // SHOWIMGLVL_SCALEDSQ(d_lap3, level, 4.0);
-    // SHOWIMGLVL_SCALEDSQ(d_blend, level, 4.0);
-
-    // print_min_max(context, context.d_lap1, level, channels);
-    // print_min_max(context, context.d_lap2, level, channels);
-    // print_min_max(context, context.d_lap3, level, channels);
   }
 
   // --------------- Reconstruct the final image ---------------
@@ -1089,14 +1126,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
 
     CUDA_CHECK(cudaGetLastError());
 
-    // SHOWIMGLVL(d_blend, level);
-
     d_reconstruct = d_temp;
-    // SHOWIMGLOCAL(d_reconstruct, level);
   }
-
-  // print_min_max(context, context.d_reconstruct, 0, channels);
-
   context.initialized = true;
   return cudaSuccess;
 }
