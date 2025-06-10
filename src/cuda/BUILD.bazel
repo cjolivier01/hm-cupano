@@ -24,7 +24,7 @@ cuda_library(
         "cudaUtils.cuh",
     ],
     copts = [
-        "-Xcompiler=-std=c++14",
+        "-Xcompiler=-std=c++17",
         "-Xcompiler=-fPIC",
         "-Wno-deprecated-gpu-targets",
         "-Xcompiler=-fdiagnostics-color=always",
