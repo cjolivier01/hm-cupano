@@ -3,7 +3,7 @@
 build --nokeep_going --color=yes
 # build --crosstool_top=@toolchain//crosstool:toolchain
 build --copt=-fPIC
-build --copt=-std=c++17
+build --copt=--std=c++17
 
 #build -c opt
 build:opt -c opt

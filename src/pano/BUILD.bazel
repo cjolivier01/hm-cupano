@@ -48,6 +48,7 @@ cc_library(
         "controlMasks3.h",
     ],
     copts = [
+      "--std=c++17",
     ],
     include_prefix = INCLUDE_PREFIX,
     linkopts = [
