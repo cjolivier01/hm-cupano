@@ -333,7 +333,7 @@ def configure_stitching_multi(
         cv2.imwrite(os.path.join(directory, name), im)
 
     pto: str = os.path.join(directory, "hm_project.pto")
-    autoopt: str = os.path.join(directory, "autoopt.pto")
+    autooptimiser: str = os.path.join(directory, "autooptimiser.pto")
 
     if force or not os.path.exists(pto):
         cmd = ["pto_gen", "-o", pto, "-f", str(fov)] + [
@@ -368,14 +368,14 @@ def configure_stitching_multi(
     update_pto_file_multi(pto, names, cps)
 
     # autooptimiser
-    cmd = ["autooptimiser", "-a", "-m", "-l", "-s", "-o", autoopt, pto]
+    cmd = ["autooptimiser", "-a", "-m", "-l", "-s", "-o", autooptimiser, pto]
     if scale is not None:
         cmd += ["-x", str(scale)]
     os.system(" ".join(cmd))
 
     # nona & enblend
     os.system(
-        f"nona --bigtiff -m TIFF_m -z NONE -c -o {os.path.join(directory, 'mapping_')} {autoopt}"
+        f"nona --bigtiff -m TIFF_m -z NONE -c -o {os.path.join(directory, 'mapping_')} {autooptimiser}"
     )
     os.system(
         f"multiblend --save-seams={os.path.join(directory, 'seam_file.png')} -o {os.path.join(directory, 'panorama.tif')} {os.path.join(directory, 'mapping_????.tif')}"
