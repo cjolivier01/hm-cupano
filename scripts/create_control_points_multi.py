@@ -64,33 +64,115 @@ def get_video_fps_and_duration(video_path: str) -> Tuple[float, float]:
     return fps, frame_count / fps
 
 
+# def synchronize_by_audio(
+#     ref_path: str,
+#     tgt_path: str,
+#     seconds: float = 15.0,
+#     verbose: bool = True,
+# ) -> float:
+#     """
+#     Return frame_offset for tgt so it aligns to ref.
+#     """
+#     fps1, dur1 = get_video_fps_and_duration(ref_path)
+#     fps2, dur2 = get_video_fps_and_duration(tgt_path)
+#     use_secs: float = min(seconds, dur1 - 0.5, dur2 - 0.5)
+#     wf1, sr1 = load_audio_as_tensor(ref_path, use_secs, verbose)
+#     wf2, sr2 = load_audio_as_tensor(tgt_path, use_secs, verbose)
+
+#     # use first channel if multichannel
+#     a1: np.ndarray = wf1[0] if wf1.ndim > 1 else wf1
+#     a2: np.ndarray = wf2[0] if wf2.ndim > 1 else wf2
+
+#     corr: np.ndarray = correlate(a1, a2, mode="full")
+#     lag: int = int(np.argmax(corr) - len(a1) + 1)
+
+#     items_per_frame: float = len(a1) / (fps1 * use_secs)
+#     frame_offset: float = lag / items_per_frame
+#     if verbose:
+#         print(f"[sync] {tgt_path} lags by {frame_offset:.1f} frames")
+#     return frame_offset
+
+
 def synchronize_by_audio(
-    ref_path: str,
-    tgt_path: str,
-    seconds: float = 15.0,
+    file1_path: str,
+    file2_path: str,
+    seconds: int = 15,
     verbose: bool = True,
-) -> float:
+) -> Tuple[int, int]:
     """
-    Return frame_offset for tgt so it aligns to ref.
+    Synchronize two video files by comparing their audio tracks using cross-correlation.
+
+    The function extracts a short audio clip from each video, computes their cross-correlation,
+    and calculates the frame offset between the two videos.
+
+    Args:
+        file1_path: Path to the first video file.
+        file2_path: Path to the second video file.
+        seconds: Duration (in seconds) of audio to use for synchronization.
+        verbose: If True, prints progress messages.
+
+    Returns:
+        A tuple (left_frame_offset, right_frame_offset) representing the number of frames to
+        skip in each video so that they are synchronized. The offsets are returned as integers.
     """
-    fps1, dur1 = get_video_fps_and_duration(ref_path)
-    fps2, dur2 = get_video_fps_and_duration(tgt_path)
-    use_secs: float = min(seconds, dur1 - 0.5, dur2 - 0.5)
-    wf1, sr1 = load_audio_as_tensor(ref_path, use_secs, verbose)
-    wf2, sr2 = load_audio_as_tensor(tgt_path, use_secs, verbose)
 
-    # use first channel if multichannel
-    a1: np.ndarray = wf1[0] if wf1.ndim > 1 else wf1
-    a2: np.ndarray = wf2[0] if wf2.ndim > 1 else wf2
-
-    corr: np.ndarray = correlate(a1, a2, mode="full")
-    lag: int = int(np.argmax(corr) - len(a1) + 1)
-
-    items_per_frame: float = len(a1) / (fps1 * use_secs)
-    frame_offset: float = lag / items_per_frame
     if verbose:
-        print(f"[sync] {tgt_path} lags by {frame_offset:.1f} frames")
-    return frame_offset
+        print("Opening videos...")
+
+    # Get video FPS and duration for both videos.
+    video1_fps, video1_duration = get_video_fps_and_duration(file1_path)
+    video2_fps, video2_duration = get_video_fps_and_duration(file2_path)
+
+    # Ensure we do not exceed the available duration (leaving a 0.5 sec margin).
+    seconds = min(seconds, min(video1_duration - 0.5, video2_duration - 0.5))
+
+    video_1_subclip_frame_count: float = video1_fps * seconds
+    video_2_subclip_frame_count: float = video2_fps * seconds
+
+    if verbose:
+        print("Loading audio...")
+
+    # Load audio as tensor. The waveform is of shape [channels, samples].
+    audio1, sample_rate1 = load_audio_as_tensor(file1_path, duration_seconds=seconds)
+    audio2, sample_rate2 = load_audio_as_tensor(file2_path, duration_seconds=seconds)
+
+    # Calculate number of audio samples per video frame.
+    # Note: waveform shape is [channels, samples] so we use axis 1 for number of samples.
+    audio_items_per_frame_1: float = audio1.shape[0] / video_1_subclip_frame_count
+    audio_items_per_frame_2: float = audio2.shape[0] / video_2_subclip_frame_count
+
+    # Check that the computed samples per frame match the expected value.
+    assert np.isclose(sample_rate1 / video1_fps, audio_items_per_frame_1)
+    assert np.isclose(sample_rate2 / video2_fps, audio_items_per_frame_2)
+
+    if verbose:
+        print("Calculating cross-correlation...")
+
+    sum1 = np.sum(audio1[:, 0])
+    sum2 = np.sum(audio2[:, 0])
+
+    # Use only the first channel for correlation.
+    correlation: np.ndarray = scipy.signal.correlate(
+        audio1[:, 0], audio2[:, 0], mode="full"
+    )
+    sumc = np.sum(correlation)
+    # Compute lag: subtract the length of the signal (using axis 1 length)
+    lag: int = np.argmax(correlation) - audio1.shape[0] + 1
+
+    # Convert lag (in audio samples) to frame offset.
+    fps = video1_fps
+    frame_offset: float = lag / audio_items_per_frame_1
+    time_offset: float = frame_offset / fps
+
+    if verbose:
+        print(f"Calculated frame offset: {frame_offset}")
+        print(f"Equivalent time offset: {time_offset} seconds")
+
+    # Determine starting frame for each video.
+    left_frame_offset: float = frame_offset if frame_offset > 0 else 0
+    right_frame_offset: float = -frame_offset if frame_offset < 0 else 0
+
+    return left_frame_offset, right_frame_offset
 
 
 def extract_frame(video_path: str, frame_idx: Optional[float]) -> np.ndarray:
@@ -254,7 +336,9 @@ def configure_stitching_multi(
     autoopt: str = os.path.join(directory, "autoopt.pto")
 
     if force or not os.path.exists(pto):
-        cmd = ["pto_gen", "-o", pto, "-f", str(fov)] + names
+        cmd = ["pto_gen", "-o", pto, "-f", str(fov)] + [
+            os.path.join(directory, n) for n in names
+        ]
         os.system(" ".join(cmd))
 
     # compute CPS and save visuals
@@ -298,6 +382,32 @@ def configure_stitching_multi(
     )
 
 
+def compute_global_offsets(pairs: List[Tuple[float, float]]) -> List[float]:
+    """
+    Given a list of pairwise offsets [(off0, off1), (off1, off2), ...],
+    return a list of N global offsets [g0, g1, ..., gN-1] such that:
+      - g0 == 0
+      - gi+1 == gi + (off_{i+1} - off_i)
+      - all gi >= 0 (shifted so the earliest is zero)
+    """
+    # Number of videos
+    n = len(pairs) + 1
+    # Step 1: compute pairwise delays
+    delays = [off1 - off0 for off0, off1 in pairs]
+
+    # Step 2: accumulate
+    globals_ = [0.0]
+    for d in delays:
+        globals_.append(globals_[-1] + d)
+
+    # Shift so the minimum is zero
+    min_off = min(globals_)
+    if min_off < 0:
+        globals_ = [g - min_off for g in globals_]
+
+    return globals_
+
+
 def main() -> None:
     """
     Parse args, sync inputs, extract frames, run stitching.
@@ -324,22 +434,18 @@ def main() -> None:
         exit(1)
 
     # compute offsets to files[0]
-    offsets: List[float] = [0.0]
+    offsets: List[float] = []
     ref: str = files[0]
     for tgt in files[1:]:
         if is_video_file(ref) and is_video_file(tgt):
             offsets.append(synchronize_by_audio(ref, tgt))
-        else:
-            print(f"[sync] skipping for {tgt} (not a video pair)")
-            offsets.append(0.0)
+    assert len(offsets) == len(files) - 1
 
-    # shift all offsets so that the minimum is 0 (making every offset ≥ 0)
-    min_offset: float = min(offsets)
-    offsets = [off - min_offset for off in offsets]
+    final_offsets: List[float] = compute_global_offsets(offsets)
 
     # extract frames
     frames: List[np.ndarray] = [
-        extract_frame(path, off) for path, off in zip(files, offsets)
+        extract_frame(path, off) for path, off in zip(files, final_offsets)
     ]
 
     configure_stitching_multi(
