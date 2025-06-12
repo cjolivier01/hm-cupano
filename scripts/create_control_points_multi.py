@@ -328,7 +328,7 @@ def configure_stitching_multi(
     Save frames, generate PTO, compute cps & visuals, run Hugin tools.
     """
     # save frames
-    names: List[str] = [f"i{i}.png" for i in range(len(frames))]
+    names: List[str] = [f"image{i}.png" for i in range(len(frames))]
     for im, name in zip(frames, names):
         cv2.imwrite(os.path.join(directory, name), im)
 
