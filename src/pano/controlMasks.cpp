@@ -19,7 +19,7 @@ namespace pano {
  */
 namespace {
 
-struct TiffInfo {
+struct TiffInfo {"type"
   bool validResolution = false; ///< Whether resolution tags were valid
   float xResolution = 0.0f; ///< Horizontal resolution
   float yResolution = 0.0f; ///< Vertical resolution
