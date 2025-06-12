@@ -33,6 +33,27 @@
       "request": "launch",
       "program": "${workspaceFolder}/scripts/create_control_points.py",
       "args": [
+        "--inputs",
+        "${env:HOME}/Videos/camp3/left.mp4",
+        "${env:HOME}/Videos/camp3/middle.mp4",
+        "${env:HOME}/Videos/camp3/right.mp4",
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceRoot}/build:${workspaceRoot}/src:${workspaceRoot}/external/MOTChallengeEvalKit"
+      }
+    },
+    {
+      //
+      // Python: Create Control Points
+      //
+      "name": "Python: create_control_points_multi.py",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/create_control_points.py",
+      "args": [
         //"--game-id=mlk-heat-1",
         // "--left=${env:HOME}/Videos/mlk-heat-1/left.png",
         // "--right=${env:HOME}/Videos/mlk-heat-1/right.png",

@@ -4,6 +4,7 @@
 #include <tiffio.h> // For reading TIFF metadata
 #include <tiffio.h> // For TIFF metadata
 
+#include <filesystem>
 #include <limits>
 #include <optional>
 #include <stdexcept>
