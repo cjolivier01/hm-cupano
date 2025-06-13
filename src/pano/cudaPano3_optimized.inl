@@ -77,6 +77,10 @@ CudaStitchPano3<T_pipeline, T_compute>::process_impl_optimized(
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
 
+    SHOW_SCALED(stitch_context.cudaFull0, 0.5);
+    SHOW_SCALED(stitch_context.cudaFull1, 0.5);
+    SHOW_SCALED(stitch_context.cudaFull2, 0.5);
+
     // Also need to remap images to canvas for non-blended regions
     // Use fused kernel for all three images at once
     cuerr = launchFusedRemapToCanvasKernel3(

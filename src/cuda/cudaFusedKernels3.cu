@@ -45,8 +45,8 @@ __global__ void FusedRemapToFullKernel3(
     CudaSurface<T_compute> cudaFull1,
     CudaSurface<T_compute> cudaFull2,
     // ROI parameters
-    int roi_width,
-    int roi_height,
+    // int roi_width,
+    // int roi_height,
     int offset0_x,
     int offset0_y,
     int offset1_x,
@@ -69,8 +69,8 @@ __global__ void FusedRemapToFullKernel3(
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-  if (x >= roi_width || y >= roi_height)
-    return;
+  // if (x >= roi_width || y >= roi_height)
+  //   return;
 
   // Process image 0
   {
@@ -421,6 +421,8 @@ CudaStatus launchFusedRemapToFullKernel3(
       (cudaFull0.height() + block.y - 1) / block.y,
       inputImage0.batch_size());
 
+  const auto& canvas_positions = canvas_manager.canvas_positions();
+
   FusedRemapToFullKernel3<T_pipeline, T_compute><<<grid, block, 0, stream>>>(
       inputImage0.surface(),
       inputImage1.surface(),
@@ -440,20 +442,22 @@ CudaStatus launchFusedRemapToFullKernel3(
       cudaFull0.surface(),
       cudaFull1.surface(),
       cudaFull2.surface(),
-      canvas_manager.remapped_image_roi_blend_0.width,
-      canvas_manager.remapped_image_roi_blend_0.height,
+      // /*roi_width= GET RID OF*/cudaFull2.width(),
+      // /*roi_height= GET RID OF*/cudaFull2.height(),
+      // canvas_manager.remapped_image_roi_blend_0.width,
+      // canvas_manager.remapped_image_roi_blend_0.height,
       canvas_manager._remapper_0.xpos,
       0,
       canvas_manager._remapper_1.xpos,
       0,
       canvas_manager._remapper_2.xpos,
       0,
-      canvas_manager.canvas_positions()[0].x,
-      canvas_manager.canvas_positions()[0].y,
-      canvas_manager.canvas_positions()[1].x,
-      canvas_manager.canvas_positions()[1].y,
-      canvas_manager.canvas_positions()[2].x,
-      canvas_manager.canvas_positions()[2].y,
+      canvas_positions[0].x,
+      canvas_positions[0].y,
+      canvas_positions[1].x,
+      canvas_positions[1].y,
+      canvas_positions[2].x,
+      canvas_positions[2].y,
       adjustment0,
       adjustment1,
       adjustment2,
