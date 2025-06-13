@@ -344,6 +344,20 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         image_adjustment,
         stitch_context.batch_size(),
         stream));
+
+    // Copy the region of canvas that is flagged for blending (ROI0) into cudaFull0:
+    cuerr = simple_make_full_batch(
+        canvas->surface(),
+        /*region_width=*/canvas_manager.remapped_image_roi_blend_0.width,
+        /*region_height=*/canvas_manager.remapped_image_roi_blend_0.height,
+        /*offsetX=*/canvas_manager.canvas_positions()[0].x,
+        /*offsetY=*/canvas_manager.canvas_positions()[0].y,
+        /*destOffsetX=*/canvas_manager._remapper_0.xpos,
+        /*destOffsetY=*/0,
+        /*adjust_origin=*/false,
+        /*batchSize=*/stitch_context.batch_size(),
+        stitch_context.cudaFull0->surface(),
+        stream);
 #else
     CUDA_RETURN_IF_ERROR(remap_to_surface_for_blending(
         inputImage0,
