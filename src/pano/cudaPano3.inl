@@ -271,7 +271,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
   // SHOW_IMAGE(&inputImage2);
   // std::vector<std::pair<double, double>>  min_max = getMinMaxPerChannel(inputImage0.download());
 
-  // We need all alphas to be zero to start
+  // We need all alphas to be zero to start, the pixel values will all get filled in for the RGB channels
   if constexpr (sizeof(T_pipeline) / sizeof(BaseScalar_t<T_pipeline>) == 4) {
     cuerr = cudaMemsetAsync(canvas->data(), 0, canvas->size(), stream);
     CUDA_RETURN_IF_ERROR(cuerr);
