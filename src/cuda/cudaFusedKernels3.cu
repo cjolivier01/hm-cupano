@@ -69,8 +69,8 @@ __global__ void FusedRemapToFullKernel3(
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-  // if (x >= roi_width || y >= roi_height)
-  //   return;
+  if (x < 0 || y < 0 || x >= cudaFull0.width || y >= cudaFull0.height)
+    return;
 
   // Process image 0
   {
@@ -101,31 +101,32 @@ __global__ void FusedRemapToFullKernel3(
   }
 
   // Process image 1
-  {
-    int full_x = x + offset1_x;
-    int full_y = y + offset1_y;
+  if (x >= 0 && x >= canvas1_x && x < canvas1_x + remap1_w && y >= canvas1_y && y < canvas1_y + remap1_h) {
+    // int full_x = x + offset1_x;
+    // int full_y = y + offset1_y;
+    // if (full_x >= 0 && full_x < cudaFull1.width && full_y >= 0 && full_y < cudaFull1.height) {
+    //  int remap_x = full_x - canvas1_x;
+    //  int remap_y = full_y - canvas1_y;
+    int remap_x = x - canvas1_x;
+    int remap_y = y - canvas1_y;
 
-    if (full_x >= 0 && full_x < cudaFull1.width && full_y >= 0 && full_y < cudaFull1.height) {
-      int remap_x = full_x - canvas1_x;
-      int remap_y = full_y - canvas1_y;
+    if (remap_x >= 0 && remap_x < remap1_w && remap_y >= 0 && remap_y < remap1_h) {
+      int mapIdx = remap_y * remap1_w + remap_x;
+      int srcX = remap_1_x[mapIdx];
+      int srcY = remap_1_y[mapIdx];
 
-      if (remap_x >= 0 && remap_x < remap1_w && remap_y >= 0 && remap_y < remap1_h) {
-        int mapIdx = remap_y * remap1_w + remap_x;
-        int srcX = remap_1_x[mapIdx];
-        int srcY = remap_1_y[mapIdx];
+      if (srcX != kUnmappedPositionValue && srcX < inputImage1.width && srcY < inputImage1.height) {
+        T_pipeline* src_ptr = surface_ptr(inputImage1, b, srcX, srcY);
+        T_compute out_pixel = perform_cast<T_compute>(*src_ptr);
 
-        if (srcX != kUnmappedPositionValue && srcX < inputImage1.width && srcY < inputImage1.height) {
-          T_pipeline* src_ptr = surface_ptr(inputImage1, b, srcX, srcY);
-          T_compute out_pixel = perform_cast<T_compute>(*src_ptr);
-
-          if (apply_adjustment) {
-            out_pixel = PixelAdjuster<T_compute>::adjust(out_pixel, adjustment1);
-          }
-
-          *surface_ptr(cudaFull1, b, x, y) = out_pixel;
+        if (apply_adjustment) {
+          out_pixel = PixelAdjuster<T_compute>::adjust(out_pixel, adjustment1);
         }
+        // printf("image 1 dest x: %d/%d\n", (int)x, (int)cudaFull1.width);
+        *surface_ptr(cudaFull1, b, x, y) = out_pixel;
       }
     }
+    //}
   }
 
   // Process image 2
