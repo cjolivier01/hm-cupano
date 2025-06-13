@@ -331,18 +331,18 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
   if (!stitch_context.is_hard_seam()) {
 #if 1
     assert(stitch_context.cudaFull0->width() == canvas->width());
-    CUDA_RETURN_IF_ERROR(remap_to_surface_for_blending_compute(
+    CUDA_RETURN_IF_ERROR(remap_to_surface_for_blending(
         inputImage0,
         *stitch_context.remap_0_x,
         *stitch_context.remap_0_y,
-        *stitch_context.cudaFull0,
+        *canvas,
         canvas_manager.canvas_positions()[0].x,
         canvas_manager.canvas_positions()[0].y,
         image_adjustment,
         stitch_context.batch_size(),
         stream));
 
-    // Copy the region of canvas that is flagged for blending (ROI0) into cudaFull0:
+    // Copy blending region (ROI1) into cudaFull0
     cuerr = simple_make_full_batch(
         canvas->surface(),
         /*region_width=*/canvas_manager.remapped_image_roi_blend_0.width,
@@ -355,6 +355,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         /*batchSize=*/stitch_context.batch_size(),
         stitch_context.cudaFull0->surface(),
         stream);
+    CUDA_RETURN_IF_ERROR(cuerr);
 #else
     CUDA_RETURN_IF_ERROR(remap_to_surface_for_blending(
         inputImage0,
