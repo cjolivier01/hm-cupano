@@ -130,7 +130,7 @@ inline constexpr size_t num_channels() {
 } // namespace tmp3
 
 template <typename T_pipeline, typename T_compute>
-CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface(
+CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_blending(
     const CudaMat<T_pipeline>& inputImage,
     const CudaMat<uint16_t>& map_x,
     const CudaMat<uint16_t>& map_y,
@@ -138,51 +138,47 @@ CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface(
     int dest_dest_canvas_x,
     int dest_dest_canvas_y,
     const std::optional<float3>& image_adjustment,
-    bool is_hard_seam,
     int batch_size,
     cudaStream_t stream) {
   CudaStatus cuerr;
-  assert(map_x.width() == map_y.width() && map_x.height() == map_y.width());
-  if (!is_hard_seam) {
-    // SOFT-SEAM: remap image0 onto canvas
-    if (image_adjustment.has_value()) {
-      cuerr = batched_remap_kernel_ex_offset_adjust(
-          inputImage.surface(),
-          dest_canvas.surface(),
-          map_x.data(),
-          map_y.data(),
-          /*deflt=*/
-          {
-              0,
-          },
-          /*batchSize=*/batch_size,
-          map_x.width(),
-          map_x.height(),
-          /*offsetX=*/dest_dest_canvas_x,
-          /*offsetY=*/dest_dest_canvas_y,
-          /*no_unmapped_write=*/false,
-          tmp3::neg(*image_adjustment),
-          stream);
-    } else {
-      cuerr = batched_remap_kernel_ex_offset(
-          inputImage.surface(),
-          dest_canvas.surface(),
-          map_x.data(),
-          map_y.data(),
-          /*deflt=*/
-          {
-              0,
-          },
-          /*batchSize=*/batch_size,
-          map_x.width(),
-          map_y.height(),
-          /*offsetX=*/dest_dest_canvas_x,
-          /*offsetY=*/dest_dest_canvas_y,
-          /*no_unmapped_write=*/false,
-          stream);
-    }
+  assert(map_x.width() == map_y.width() && map_x.height() == map_y.height());
+  // SOFT-SEAM: remap image0 onto canvas
+  if (image_adjustment.has_value()) {
+    cuerr = batched_remap_kernel_ex_offset_adjust(
+        inputImage.surface(),
+        dest_canvas.surface(),
+        map_x.data(),
+        map_y.data(),
+        /*deflt=*/
+        {
+            0,
+        },
+        /*batchSize=*/batch_size,
+        map_x.width(),
+        map_x.height(),
+        /*offsetX=*/dest_dest_canvas_x,
+        /*offsetY=*/dest_dest_canvas_y,
+        /*no_unmapped_write=*/false,
+        tmp3::neg(*image_adjustment),
+        stream);
+  } else {
+    cuerr = batched_remap_kernel_ex_offset(
+        inputImage.surface(),
+        dest_canvas.surface(),
+        map_x.data(),
+        map_y.data(),
+        /*deflt=*/
+        {
+            0,
+        },
+        /*batchSize=*/batch_size,
+        map_x.width(),
+        map_y.height(),
+        /*offsetX=*/dest_dest_canvas_x,
+        /*offsetY=*/dest_dest_canvas_y,
+        /*no_unmapped_write=*/false,
+        stream);
   }
-
   return cuerr;
 }
 /**
@@ -222,44 +218,56 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     CUDA_RETURN_IF_ERROR(cuerr);
   }
   // -------------------- IMAGE 0 --------------------
+
   if (!stitch_context.is_hard_seam()) {
+    CUDA_RETURN_IF_ERROR(remap_to_surface_for_blending(
+        inputImage0,
+        *stitch_context.remap_0_x,
+        *stitch_context.remap_0_y,
+        *canvas,
+        canvas_manager.canvas_positions()[0].x,
+        canvas_manager.canvas_positions()[0].y,
+        image_adjustment,
+        stitch_context.batch_size(),
+        stream));
+
     // SOFT-SEAM: remap image0 onto canvas
-    if (image_adjustment.has_value()) {
-      cuerr = batched_remap_kernel_ex_offset_adjust(
-          inputImage0.surface(),
-          canvas->surface(),
-          stitch_context.remap_0_x->data(),
-          stitch_context.remap_0_y->data(),
-          {
-              0,
-          },
-          /*batchSize=*/stitch_context.batch_size(),
-          stitch_context.remap_0_x->width(),
-          stitch_context.remap_0_x->height(),
-          /*offsetX=*/canvas_manager.canvas_positions()[0].x,
-          /*offsetY=*/canvas_manager.canvas_positions()[0].y,
-          /*no_unmapped_write=*/false,
-          tmp3::neg(*image_adjustment),
-          stream);
-    } else {
-      cuerr = batched_remap_kernel_ex_offset(
-          inputImage0.surface(),
-          canvas->surface(),
-          stitch_context.remap_0_x->data(),
-          stitch_context.remap_0_y->data(),
-          {
-              0,
-          },
-          /*batchSize=*/stitch_context.batch_size(),
-          stitch_context.remap_0_x->width(),
-          stitch_context.remap_0_x->height(),
-          /*offsetX=*/canvas_manager.canvas_positions()[0].x,
-          /*offsetY=*/canvas_manager.canvas_positions()[0].y,
-          /*no_unmapped_write=*/false,
-          stream);
-    }
-    // std::vector<std::pair<double, double>>  min_max = getMinMaxPerChannel(canvas->download());
-    CUDA_RETURN_IF_ERROR(cuerr);
+    // if (image_adjustment.has_value()) {
+    //   cuerr = batched_remap_kernel_ex_offset_adjust(
+    //       inputImage0.surface(),
+    //       canvas->surface(),
+    //       stitch_context.remap_0_x->data(),
+    //       stitch_context.remap_0_y->data(),
+    //       {
+    //           0,
+    //       },
+    //       /*batchSize=*/stitch_context.batch_size(),
+    //       stitch_context.remap_0_x->width(),
+    //       stitch_context.remap_0_x->height(),
+    //       /*offsetX=*/canvas_manager.canvas_positions()[0].x,
+    //       /*offsetY=*/canvas_manager.canvas_positions()[0].y,
+    //       /*no_unmapped_write=*/false,
+    //       tmp3::neg(*image_adjustment),
+    //       stream);
+    // } else {
+    //   cuerr = batched_remap_kernel_ex_offset(
+    //       inputImage0.surface(),
+    //       canvas->surface(),
+    //       stitch_context.remap_0_x->data(),
+    //       stitch_context.remap_0_y->data(),
+    //       {
+    //           0,
+    //       },
+    //       /*batchSize=*/stitch_context.batch_size(),
+    //       stitch_context.remap_0_x->width(),
+    //       stitch_context.remap_0_x->height(),
+    //       /*offsetX=*/canvas_manager.canvas_positions()[0].x,
+    //       /*offsetY=*/canvas_manager.canvas_positions()[0].y,
+    //       /*no_unmapped_write=*/false,
+    //       stream);
+    // }
+    // // std::vector<std::pair<double, double>>  min_max = getMinMaxPerChannel(canvas->download());
+    // CUDA_RETURN_IF_ERROR(cuerr);
 
     // Copy the region of canvas that is flagged for blending (ROI0) into cudaFull0:
     cuerr = simple_make_full_batch(
