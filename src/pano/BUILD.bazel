@@ -36,16 +36,37 @@ cc_library(
 cc_library(
     name = "canvas",
     srcs = [
-        "canvasManager.cpp",
-        "canvasManager3.cpp",
         "controlMasks.cpp",
         "controlMasks3.cpp",
     ],
     hdrs = [
-        "canvasManager.h",
-        "canvasManager3.h",
         "controlMasks.h",
         "controlMasks3.h",
+    ],
+    copts = [
+      "--std=c++17",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    linkopts = [
+        "-ltiff",
+        "-lpng",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":canvas_manager",
+        "@opencv_linux//:opencv",
+    ],
+)
+
+cc_library(
+    name = "canvas_manager",
+    srcs = [
+        "canvasManager.cpp",
+        "canvasManager3.cpp",
+    ],
+    hdrs = [
+        "canvasManager.h",
+        "canvasManager3.h",
     ],
     copts = [
       "--std=c++17",
@@ -82,6 +103,7 @@ cc_library(
         "cudaPano.inl",
         "cudaPano3.h",
         "cudaPano3.inl",
+        "cudaPano3_optimized.inl",
     ],
     copts = [
     ],

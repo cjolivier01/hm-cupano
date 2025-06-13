@@ -16,7 +16,7 @@ struct PixelAdjuster {
 //
 // Clamps a float value between minVal and maxVal.
 //------------------------------------------------------------------------------
-__device__ float clampf(float val, float minVal, float maxVal) {
+inline __device__ float clampf(float val, float minVal, float maxVal) {
   return fminf(maxVal, fmaxf(minVal, val));
 }
 

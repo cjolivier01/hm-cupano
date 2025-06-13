@@ -1,7 +1,7 @@
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 #include <device_launch_parameters.h>
-#include "cudaImageAdjust.h"
+#include "cudaImageAdjust.cuh"
 #include "cudaRemap.h" // Assumed to declare these host functions
 
 #include "cudaUtils.cuh"

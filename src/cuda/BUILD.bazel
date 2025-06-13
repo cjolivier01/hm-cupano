@@ -13,6 +13,7 @@ cuda_library(
     srcs = [
         "cudaBlend.cu",
         "cudaBlend3.cu",
+        "cudaFusedKernels3.cu",
         "cudaBlendN.cu",
         "cudaImageAdjust.cu",
         "cudaMakeFull.cu",
@@ -21,6 +22,7 @@ cuda_library(
         "cudaUtils.cu",
     ],
     hdrs = [
+        "cudaImageAdjust.cuh",
         "cudaUtils.cuh",
     ],
     copts = [
@@ -45,6 +47,7 @@ cuda_library(
     deps = [
         ":cuda_blend_cuda_lib_headers",
         "//src/utils:show_image",
+        "//src/pano:canvas_manager",
         "@local_cuda//:cuda_runtime",
         "@opencv_linux//:opencv",
     ],
@@ -57,8 +60,8 @@ cc_library(
     hdrs = [
         "cudaBlend.h",
         "cudaBlend3.h",
+        "cudaFusedKernels3.h",
         "cudaBlendN.h",
-        "cudaImageAdjust.h",
         "cudaMakeFull.h",
         "cudaRemap.h",
         "cudaStatus.h",

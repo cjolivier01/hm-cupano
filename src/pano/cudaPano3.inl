@@ -546,7 +546,12 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     const CudaMat<T_pipeline>& inputImage1,
     const CudaMat<T_pipeline>& inputImage2,
     cudaStream_t stream,
-    std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
+    std::unique_ptr<CudaMat<T_pipeline>>&& canvas,
+    bool fused) {
+  if (fused) {
+    return process_optimized(inputImage0, inputImage1, inputImage2, stream, std::move(canvas));
+  }
+
   CUDA_RETURN_IF_ERROR(status_);
   if (match_exposure_ && !image_adjustment_.has_value()) {
     image_adjustment_ = compute_image_adjustment(inputImage0, inputImage1, inputImage2);
