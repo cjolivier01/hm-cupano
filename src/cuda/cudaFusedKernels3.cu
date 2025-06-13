@@ -1,5 +1,6 @@
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
+#include <cassert>
 #include <limits>
 #include "cudaFusedKernels3.h"
 #include "cudaImageAdjust.cuh"
@@ -73,29 +74,23 @@ __global__ void FusedRemapToFullKernel3(
     return;
 
   // Process image 0
-  {
-    int full_x = x + offset0_x;
-    int full_y = y + offset0_y;
+  if (x >= 0 && x >= canvas0_x && x < canvas0_x + remap0_w && y >= canvas0_y && y < canvas0_y + remap0_h) {
+    int remap_x = x - canvas0_x;
+    int remap_y = y - canvas0_y;
 
-    if (full_x >= 0 && full_x < cudaFull0.width && full_y >= 0 && full_y < cudaFull0.height) {
-      int remap_x = full_x - canvas0_x;
-      int remap_y = full_y - canvas0_y;
+    if (remap_x >= 0 && remap_x < remap0_w && remap_y >= 0 && remap_y < remap0_h) {
+      int mapIdx = remap_y * remap0_w + remap_x;
+      int srcX = remap_0_x[mapIdx];
+      int srcY = remap_0_y[mapIdx];
 
-      if (remap_x >= 0 && remap_x < remap0_w && remap_y >= 0 && remap_y < remap0_h) {
-        int mapIdx = remap_y * remap0_w + remap_x;
-        int srcX = remap_0_x[mapIdx];
-        int srcY = remap_0_y[mapIdx];
+      if (srcX != kUnmappedPositionValue && srcX < inputImage0.width && srcY < inputImage0.height) {
+        T_pipeline* src_ptr = surface_ptr(inputImage0, b, srcX, srcY);
+        T_compute out_pixel = perform_cast<T_compute>(*src_ptr);
 
-        if (srcX != kUnmappedPositionValue && srcX < inputImage0.width && srcY < inputImage0.height) {
-          T_pipeline* src_ptr = surface_ptr(inputImage0, b, srcX, srcY);
-          T_compute out_pixel = perform_cast<T_compute>(*src_ptr);
-
-          if (apply_adjustment) {
-            out_pixel = PixelAdjuster<T_compute>::adjust(out_pixel, adjustment0);
-          }
-
-          *surface_ptr(cudaFull0, b, x, y) = out_pixel;
+        if (apply_adjustment) {
+          out_pixel = PixelAdjuster<T_compute>::adjust(out_pixel, adjustment0);
         }
+        *surface_ptr(cudaFull0, b, x, y) = out_pixel;
       }
     }
   }
@@ -127,7 +122,7 @@ __global__ void FusedRemapToFullKernel3(
     int remap_x = x - canvas2_x;
     int remap_y = y - canvas2_y;
 
-    //if (remap_x >= 0 && remap_x < remap2_w && remap_y >= 0 && remap_y < remap2_h) {
+    if (remap_x >= 0 && remap_x < remap2_w && remap_y >= 0 && remap_y < remap2_h) { // NOT NEEDED?
       int mapIdx = remap_y * remap2_w + remap_x;
       int srcX = remap_2_x[mapIdx];
       int srcY = remap_2_y[mapIdx];
@@ -137,11 +132,11 @@ __global__ void FusedRemapToFullKernel3(
         T_compute out_pixel = perform_cast<T_compute>(*src_ptr);
 
         if (apply_adjustment) {
-          out_pixel = PixelAdjuster<T_compute>::adjust(out_pixel, adjustment1);
+          out_pixel = PixelAdjuster<T_compute>::adjust(out_pixel, adjustment2);
         }
         *surface_ptr(cudaFull2, b, x, y) = out_pixel;
       }
-    //}
+    }
   }
 }
 
