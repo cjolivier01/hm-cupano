@@ -244,6 +244,7 @@ __global__ void FusedBatchedDownsampleMask3(
       int iy = inY + dy;
       if (ix < inWidth && iy < inHeight) {
         int idx = (iy * inWidth + ix) * CHANNELS;
+        #pragma unroll
         for (int c = 0; c < CHANNELS; c++) {
           sums[c] += static_cast<float>(input[idx + c]);
         }
@@ -253,6 +254,7 @@ __global__ void FusedBatchedDownsampleMask3(
   }
 
   int outIdx = (y * outWidth + x) * CHANNELS;
+  #pragma unroll
   for (int c = 0; c < CHANNELS; c++) {
     output[outIdx + c] = static_cast<T>(sums[c] / count);
   }
@@ -298,6 +300,7 @@ __global__ void BatchedComputeLaplacianKernel(
 
   int idxHigh = (y * highWidth + x) * CHANNELS;
 
+  #pragma unroll
   for (int c = 0; c < CHANNELS; ++c) {
     if (CHANNELS == 4 && c == 3) {
       // alpha channel: just copy high-res alpha

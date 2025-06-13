@@ -110,7 +110,7 @@ class CudaStitchPano3 {
       const CudaMat<T_pipeline>& inputImage2,
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas,
-      bool fused = false);
+      bool fused = true);
 
   /**
    * @brief Process/​stitch three images into the provided canvas.
