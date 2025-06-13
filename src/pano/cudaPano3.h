@@ -160,6 +160,19 @@ class CudaStitchPano3 {
       int batch_size,
       cudaStream_t stream);
 
+  static CudaStatus remap_to_surface_for_hard_seam(
+      const CudaMat<T_pipeline>& inputImage,
+      const CudaMat<uint16_t>& map_x,
+      const CudaMat<uint16_t>& map_y,
+      uint8_t canvas_position_image_index,
+      const CudaMat<unsigned char>& canvas_position_image_index_map,
+      CudaMat<T_pipeline>& dest_canvas,
+      int dest_canvas_x,
+      int dest_canvas_y,
+      const std::optional<float3>& image_adjustment,
+      int batch_size,
+      cudaStream_t stream);
+
   /**
    * @brief If “match_exposure_” is true, tries to compute a per‐channel offset
    * that aligns image0 vs. image1 vs. image2 across the seam.  Returns three

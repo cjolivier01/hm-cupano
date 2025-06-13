@@ -135,8 +135,8 @@ CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_blending
     const CudaMat<uint16_t>& map_x,
     const CudaMat<uint16_t>& map_y,
     CudaMat<T_pipeline>& dest_canvas,
-    int dest_dest_canvas_x,
-    int dest_dest_canvas_y,
+    int dest_canvas_x,
+    int dest_canvas_y,
     const std::optional<float3>& image_adjustment,
     int batch_size,
     cudaStream_t stream) {
@@ -156,8 +156,8 @@ CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_blending
         /*batchSize=*/batch_size,
         map_x.width(),
         map_x.height(),
-        /*offsetX=*/dest_dest_canvas_x,
-        /*offsetY=*/dest_dest_canvas_y,
+        /*offsetX=*/dest_canvas_x,
+        /*offsetY=*/dest_canvas_y,
         /*no_unmapped_write=*/false,
         tmp3::neg(*image_adjustment),
         stream);
@@ -174,13 +174,72 @@ CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_blending
         /*batchSize=*/batch_size,
         map_x.width(),
         map_y.height(),
-        /*offsetX=*/dest_dest_canvas_x,
-        /*offsetY=*/dest_dest_canvas_y,
+        /*offsetX=*/dest_canvas_x,
+        /*offsetY=*/dest_canvas_y,
         /*no_unmapped_write=*/false,
         stream);
   }
   return cuerr;
 }
+
+template <typename T_pipeline, typename T_compute>
+CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_hard_seam(
+    const CudaMat<T_pipeline>& inputImage,
+    const CudaMat<uint16_t>& map_x,
+    const CudaMat<uint16_t>& map_y,
+    uint8_t canvas_position_image_index,
+    const CudaMat<unsigned char>& canvas_position_image_index_map,
+    CudaMat<T_pipeline>& dest_canvas,
+    int dest_canvas_x,
+    int dest_canvas_y,
+    const std::optional<float3>& image_adjustment,
+    int batch_size,
+    cudaStream_t stream) {
+  CudaStatus cuerr;
+  assert(map_x.width() == map_y.width() && map_x.height() == map_y.height());
+
+  if (image_adjustment.has_value()) {
+    cuerr = batched_remap_kernel_ex_offset_with_dest_map_adjust(
+        inputImage.surface(),
+        dest_canvas.surface(),
+        map_x.data(),
+        map_y.data(),
+        /*deflt=*/
+        {
+            0,
+        },
+        /*this_image_index=*/canvas_position_image_index, // channel 0 in the 3-channel mask
+        canvas_position_image_index_map.data(),
+        /*batchSize=*/batch_size,
+        map_x.width(),
+        map_x.height(),
+        /*offsetX=*/dest_canvas_x,
+        /*offsetY=*/dest_canvas_y,
+        tmp3::neg(*image_adjustment),
+        stream);
+  } else {
+    cuerr = batched_remap_kernel_ex_offset_with_dest_map(
+        inputImage.surface(),
+        dest_canvas.surface(),
+        map_x.data(),
+        map_y.data(),
+        /*deflt=*/
+        {
+            0,
+        },
+        /*this_image_index=*/canvas_position_image_index,
+        canvas_position_image_index_map.data(),
+        /*batchSize=*/batch_size,
+        map_x.width(),
+        map_x.height(),
+        /*offsetX=*/dest_canvas_x,
+        /*offsetY=*/dest_canvas_y,
+        stream);
+  }
+
+  return cuerr;
+}
+
 /**
  * The “core” process_impl for THREE images:
  *  - Remap image0/1/2 onto the canvas (soft or hard seam).
@@ -248,43 +307,57 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     CUDA_RETURN_IF_ERROR(cuerr);
   } else {
     // HARD-SEAM for image0 (first of three): use remap_ex_offset_with_dest_map, using mask channel 0
-    if (image_adjustment.has_value()) {
-      cuerr = batched_remap_kernel_ex_offset_with_dest_map_adjust(
-          inputImage0.surface(),
-          canvas->surface(),
-          stitch_context.remap_0_x->data(),
-          stitch_context.remap_0_y->data(),
-          {
-              0,
-          },
-          /*this_image_index=*/0, // channel 0 in the 3-channel mask
-          stitch_context.cudaBlendHardSeam->data(),
-          /*batchSize=*/stitch_context.batch_size(),
-          stitch_context.remap_0_x->width(),
-          stitch_context.remap_0_x->height(),
-          /*offsetX=*/canvas_manager.canvas_positions()[0].x,
-          /*offsetY=*/canvas_manager.canvas_positions()[0].y,
-          tmp3::neg(*image_adjustment),
-          stream);
-    } else {
-      cuerr = batched_remap_kernel_ex_offset_with_dest_map(
-          inputImage0.surface(),
-          canvas->surface(),
-          stitch_context.remap_0_x->data(),
-          stitch_context.remap_0_y->data(),
-          {
-              0,
-          },
-          /*this_image_index=*/0,
-          stitch_context.cudaBlendHardSeam->data(),
-          /*batchSize=*/stitch_context.batch_size(),
-          stitch_context.remap_0_x->width(),
-          stitch_context.remap_0_x->height(),
-          /*offsetX=*/canvas_manager.canvas_positions()[0].x,
-          /*offsetY=*/canvas_manager.canvas_positions()[0].y,
-          stream);
-    }
-    CUDA_RETURN_IF_ERROR(cuerr);
+
+    CUDA_RETURN_IF_ERROR(remap_to_surface_for_hard_seam(
+        inputImage0,
+        *stitch_context.remap_0_x,
+        *stitch_context.remap_0_y,
+        0,
+        *stitch_context.cudaBlendHardSeam,
+        *canvas,
+        canvas_manager.canvas_positions()[0].x,
+        canvas_manager.canvas_positions()[0].y,
+        image_adjustment,
+        stitch_context.batch_size(),
+        stream));
+
+    // if (image_adjustment.has_value()) {
+    //   cuerr = batched_remap_kernel_ex_offset_with_dest_map_adjust(
+    //       inputImage0.surface(),
+    //       canvas->surface(),
+    //       stitch_context.remap_0_x->data(),
+    //       stitch_context.remap_0_y->data(),
+    //       {
+    //           0,
+    //       },
+    //       /*this_image_index=*/0, // channel 0 in the 3-channel mask
+    //       stitch_context.cudaBlendHardSeam->data(),
+    //       /*batchSize=*/stitch_context.batch_size(),
+    //       stitch_context.remap_0_x->width(),
+    //       stitch_context.remap_0_x->height(),
+    //       /*offsetX=*/canvas_manager.canvas_positions()[0].x,
+    //       /*offsetY=*/canvas_manager.canvas_positions()[0].y,
+    //       tmp3::neg(*image_adjustment),
+    //       stream);
+    // } else {
+    //   cuerr = batched_remap_kernel_ex_offset_with_dest_map(
+    //       inputImage0.surface(),
+    //       canvas->surface(),
+    //       stitch_context.remap_0_x->data(),
+    //       stitch_context.remap_0_y->data(),
+    //       {
+    //           0,
+    //       },
+    //       /*this_image_index=*/0,
+    //       stitch_context.cudaBlendHardSeam->data(),
+    //       /*batchSize=*/stitch_context.batch_size(),
+    //       stitch_context.remap_0_x->width(),
+    //       stitch_context.remap_0_x->height(),
+    //       /*offsetX=*/canvas_manager.canvas_positions()[0].x,
+    //       /*offsetY=*/canvas_manager.canvas_positions()[0].y,
+    //       stream);
+    // }
+    // CUDA_RETURN_IF_ERROR(cuerr);
   }
 
   SHOW_SCALED(canvas, 0.25);
