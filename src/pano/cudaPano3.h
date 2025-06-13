@@ -13,6 +13,7 @@ namespace hm {
 namespace pano {
 namespace cuda {
 
+/* clang-format off */
 /**
  *   _____ _   _  _        _     _              _____             _ _ / ____| |
  * (_)| |      | |   (_)            / ____|           | |             | | | (___
@@ -31,6 +32,7 @@ namespace cuda {
  * Contains three remappers (for image0, image1, image2),
  * three “full”‐buffers, and uses a 3‐channel mask + 3‐image Laplacian blend.
  */
+/* clang-format on */
 template <typename T_pipeline, typename T_compute>
 struct StitchingContext3 {
   StitchingContext3(int batch_size, bool is_hard_seam) : batch_size_(batch_size), is_hard_seam_(is_hard_seam) {}
@@ -67,6 +69,7 @@ struct StitchingContext3 {
   bool is_hard_seam_;
 };
 
+/* clang-format off */
 /**
  *   _____           _        _____ _   _  _        _     _____
  *  / ____|         | |      / ____| | (_)| |      | |   |  __ \
@@ -81,6 +84,7 @@ struct StitchingContext3 {
  * plus a 3‐channel soft mask or single‐channel hard mask, producing a single
  * canvas output that blends all three via a 3‐image Laplacian blend.
  */
+/* clang-format on */
 template <typename T_pipeline, typename T_compute>
 class CudaStitchPano3 {
  public:
