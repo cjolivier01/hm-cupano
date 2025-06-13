@@ -190,26 +190,9 @@ cv::Mat load_seam_mask3(const std::string& filename) {
   // cv::Mat seam_mask_dest = seam_mask.clone();
   if (!seam_mask.empty()) {
     std::vector<int> unique_values = get_unique_values(seam_mask);
+    assert(*unique_values.begin() == 0);
+    assert(*unique_values.rbegin() == unique_values.size() - 1);
     assert(unique_values.size() == 3);
-
-    cv::Mat seam_mask_dest = cv::Mat(cv::Size(seam_mask.cols, seam_mask.rows), CV_8UC3, cv::Scalar(0, 0, 0));
-
-    std::vector<cv::Mat> channels;
-    cv::split(seam_mask_dest, channels);
-
-    for (size_t image_index = 0; image_index < unique_values.size(); ++image_index) {
-      cv::Mat mask = (seam_mask == unique_values[image_index]);
-      channels[image_index].setTo(1, mask);
-    }
-
-    // Merge channels back
-    cv::merge(channels, seam_mask_dest);
-
-    // cv::imshow("seam mask", seam_mask_dest * 255);
-    // cv::waitKey(0);
-    // int pix = seam_mask_dest.at<uchar>(cv::Point(seam_mask_dest.cols / 2, 0));
-    // std::cout << pix << std::endl;
-    return seam_mask_dest;
   }
   return seam_mask;
 }
@@ -218,6 +201,25 @@ cv::Mat load_seam_mask3(const std::string& filename) {
 
 ControlMasks3::ControlMasks3(const std::string& game_dir) {
   load(game_dir);
+}
+
+cv::Mat ControlMasks3::split_to_channels(const cv::Mat& seam_mask) {
+  cv::Mat seam_mask_dest = cv::Mat(cv::Size(seam_mask.cols, seam_mask.rows), CV_8UC3, cv::Scalar(0, 0, 0));
+
+  std::vector<int> unique_values = get_unique_values(seam_mask);
+  assert(unique_values.size() == 3);
+
+  std::vector<cv::Mat> channels;
+  cv::split(seam_mask_dest, channels);
+
+  for (size_t image_index = 0; image_index < unique_values.size(); ++image_index) {
+    cv::Mat mask = (seam_mask == unique_values[image_index]);
+    channels[image_index].setTo(1, mask);
+  }
+
+  // Merge channels back
+  cv::merge(channels, seam_mask_dest);
+  return seam_mask_dest;
 }
 
 bool ControlMasks3::load(const std::string& game_dir_in) {

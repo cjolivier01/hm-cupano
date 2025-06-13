@@ -135,7 +135,7 @@
         "--game-id=camp3",
         "--show",
         "--adjust=0",
-        "--levels=6",
+        "--levels=0",
         //"--perf",
         "--output=${workspaceRoot}/output.png",
       ],
