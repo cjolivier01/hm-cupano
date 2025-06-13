@@ -423,14 +423,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     // each of size (mask_width × mask_height) in T_compute type.
     CudaMat<T_compute>& cudaBlendedFull = *stitch_context.cudaFull0;
 
-    // SHOW_IMAGE(stitch_context.cudaFull0);
-    // SHOW_IMAGE(stitch_context.cudaFull1);
-    // SHOW_IMAGE(stitch_context.cudaFull2);
-
-    // std::vector<std::pair<double, double>> min_max0 = getMinMaxPerChannel(stitch_context.cudaFull0->download());
-    // std::vector<std::pair<double, double>> min_max1 = getMinMaxPerChannel(stitch_context.cudaFull1->download());
-    // std::vector<std::pair<double, double>> min_max2 = getMinMaxPerChannel(stitch_context.cudaFull2->download());
-
     cuerr = cudaBatchedLaplacianBlendWithContext3(
         stitch_context.cudaFull0->data_raw(),
         stitch_context.cudaFull1->data_raw(),
@@ -441,33 +433,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         stitch_context.cudaFull0->channels(), // num channels = 3 or 4
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
-
-    // cuerr = cudaBatchedLaplacianBlend3(
-    //     stitch_context.cudaFull0->data_raw(),
-    //     stitch_context.cudaFull1->data_raw(),
-    //     stitch_context.cudaFull2->data_raw(),
-    //     stitch_context.cudaBlendSoftSeam->data_raw(),
-    //     cudaBlendedFull.data_raw(),
-    //     stitch_context.cudaFull0->width(),
-    //     stitch_context.cudaFull0->height(),
-    //     stitch_context.cudaFull0->channels(),
-    //     /*numLevels=*/6,
-    //     /*batchSize=*/1,
-    //     stream);
-    // CUDA_RETURN_IF_ERROR(cuerr);
-
-    // SHOW_IMAGE(stitch_context.cudaFull0);
-    // SHOW_IMAGE(stitch_context.cudaFull1);
-    // SHOW_IMAGE(stitch_context.cudaFull2);
-
-    // stitch_context.laplacian_blend_context->displayPyramids(
-    //     /*channels=*/stitch_context.cudaFull0->channels(), /*scale=*/1.0, /*wait=*/true);
-
-    // SHOW_IMAGE(stitch_context.cudaFull0);
-    // SHOW_IMAGE(stitch_context.cudaFull1);
-    // SHOW_IMAGE(stitch_context.cudaFull2);
-    // SHOW_IMAGE(canvas);
-    // SHOW_IMAGE(&cudaBlendedFull);
 
     assert(canvas_manager._x_blend_start >= 0 && canvas_manager._y_blend_start >= 0);
 
