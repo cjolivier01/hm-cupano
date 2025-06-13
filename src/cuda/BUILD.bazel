@@ -13,6 +13,7 @@ cuda_library(
     srcs = [
         "cudaBlend.cu",
         "cudaBlend3.cu",
+        "cudaBlend3_optimized.cu",
         "cudaFusedKernels3.cu",
         "cudaBlendN.cu",
         "cudaImageAdjust.cu",
