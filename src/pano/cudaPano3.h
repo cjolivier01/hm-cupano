@@ -160,6 +160,17 @@ class CudaStitchPano3 {
       int batch_size,
       cudaStream_t stream);
 
+  static CudaStatus remap_to_surface_for_blending_compute(
+      const CudaMat<T_pipeline>& inputImage,
+      const CudaMat<uint16_t>& map_x,
+      const CudaMat<uint16_t>& map_y,
+      CudaMat<T_compute>& dest_canvas,
+      int dest_dest_canvas_x,
+      int dest_dest_canvas_y,
+      const std::optional<float3>& image_adjustment,
+      int batch_size,
+      cudaStream_t stream);
+
   static CudaStatus remap_to_surface_for_hard_seam(
       const CudaMat<T_pipeline>& inputImage,
       const CudaMat<uint16_t>& map_x,
