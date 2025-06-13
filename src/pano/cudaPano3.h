@@ -14,12 +14,15 @@ namespace pano {
 namespace cuda {
 
 /**
- *   _____ _   _  _        _     _              _____             _               _
- *  / ____| | (_)| |      | |   (_)            / ____|           | |             | |
- * | (___ | |_ _ | |_  ___| |__  _ _ __   __ _| |      ___  _ __ | |_  ___ __  __| |_
- *  \___ \| __| || __|/ __| '_ \| | '_ \ / _` | |     / _ \| '_ \| __|/ _ \\ \/ /| __|
- *  ____) | |_| || |_| (__| | | | | | | | (_| | |____| (_) | | | | |_|  __/ >  < | |_
- * |_____/ \__|_| \__|\___|_| |_|_|_| |_|\__, |\_____|\___/|_| |_|\__|\___|/_/\_\ \__|
+ *   _____ _   _  _        _     _              _____             _ _ / ____| |
+ * (_)| |      | |   (_)            / ____|           | |             | | | (___
+ * | |_ _ | |_  ___| |__  _ _ __   __ _| |      ___  _ __ | |_  ___ __  __| |_
+ *  \___ \| __| || __|/ __| '_ \| | '_ \ / _` | |     / _ \| '_ \| __|/ _ \\ \/
+ * /| __|
+ *  ____) | |_| || |_| (__| | | | | | | | (_| | |____| (_) | | | | |_|  __/ >  <
+ * | |_
+ * |_____/ \__|_| \__|\___|_| |_|_|_| |_|\__, |\_____|\___/|_|
+ * |_|\__|\___|/_/\_\ \__|
  *                                        __/ |
  *                                       |___/
  *
@@ -68,9 +71,11 @@ struct StitchingContext3 {
  *   _____           _        _____ _   _  _        _     _____
  *  / ____|         | |      / ____| | (_)| |      | |   |  __ \
  * | |     _   _  __| | __ _| (___ | |_ _ | |_  ___| |__ | |__) |__ _ _ __   ___
- * | |    | | | |/ _` |/ _` |\___ \| __| || __|/ __| '_ \|  ___// _` | '_ \ / _ \
- * | |____| |_| | (_| | (_| |____) | |_| || |_| (__| | | | |   | (_| | | | | (_) |
- *  \_____|\__,_|\__,_|\__,_|_____/ \__|_| \__|\___|_| |_|_|    \__,_|_| |_|\___/
+ * | |    | | | |/ _` |/ _` |\___ \| __| || __|/ __| '_ \|  ___// _` | '_ \ / _
+ * \ | |____| |_| | (_| | (_| |____) | |_| || |_| (__| | | | |   | (_| | | | |
+ * (_) |
+ *  \_____|\__,_|\__,_|\__,_|_____/ \__|_| \__|\___|_| |_|_|    \__,_|_|
+ * |_|\___/
  *
  * Modified to accept **three** input CudaMat images (image0, image1, image2),
  * plus a 3‐channel soft mask or single‐channel hard mask, producing a single
@@ -79,7 +84,6 @@ struct StitchingContext3 {
 template <typename T_pipeline, typename T_compute>
 class CudaStitchPano3 {
  public:
-
   using pipeline_type = T_pipeline;
   using compute_type = T_compute;
 
@@ -131,7 +135,8 @@ class CudaStitchPano3 {
 
  protected:
   /**
-   * @brief The “real” implementation taking in three inputs, the context, and the canvas manager.
+   * @brief The “real” implementation taking in three inputs, the context, and
+   * the canvas manager.
    */
   static CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process_impl(
       const CudaMat<T_pipeline>& inputImage0,
@@ -144,10 +149,22 @@ class CudaStitchPano3 {
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
  private:
+  static CudaStatus remap_to_surface(
+      const CudaMat<T_pipeline>& inputImage,
+      const CudaMat<uint16_t>& map_x,
+      const CudaMat<uint16_t>& map_y,
+      CudaMat<T_pipeline>& dest_canvas,
+      int dest_dest_canvas_x,
+      int dest_dest_canvas_y,
+      const std::optional<float3>& image_adjustment,
+      bool is_hard_seam,
+      int batch_size,
+      cudaStream_t stream);
+
   /**
    * @brief If “match_exposure_” is true, tries to compute a per‐channel offset
-   * that aligns image0 vs. image1 vs. image2 across the seam.  Returns three floats.
-   * Otherwise returns std::nullopt.
+   * that aligns image0 vs. image1 vs. image2 across the seam.  Returns three
+   * floats. Otherwise returns std::nullopt.
    */
   std::optional<float3> compute_image_adjustment(
       const CudaMat<T_pipeline>& inputImage0,
