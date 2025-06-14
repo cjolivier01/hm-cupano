@@ -342,6 +342,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         stitch_context.batch_size(),
         stream));
 
+    assert(canvas_manager.canvas_positions()[0].x == canvas_manager._remapper_0.xpos);
     // Copy blending region (ROI1) into cudaFull0
     cuerr = simple_make_full_batch(
         canvas->surface(),
@@ -349,8 +350,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         /*region_height=*/canvas_manager.remapped_image_roi_blend_0.height,
         /*offsetX=*/canvas_manager.canvas_positions()[0].x,
         /*offsetY=*/canvas_manager.canvas_positions()[0].y,
-        /*destOffsetX=*/canvas_manager._remapper_0.xpos,
-        /*destOffsetY=*/0,
+        /*destOffsetX=*/canvas_manager.canvas_positions()[0].x,
+        /*destOffsetY=*/canvas_manager.canvas_positions()[0].y,
         /*adjust_origin=*/false,
         /*batchSize=*/stitch_context.batch_size(),
         stitch_context.cudaFull0->surface(),
@@ -399,8 +400,9 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         stream));
   }
 
-  SHOW_SCALED(canvas, 0.25);
-  // SHOW_IMAGE(stitch_context.cudaFull0);
+  // SHOW_SCALED(canvas, 0.25);
+  //  SHOW_IMAGE(stitch_context.cudaFull0);
+  // SHOW_SCALED(stitch_context.cudaFull0, 0.25);
 
   // -------------------- IMAGE 1 --------------------
   if (!stitch_context.is_hard_seam()) {
@@ -415,6 +417,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         stitch_context.batch_size(),
         stream));
 
+    assert(canvas_manager.canvas_positions()[1].x == canvas_manager._remapper_1.xpos);
     // Copy blending region (ROI1) into cudaFull1
     cuerr = simple_make_full_batch(
         canvas->surface(),
@@ -422,8 +425,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         /*region_height=*/canvas_manager.remapped_image_roi_blend_1.height,
         /*offsetX=*/canvas_manager.canvas_positions()[1].x,
         /*offsetY=*/canvas_manager.canvas_positions()[1].y,
-        /*destOffsetX=*/canvas_manager._remapper_1.xpos,
-        /*destOffsetY=*/0,
+        /*destOffsetX=*/canvas_manager.canvas_positions()[1].x,
+        /*destOffsetY=*/canvas_manager.canvas_positions()[1].y,
         /*adjust_origin=*/false,
         /*batchSize=*/stitch_context.batch_size(),
         stitch_context.cudaFull1->surface(),
@@ -444,8 +447,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         stream));
   }
 
-  SHOW_SCALED(canvas, 0.25);
-
+  // SHOW_SCALED(canvas, 0.25);
+  // SHOW_SCALED(stitch_context.cudaFull1, 0.25);
   // SHOW_IMAGE(canvas);
   // SHOW_IMAGE(stitch_context.cudaFull1);
 
@@ -462,6 +465,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         stitch_context.batch_size(),
         stream));
 
+    assert(canvas_manager._remapper_2.xpos == canvas_manager.canvas_positions()[2].x);
     // Copy blending region (ROI2) into cudaFull2
     cuerr = simple_make_full_batch(
         canvas->surface(),
@@ -469,8 +473,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         /*region_height=*/canvas_manager.remapped_image_roi_blend_2.height,
         /*offsetX=*/canvas_manager.canvas_positions()[2].x,
         /*offsetY=*/canvas_manager.canvas_positions()[2].y,
-        /*destOffsetX=*/canvas_manager._remapper_2.xpos,
-        /*destOffsetY=*/0,
+        /*destOffsetX=*/canvas_manager.canvas_positions()[2].x,
+        /*destOffsetY=*/canvas_manager.canvas_positions()[2].y,
         /*adjust_origin=*/false,
         /*batchSize=*/stitch_context.batch_size(),
         stitch_context.cudaFull2->surface(),
@@ -492,6 +496,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         stream));
   }
 
+  // SHOW_SCALED(canvas, 0.25);
+  // SHOW_SCALED(stitch_context.cudaFull2, 0.25);
   // SHOW_IMAGE(canvas);
   // SHOW_IMAGE(stitch_context.cudaFull2);
 
