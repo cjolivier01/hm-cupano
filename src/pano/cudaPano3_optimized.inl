@@ -79,9 +79,9 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
 
-    SHOW_SCALED(stitch_context.cudaFull0, 0.25);
-    SHOW_SCALED(stitch_context.cudaFull1, 0.25);
-    SHOW_SCALED(stitch_context.cudaFull2, 0.25);
+    // SHOW_SCALED(stitch_context.cudaFull0, 0.25);
+    // SHOW_SCALED(stitch_context.cudaFull1, 0.25);
+    // SHOW_SCALED(stitch_context.cudaFull2, 0.25);
 
     // Perform Laplacian blending
     CudaMat<T_compute>& cudaBlendedFull = *stitch_context.cudaFull0;
@@ -96,7 +96,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
 
-    SHOW_SCALED(&cudaBlendedFull, 0.25);
+    // SHOW_SCALED(&cudaBlendedFull, 0.25);
 
     // Copy blended region back to canvas
     assert(canvas_manager._x_blend_start >= 0 && canvas_manager._y_blend_start >= 0);
