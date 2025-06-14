@@ -60,10 +60,12 @@ struct CVType<long> {
 
 // Half-precision (if OpenCV has CV_16F defined, available since OpenCV 4.5+):
 #ifdef CV_16F
+#ifndef __aarch64__  // doesn't seem to be there on the jetson orin nx
 template <>
 struct CVType<cv::float16_t> {
   static constexpr int value = CV_16F;
 };
+#endif
 // Some compilers use __fp16 or _Float16 instead of cv::float16_t:
 #if defined(__FLT16_TYPE__) || defined(__fp16) || defined(_Float16)
 template <>
