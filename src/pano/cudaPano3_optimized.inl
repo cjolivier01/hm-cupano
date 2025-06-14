@@ -81,20 +81,6 @@ CudaStitchPano3<T_pipeline, T_compute>::process_impl_optimized(
     SHOW_SCALED(stitch_context.cudaFull1, 0.5);
     SHOW_SCALED(stitch_context.cudaFull2, 0.5);
 
-    // Also need to remap images to canvas for non-blended regions
-    // Use fused kernel for all three images at once
-    cuerr = launchFusedRemapToCanvasKernel3(
-        inputImage0, inputImage1, inputImage2,
-        *stitch_context.remap_0_x, *stitch_context.remap_0_y,
-        *stitch_context.remap_1_x, *stitch_context.remap_1_y,
-        *stitch_context.remap_2_x, *stitch_context.remap_2_y,
-        *canvas,
-        canvas_manager,
-        adj0, adj1, adj2,
-        image_adjustment.has_value(),
-        stream);
-    CUDA_RETURN_IF_ERROR(cuerr);
-
     // Perform Laplacian blending
     CudaMat<T_compute>& cudaBlendedFull = *stitch_context.cudaFull0;
     cuerr = cudaBatchedLaplacianBlendWithContext3(
