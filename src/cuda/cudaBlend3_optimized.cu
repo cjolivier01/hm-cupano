@@ -13,9 +13,9 @@
 
 namespace cg = cooperative_groups;
 
-namespace hm {
-namespace pano {
-namespace cuda {
+// namespace hm {
+// namespace pano {
+// namespace cuda {
 
 namespace {
 
@@ -77,8 +77,8 @@ __global__ void FusedPyramidConstructionKernel3(
   // const int nextMaskSize = nextWidth * nextHeight * 3;
 
   // Shared memory for caching
-  extern __shared__ char shared_mem[];
-  F_T* s_cache = reinterpret_cast<F_T*>(shared_mem);
+  //extern __shared__ char shared_mem[];
+  //F_T* s_cache = reinterpret_cast<F_T*>(shared_mem);
 
   // Process downsampling and Laplacian in a single pass
   for (int idx = tid; idx < currWidth * currHeight; idx += stride) {
@@ -593,6 +593,6 @@ template cudaError_t cudaBatchedLaplacianBlendOptimized3<unsigned char, float>(
     int channels,
     cudaStream_t stream);
 
-} // namespace cuda
-} // namespace pano
-} // namespace hm
+// } // namespace cuda
+// } // namespace pano
+// } // namespace hm

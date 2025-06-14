@@ -277,31 +277,15 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     int channels,
     cudaStream_t stream);
 
-/**
- * @brief Explicit template instantiations for supported data types (3-image version).
- *        Currently instantiated for float and unsigned char.
- */
-#define INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND3(T)         \
-  template cudaError_t cudaBatchedLaplacianBlend3<T, float>( \
-      const T* h_image1,                                     \
-      const T* h_image2,                                     \
-      const T* h_image3,                                     \
-      const T* h_mask,                                       \
-      T* h_output,                                           \
-      int imageWidth,                                        \
-      int imageHeight,                                       \
-      int channels,                                          \
-      int maxLevels,                                         \
-      int batchSize,                                         \
-      cudaStream_t stream);
+template <typename T, typename F_T = float>
+cudaError_t cudaBatchedLaplacianBlendOptimized3(
+    const T* d_image1,
+    const T* d_image2,
+    const T* d_image3,
+    const T* d_mask,
+    T* d_output,
+    CudaBatchLaplacianBlendContext3<T>& context,
+    int channels,
+    cudaStream_t stream);
 
-#define INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT3(T)       \
-  template cudaError_t cudaBatchedLaplacianBlendWithContext3<T, float>( \
-      const T* d_image1,                                                \
-      const T* d_image2,                                                \
-      const T* d_image3,                                                \
-      const T* d_mask,                                                  \
-      T* d_output,                                                      \
-      CudaBatchLaplacianBlendContext3<T>& context,                      \
-      int channels,                                                     \
-      cudaStream_t stream);
+

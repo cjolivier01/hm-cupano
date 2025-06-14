@@ -85,6 +85,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
 
     // Perform Laplacian blending
     CudaMat<T_compute>& cudaBlendedFull = *stitch_context.cudaFull0;
+
+#if 1
     cuerr = cudaBatchedLaplacianBlendWithContext3(
         stitch_context.cudaFull0->data_raw(),
         stitch_context.cudaFull1->data_raw(),
@@ -94,6 +96,17 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         *stitch_context.laplacian_blend_context,
         stitch_context.cudaFull0->channels(),
         stream);
+#else
+    cuerr = cudaBatchedLaplacianBlendOptimized3(
+        stitch_context.cudaFull0->data_raw(),
+        stitch_context.cudaFull1->data_raw(),
+        stitch_context.cudaFull2->data_raw(),
+        stitch_context.cudaBlendSoftSeam->data_raw(),
+        cudaBlendedFull.data_raw(),
+        *stitch_context.laplacian_blend_context,
+        stitch_context.cudaFull0->channels(),
+        stream);
+#endif
     CUDA_RETURN_IF_ERROR(cuerr);
 
     // SHOW_SCALED(&cudaBlendedFull, 0.25);

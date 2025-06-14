@@ -244,7 +244,7 @@ __global__ void FusedBatchedDownsampleMask3(
       int iy = inY + dy;
       if (ix < inWidth && iy < inHeight) {
         int idx = (iy * inWidth + ix) * CHANNELS;
-        #pragma unroll
+#pragma unroll
         for (int c = 0; c < CHANNELS; c++) {
           sums[c] += static_cast<float>(input[idx + c]);
         }
@@ -254,7 +254,7 @@ __global__ void FusedBatchedDownsampleMask3(
   }
 
   int outIdx = (y * outWidth + x) * CHANNELS;
-  #pragma unroll
+#pragma unroll
   for (int c = 0; c < CHANNELS; c++) {
     output[outIdx + c] = static_cast<T>(sums[c] / count);
   }
@@ -300,7 +300,7 @@ __global__ void BatchedComputeLaplacianKernel(
 
   int idxHigh = (y * highWidth + x) * CHANNELS;
 
-  #pragma unroll
+#pragma unroll
   for (int c = 0; c < CHANNELS; ++c) {
     if (CHANNELS == 4 && c == 3) {
       // alpha channel: just copy high-res alpha
@@ -1138,6 +1138,35 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
 // =============================================================================
 // Explicit template instantiations (already declared in header).
 // =============================================================================
+
+/**
+ * @brief Explicit template instantiations for supported data types (3-image version).
+ *        Currently instantiated for float and unsigned char.
+ */
+#define INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND3(T)         \
+  template cudaError_t cudaBatchedLaplacianBlend3<T, float>( \
+      const T* h_image1,                                     \
+      const T* h_image2,                                     \
+      const T* h_image3,                                     \
+      const T* h_mask,                                       \
+      T* h_output,                                           \
+      int imageWidth,                                        \
+      int imageHeight,                                       \
+      int channels,                                          \
+      int maxLevels,                                         \
+      int batchSize,                                         \
+      cudaStream_t stream);
+
+#define INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND_WITH_CONTEXT3(T)       \
+  template cudaError_t cudaBatchedLaplacianBlendWithContext3<T, float>( \
+      const T* d_image1,                                                \
+      const T* d_image2,                                                \
+      const T* d_image3,                                                \
+      const T* d_mask,                                                  \
+      T* d_output,                                                      \
+      CudaBatchLaplacianBlendContext3<T>& context,                      \
+      int channels,                                                     \
+      cudaStream_t stream);
 
 template cudaError_t cudaBatchedLaplacianBlend3<float, float>(
     const float* h_image1,
