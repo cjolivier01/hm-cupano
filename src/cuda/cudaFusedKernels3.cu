@@ -65,7 +65,7 @@ __global__ void FusedRemapToFullKernel3(
     return;
 
   // Process image 0
-  if (x >= 0 && x >= canvas0_x && x < canvas0_x + remap0_w && y >= canvas0_y && y < canvas0_y + remap0_h) {
+  if (x >= canvas0_x && x < canvas0_x + remap0_w && y >= canvas0_y && y < canvas0_y + remap0_h) {
     int remap_x = x - canvas0_x;
     int remap_y = y - canvas0_y;
 
@@ -87,7 +87,7 @@ __global__ void FusedRemapToFullKernel3(
   }
 
   // Process image 1
-  if (x >= 0 && x >= canvas1_x && x < canvas1_x + remap1_w && y >= canvas1_y && y < canvas1_y + remap1_h) {
+  if (x >= canvas1_x && x < canvas1_x + remap1_w && y >= canvas1_y && y < canvas1_y + remap1_h) {
     int remap_x = x - canvas1_x;
     int remap_y = y - canvas1_y;
 
@@ -109,7 +109,7 @@ __global__ void FusedRemapToFullKernel3(
   }
 
   // Process image 2
-  if (x >= 0 && x >= canvas2_x && x < canvas2_x + remap2_w && y >= canvas2_y && y < canvas2_y + remap2_h) {
+  if (x >= canvas2_x && x < canvas2_x + remap2_w && y >= canvas2_y && y < canvas2_y + remap2_h) {
     int remap_x = x - canvas2_x;
     int remap_y = y - canvas2_y;
 
@@ -119,7 +119,7 @@ __global__ void FusedRemapToFullKernel3(
       int srcY = remap_2_y[mapIdx];
 
       if (srcX != kUnmappedPositionValue && srcX < inputImage2.width && srcY < inputImage2.height) {
-        T_pipeline* src_ptr = surface_ptr(inputImage1, b, srcX, srcY);
+        T_pipeline* src_ptr = surface_ptr(inputImage2, b, srcX, srcY);
         T_compute out_pixel = perform_cast<T_compute>(*src_ptr);
 
         if (apply_adjustment) {
@@ -128,128 +128,6 @@ __global__ void FusedRemapToFullKernel3(
         *surface_ptr(cudaFull2, b, x, y) = out_pixel;
       }
     }
-  }
-}
-
-/**
- * Fused kernel that remaps all three images to canvas for non-blended regions
- */
-template <typename T_pipeline>
-__global__ void FusedRemapToCanvasKernel3(
-    // Input surfaces
-    CudaSurface<T_pipeline> inputImage0,
-    CudaSurface<T_pipeline> inputImage1,
-    CudaSurface<T_pipeline> inputImage2,
-    // Remap coordinates
-    const uint16_t* remap_0_x,
-    const uint16_t* remap_0_y,
-    const uint16_t* remap_1_x,
-    const uint16_t* remap_1_y,
-    const uint16_t* remap_2_x,
-    const uint16_t* remap_2_y,
-    // Remap dimensions
-    int remap0_w,
-    int remap0_h,
-    int remap1_w,
-    int remap1_h,
-    int remap2_w,
-    int remap2_h,
-    // Output canvas
-    CudaSurface<T_pipeline> canvas,
-    // Canvas positions
-    int canvas0_x,
-    int canvas0_y,
-    int canvas1_x,
-    int canvas1_y,
-    int canvas2_x,
-    int canvas2_y,
-    // Blend region to avoid (soft seam area)
-    int blend_x_start,
-    int blend_y_start,
-    int blend_width,
-    int blend_height,
-    // Adjustments
-    float3 adjustment0,
-    float3 adjustment1,
-    float3 adjustment2,
-    bool apply_adjustment) {
-  int b = blockIdx.z;
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-  if (x >= canvas.width || y >= canvas.height)
-    return;
-
-  // Skip blend region - it will be handled by Laplacian blending
-  if (x >= blend_x_start && x < blend_x_start + blend_width && y >= blend_y_start && y < blend_y_start + blend_height) {
-    return;
-  }
-
-  bool pixel_set = false;
-  T_pipeline pixel_value;
-
-  // Check image 0
-  if (!pixel_set) {
-    int remap_x = x - canvas0_x;
-    int remap_y = y - canvas0_y;
-
-    if (remap_x >= 0 && remap_x < remap0_w && remap_y >= 0 && remap_y < remap0_h) {
-      int mapIdx = remap_y * remap0_w + remap_x;
-      int srcX = remap_0_x[mapIdx];
-      int srcY = remap_0_y[mapIdx];
-
-      if (srcX != kUnmappedPositionValue && srcX < inputImage0.width && srcY < inputImage0.height) {
-        pixel_value = *surface_ptr(inputImage0, b, srcX, srcY);
-        if (apply_adjustment) {
-          pixel_value = PixelAdjuster<T_pipeline>::adjust(pixel_value, adjustment0);
-        }
-        pixel_set = true;
-      }
-    }
-  }
-
-  // Check image 1
-  if (!pixel_set) {
-    int remap_x = x - canvas1_x;
-    int remap_y = y - canvas1_y;
-
-    if (remap_x >= 0 && remap_x < remap1_w && remap_y >= 0 && remap_y < remap1_h) {
-      int mapIdx = remap_y * remap1_w + remap_x;
-      int srcX = remap_1_x[mapIdx];
-      int srcY = remap_1_y[mapIdx];
-
-      if (srcX != kUnmappedPositionValue && srcX < inputImage1.width && srcY < inputImage1.height) {
-        pixel_value = *surface_ptr(inputImage1, b, srcX, srcY);
-        if (apply_adjustment) {
-          pixel_value = PixelAdjuster<T_pipeline>::adjust(pixel_value, adjustment1);
-        }
-        pixel_set = true;
-      }
-    }
-  }
-
-  // Check image 2
-  if (!pixel_set) {
-    int remap_x = x - canvas2_x;
-    int remap_y = y - canvas2_y;
-
-    if (remap_x >= 0 && remap_x < remap2_w && remap_y >= 0 && remap_y < remap2_h) {
-      int mapIdx = remap_y * remap2_w + remap_x;
-      int srcX = remap_2_x[mapIdx];
-      int srcY = remap_2_y[mapIdx];
-
-      if (srcX != kUnmappedPositionValue && srcX < inputImage2.width && srcY < inputImage2.height) {
-        pixel_value = *surface_ptr(inputImage2, b, srcX, srcY);
-        if (apply_adjustment) {
-          pixel_value = PixelAdjuster<T_pipeline>::adjust(pixel_value, adjustment2);
-        }
-        pixel_set = true;
-      }
-    }
-  }
-
-  if (pixel_set) {
-    *surface_ptr(canvas, b, x, y) = pixel_value;
   }
 }
 
