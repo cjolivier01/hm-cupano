@@ -39,7 +39,7 @@ cuda_library(
             "-G",
             "-g",
             "-keep",
-            "-O0",
+            # "-O0",
         ],
         # in all other modes, no extra flags
         "//conditions:default": [],
