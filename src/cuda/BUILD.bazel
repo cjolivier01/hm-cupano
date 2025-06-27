@@ -34,7 +34,7 @@ cuda_library(
     ] + select({
         # only in debug mode:
         ":debug_build": [
-            "-Xcompiler=-O0",
+            # "-Xcompiler=-O0",
             "-Xcompiler=-g",
             "-G",
             "-g",
