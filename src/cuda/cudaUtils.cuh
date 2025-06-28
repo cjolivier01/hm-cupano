@@ -4,6 +4,7 @@
 #include "cudaTypes.h"
 
 #include <cstdint>
+#include <algorithm>
 
 namespace hm {
 namespace cupano {
