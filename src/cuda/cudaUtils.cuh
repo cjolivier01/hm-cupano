@@ -26,6 +26,9 @@ __device__ inline unsigned char round_to_uchar(const F& x) {
   return static_cast<F_dest>(static_cast<unsigned char>(x_rounded)); // Cast result to unsigned char
 }
 
+#pragma warning(push)
+#pragma warning(disable : 4716)  // function must return a value
+
 
 template <typename T>
 inline __device__ T max_of(const T& v1, const T& v2) {
@@ -45,6 +48,8 @@ inline __device__ T is_zero(const T& v) {
     return v == static_cast<T>(0);
   }
 }
+
+#pragma warning(pop)
 
 // template <typename T_in, typename T_out>
 // inline T_out __device__ cast_to(const T_in& in) {

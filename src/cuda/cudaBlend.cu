@@ -14,6 +14,8 @@
 
 #define EXTRA_ALPHA_CHECKS
 
+using namespace hm::cupano::cuda;
+
 // =============================================================================
 // Macro to check CUDA calls and return on error.
 #define CUDA_CHECK(call)                                                                          \
@@ -546,7 +548,6 @@ __global__ void BatchedBlendKernel(
   F_T mm1 = F_ONE - m;
   int max_channel = std::min(channels, 3);
   if (channels == 4) {
-    const T T_ZERO = static_cast<T>(0);
     const T alpha1 = lap1Image[idx + 3];
     const T alpha2 = lap2Image[idx + 3];
     if (is_zero(alpha1)) {
