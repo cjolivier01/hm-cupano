@@ -214,7 +214,9 @@ __global__ void OptimizedBlendKernel3(
     int height,
     int batchSize) {
   // Use cooperative groups for better synchronization
+  #if CUDA_VERSION >= 10020
   cg::grid_group grid = cg::this_grid();
+  #endif
 
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;

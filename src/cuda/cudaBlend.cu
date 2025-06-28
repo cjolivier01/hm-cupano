@@ -1,5 +1,5 @@
 #include "cudaBlend.h"
-#include "cudaTypes.h"
+#include "cudautils.h"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -8,7 +8,6 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
-#include <iostream>
 #include <vector>
 
 #define PRINT_STRANGE_ALPHAS
@@ -93,8 +92,8 @@ __global__ void FusedBatchedDownsampleKernel(
       bool keep1 = true;
       if (channels == 4) {
         T a1 = in1[idx + 3];
-        alpha1 = std::max(alpha1, a1);
-        keep1 = (a1 != T(0));
+        alpha1 = max_of(alpha1, a1);
+        keep1 = !is_zero(a1);
       }
       if (keep1) {
         for (int c = 0; c < sumCh; ++c)
@@ -106,8 +105,8 @@ __global__ void FusedBatchedDownsampleKernel(
       bool keep2 = true;
       if (channels == 4) {
         T a2 = in2[idx + 3];
-        alpha2 = std::max(alpha2, a2);
-        keep2 = (a2 != T(0));
+        alpha2 = max_of(alpha2, a2);
+        keep2 = !is_zero(a2);
       }
       if (keep2) {
         for (int c = 0; c < sumCh; ++c)
@@ -132,8 +131,11 @@ __global__ void FusedBatchedDownsampleKernel(
   }
 
 #ifdef PRINT_STRANGE_ALPHAS
-  if ((alpha1 != T_CONST(0) && alpha1 != T_CONST(255)) || (alpha2 != T_CONST(0) && alpha2 != T_CONST(255))) {
-    printf("FusedBatchedDownsampleKernel(): Strange alphas %f and %f\n", (float)alpha1, (float)alpha2);
+  // stupid overload issues
+  if constexpr (!std::is_same<T, __half>::value) {
+    if ((alpha1 != T_CONST(0) && alpha1 != T_CONST(255)) || (alpha2 != T_CONST(0) && alpha2 != T_CONST(255))) {
+      printf("FusedBatchedDownsampleKernel(): Strange alphas %f and %f\n", (float)alpha1, (float)alpha2);
+    }
   }
 #endif
 }
@@ -419,19 +421,19 @@ __global__ void BatchedComputeLaplacianKernel(
         F_T sumW = 0, sumV = 0;
         // alpha offsets
         int aOff = 3;
-        if (lowImage[base00 + aOff] != T(0)) {
+        if (!is_zero(lowImage[base00 + aOff])) {
           sumW += w00;
           sumV += v00 * w00;
         }
-        if (lowImage[base10 + aOff] != T(0)) {
+        if (!is_zero(lowImage[base10 + aOff])) {
           sumW += w10;
           sumV += v10 * w10;
         }
-        if (lowImage[base01 + aOff] != T(0)) {
+        if (!is_zero(lowImage[base01 + aOff])) {
           sumW += w01;
           sumV += v01 * w01;
         }
-        if (lowImage[base11 + aOff] != T(0)) {
+        if (!is_zero(lowImage[base11 + aOff])) {
           sumW += w11;
           sumV += v11 * w11;
         }
@@ -547,11 +549,11 @@ __global__ void BatchedBlendKernel(
     const T T_ZERO = static_cast<T>(0);
     const T alpha1 = lap1Image[idx + 3];
     const T alpha2 = lap2Image[idx + 3];
-    if (alpha1 == T_ZERO) {
+    if (is_zero(alpha1)) {
       for (int c = 0; c < channels; c++) {
         blendImage[idx + c] = static_cast<F_T>(lap2Image[idx + c]);
       }
-    } else if (alpha2 == T_ZERO) {
+    } else if (is_zero(alpha2)) {
       for (int c = 0; c < channels; c++) {
         blendImage[idx + c] = static_cast<F_T>(lap1Image[idx + c]);
       }
