@@ -107,6 +107,9 @@ cc_library(
     ],
     copts = [
     ],
+    linkopts = [
+      "-lstdc++fs",
+    ],
     include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
     deps = [
