@@ -95,6 +95,7 @@ cc_library(
         "cudaStatus.h",
     ],
     include_prefix = INCLUDE_PREFIX,
+    visibility = ["//visibility:public"],
 )
 
 cc_test(
