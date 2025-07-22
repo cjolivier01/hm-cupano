@@ -118,6 +118,9 @@ cc_library(
         ":cuda_matrix",
         "//src/utils",
     ],
+    data = [
+      "//scripts:create_control_points.py",
+    ],
 )
 
 cc_test(
