@@ -3,4 +3,5 @@ filegroup(
     srcs = [
         "create_control_points.py",
     ],
+    visibility = ["//visibility:public"],
 )
