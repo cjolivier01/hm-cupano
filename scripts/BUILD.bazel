@@ -1,0 +1,12 @@
+
+exports_files([
+    "create_control_points.py",
+    # "other-script.py",
+])
+
+
+# filegroup(
+#     name = "all_scripts",
+#     srcs = glob(["@my_repo//scripts/*.sh"]),
+#     visibility = ["//visibility:public"],
+# )
