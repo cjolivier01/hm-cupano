@@ -119,7 +119,7 @@ cc_library(
         "//src/utils",
     ],
     data = [
-      "//scripts:create_control_points.py",
+      # "//scripts:create_control_points.py",
     ],
 )
 

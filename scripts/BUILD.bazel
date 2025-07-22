@@ -1,11 +1,6 @@
-
-exports_files([
-    "create_control_points.py",
-])
-
-
-# filegroup(
-#     name = "all_scripts",
-#     srcs = glob(["@my_repo//scripts/*.sh"]),
-#     visibility = ["//visibility:public"],
-# )
+filegroup(
+    name = "all_scripts",
+    srcs = [
+        "create_control_points.py",
+    ],
+)
