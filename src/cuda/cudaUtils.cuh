@@ -172,15 +172,20 @@ __device__ inline T_dest perform_cast(const T_src& src) {
     };                                                       \
   }
 
-template <>                                                \
-__device__ inline float3 perform_cast(const half4& src) { \
-  return float3{                                           \
-      .x = static_cast<BaseScalar_t<float3>>(src.x),       \
-      .y = static_cast<BaseScalar_t<float3>>(src.y),       \
-      .z = static_cast<BaseScalar_t<float3>>(src.z),       \
-  };                                                       \
-}
+#define DECLARE_PERFORM_CAST_4_TO_3(_src$, _dest$)          \
+  template <>                                               \
+  __device__ inline _dest$ perform_cast(const _src$& src) { \
+    return _dest${                                          \
+        .x = static_cast<BaseScalar_t<_dest$>>(src.x),      \
+        .y = static_cast<BaseScalar_t<_dest$>>(src.y),      \
+        .z = static_cast<BaseScalar_t<_dest$>>(src.z),      \
+    };                                                      \
+  }
 
+DECLARE_PERFORM_CAST_4_TO_3(float4, half3)
+DECLARE_PERFORM_CAST_4_TO_3(float4, float3)
+DECLARE_PERFORM_CAST_4_TO_3(half4, float3)
+DECLARE_PERFORM_CAST_4_TO_3(half4, half3)
 
 DECLARE_PERFORM_CAST_UCHAR_3(float4)
 DECLARE_PERFORM_CAST_UCHAR_3(float3)
