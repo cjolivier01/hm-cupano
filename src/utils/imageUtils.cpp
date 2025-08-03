@@ -36,7 +36,7 @@ void set_alpha_pixels(cv::Mat& image, const cv::Vec3b& color) {
 
 cv::Mat convert_to_uchar(cv::Mat image) {
   // Check if the image is of a floating-point type
-  if (image.depth() == CV_32F || image.depth() == CV_64F) {
+  if (image.depth() == CV_16F || image.depth() == CV_32F || image.depth() == CV_64F) {
     cv::Mat ucharImage;
     // convertTo automatically applies saturate_cast, clamping values to [0, 255]
     image.convertTo(ucharImage, CV_8U);
