@@ -172,6 +172,16 @@ __device__ inline T_dest perform_cast(const T_src& src) {
     };                                                       \
   }
 
+template <>                                                \
+__device__ inline float3 perform_cast(const half4& src) { \
+  return float3{                                           \
+      .x = static_cast<BaseScalar_t<float3>>(src.x),       \
+      .y = static_cast<BaseScalar_t<float3>>(src.y),       \
+      .z = static_cast<BaseScalar_t<float3>>(src.z),       \
+  };                                                       \
+}
+
+
 DECLARE_PERFORM_CAST_UCHAR_3(float4)
 DECLARE_PERFORM_CAST_UCHAR_3(float3)
 DECLARE_PERFORM_CAST_UCHAR_3(half3)
@@ -179,6 +189,7 @@ DECLARE_PERFORM_CAST_UCHAR_3(half4)
 
 DECLARE_PERFORM_CAST_3_TO_4(uchar3, float4)
 DECLARE_PERFORM_CAST_3_TO_4(uchar3, half4)
+DECLARE_PERFORM_CAST_3_TO_4(float3, float4)
 DECLARE_PERFORM_CAST_3_TO_4(float3, half4)
 
 DECLARE_PERFORM_CAST_3(uchar3, float3)

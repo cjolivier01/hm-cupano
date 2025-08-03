@@ -134,7 +134,7 @@ class CudaGLWindow {
   // Render the given device image (CV_8UC4) to the window
   template <typename PIXEL_T>
   void render(const CudaSurface<PIXEL_T>& d_img, cudaStream_t stream = nullptr) {
-    assert(sizeof(PIXEL_T) == channels_);
+    assert(sizeof(PIXEL_T)/sizeof(PIXEL_T::x) == channels_);
     assert((int)d_img.width == width_);
     assert((int)d_img.height == height_);
 

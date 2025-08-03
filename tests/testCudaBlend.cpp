@@ -163,8 +163,8 @@ int main(int argc, char** argv) {
 #if 1
 #if 1
   // using T_pipeline = uchar4;
-  using T_pipeline = uchar3;
-  // using T_pipeline = float3;
+  // using T_pipeline = uchar3;
+  using T_pipeline = float3;
   // using T_compute = float4;
   // using T_compute = float4;
   using T_compute = half4;
@@ -218,7 +218,7 @@ int main(int argc, char** argv) {
     cv::imwrite(output, canvas->download());
   }
   if (show) {
-    // SHOW_SCALED(canvas, 0.25);
+    // SHOW_SCALED(canvas, 0.25);q
     // SHOW_SCALED(canvas, 1.0);
     hm::utils::show_surface("Canvas", canvas->surface(), /*wait=*/true);
     usleep(10000);
