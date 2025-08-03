@@ -197,9 +197,6 @@ int main(int argc, char** argv) {
     }
   }
 
-  // cv::imshow("", sample_img_right);
-  // cv::waitKey(0);
-
   hm::CudaMat<T_pipeline> inputImage1(as_batch(sample_img_left, batch_size));
   hm::CudaMat<T_pipeline> inputImage2(as_batch(sample_img_right, batch_size));
 
