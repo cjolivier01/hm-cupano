@@ -114,7 +114,7 @@
       "cwd": "${workspaceFolder}",
       "debuggerPath": "/usr/local/cuda/bin/cuda-gdb",
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
-      "args": "--game-id=mylive --adjust=0 --levels=1",
+      "args": "--game-id=mylive --adjust=0 --levels=6 --batch-size=2",
       "initCommands": [
         "directory ${workspaceFolder}",
       ],

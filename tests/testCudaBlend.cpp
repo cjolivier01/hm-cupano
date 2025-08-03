@@ -77,7 +77,6 @@ int main(int argc, char** argv) {
   // 'g:' means option 'g' requires an argument,
   // 'd:' means option 'd' requires an argument.
   const char* short_opts = "spg:d:o:c:a:l:";
-
   int option_index = 0;
   int opt;
   // Loop through and parse each option.
@@ -166,8 +165,8 @@ int main(int argc, char** argv) {
   using T_pipeline = uchar3;
   // using T_pipeline = float3;
   // using T_compute = float4;
-  // using T_compute = float4;
-  using T_compute = half4;
+  using T_compute = float4;
+  // using T_compute = half4;
   // using T_compute = half3;
 #else
   using T_pipeline = float3;

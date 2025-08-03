@@ -126,6 +126,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   assert(inputImage2.batch_size() == stitch_context.batch_size());
   assert(canvas->batch_size() == stitch_context.batch_size());
 
+  const size_t batch_size = stitch_context.batch_size();
+
   // bool cross_pollenate_images = true;
   auto roi_width = [](const cv::Rect2i& roi) { return roi.width; };
   if (!stitch_context.is_hard_seam()) {
@@ -147,7 +149,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stitch_context.remap_1_x->data(),
           stitch_context.remap_1_y->data(),
           {0, 0, 0},
-          /*batchSize=*/stitch_context.batch_size(),
+          /*batchSize=*/batch_size,
           stitch_context.remap_1_x->width(),
           stitch_context.remap_1_x->height(),
           /*offsetX=*/canvas_manager._x1,
@@ -162,7 +164,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stitch_context.remap_1_x->data(),
           stitch_context.remap_1_y->data(),
           {0, 0, 0},
-          /*batchSize=*/stitch_context.batch_size(),
+          /*batchSize=*/batch_size,
           stitch_context.remap_1_x->width(),
           stitch_context.remap_1_x->height(),
           /*offsetX=*/canvas_manager._x1,
@@ -171,6 +173,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stream);
     }
     CUDA_RETURN_IF_ERROR(cuerr);
+    // SHOW_SCALED_BATCH_ITEM(canvas, 0.2, 0);
+    // SHOW_SCALED_BATCH_ITEM(canvas, 0.2, 1);
     // SHOW_SCALED(&inputImage1, 0.2);
     // SHOW_SCALED(canvas, 0.5);
 #endif
@@ -189,10 +193,12 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
         /*destOffsetX=*/canvas_manager._remapper_1.xpos,
         /*destOffsetY=*/0,
         /*adjust_origin=*/false,
-        /*batchSize=*/stitch_context.batch_size(),
+        /*batchSize=*/batch_size,
         stitch_context.cudaFull1->surface(),
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
+    // SHOW_SCALED_BATCH_ITEM(stitch_context.cudaFull1, 0.2, 0);
+    // SHOW_SCALED_BATCH_ITEM(stitch_context.cudaFull1, 0.2, 1);
     // SHOW_SCALED(stitch_context.cudaFull1, 0.5);
     // SHOW_IMAGE(stitch_context.cudaFull1);
 #endif

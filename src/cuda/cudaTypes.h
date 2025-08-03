@@ -217,12 +217,20 @@ inline __device__ const T* advance_bytes(const T* current, ptrdiff_t diff) {
 
 template <typename T>
 inline __device__ T* surface_ptr(CudaSurface<T>& surf, int batch_nr, int xpos, int ypos) {
-  return advance_bytes(surf.d_ptr, ypos * surf.pitch) + xpos;
+  size_t batch_offset = 0;
+  if (batch_nr != 0) {
+    batch_offset = batch_nr * surf.pitch * surf.height;
+  }
+  return advance_bytes(surf.d_ptr, batch_offset + ypos * surf.pitch) + xpos;
 }
 
 template <typename T>
 inline __device__ const T* surface_ptr(const CudaSurface<T>& surf, int batch_nr, int xpos, int ypos) {
-  return advance_bytes(surf.d_ptr, ypos * surf.pitch) + xpos;
+  size_t batch_offset = 0;
+  if (batch_nr != 0) {
+    batch_offset = batch_nr * surf.pitch * surf.height;
+  }
+  return advance_bytes(surf.d_ptr, batch_offset + ypos * surf.pitch) + xpos;
 }
 
 template <typename T>
