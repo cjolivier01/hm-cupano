@@ -3,8 +3,8 @@
 #include <cuda_runtime.h>
 #include "cudaTypes.h"
 
-#include <cstdint>
 #include <algorithm>
+#include <cstdint>
 
 namespace hm {
 namespace cupano {
@@ -179,6 +179,7 @@ DECLARE_PERFORM_CAST_UCHAR_3(half4)
 
 DECLARE_PERFORM_CAST_3_TO_4(uchar3, float4)
 DECLARE_PERFORM_CAST_3_TO_4(uchar3, half4)
+DECLARE_PERFORM_CAST_3_TO_4(float3, half4)
 
 DECLARE_PERFORM_CAST_3(uchar3, float3)
 DECLARE_PERFORM_CAST_3(uchar3, half3)
