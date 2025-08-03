@@ -91,6 +91,7 @@
         "--adjust=1",
         //"--levels=0",
         "--levels=6",
+        "--batch-size=2",
         //"--perf",
         //"--output=${workspaceRoot}/output.png",
       ],

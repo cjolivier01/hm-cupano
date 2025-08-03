@@ -218,7 +218,7 @@ int main(int argc, char** argv) {
     cv::imwrite(output, canvas->download());
   }
   if (show) {
-    SHOW_SCALED(canvas, 0.25);
+    SHOW_SCALED_BATCH_ITEM(canvas, 0.25, 1);
     // SHOW_SCALED(canvas, 1.0);
     // hm::utils::show_surface("Canvas", canvas->surface(), /*wait=*/true);
     usleep(10000);
