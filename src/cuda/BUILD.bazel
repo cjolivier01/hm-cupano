@@ -69,6 +69,7 @@ cc_library(
         "cudaStatus.h",
     ],
     include_prefix = INCLUDE_PREFIX,
+    visibility = ["//visibility:public"],
     deps = [
         ":cuda_status",
         ":cuda_types",

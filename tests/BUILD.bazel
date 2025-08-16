@@ -31,3 +31,32 @@ cc_binary(
         "@opencv_linux//:opencv",
     ],
 )
+
+cc_binary(
+    name = "test_cuda_blend_n",
+    srcs = [
+        "testCudaBlendN.cpp",
+    ],
+    linkopts = [
+        "-ltiff",
+        "-lopencv_imgproc",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/pano:cuda_pano_n",
+        "@local_cuda//:cuda_runtime",
+        "@opencv_linux//:opencv",
+    ],
+)
+
+cc_test(
+    name = "test_cuda_blend_n_headers",
+    srcs = [
+        "testCudaBlendNHeaders.cpp",
+    ],
+    deps = [
+        "//src/pano:cuda_pano_n_headers",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)

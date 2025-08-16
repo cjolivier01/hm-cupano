@@ -55,3 +55,33 @@ Matches (LightGlue)
 Stitched Panorama (CUDA Kernels, hard seam or laplacian blending + color correction)
 ![alt text](./assets/s.png)
 
+## N-Image Stitching (Arbitrary N)
+
+You can stitch 2–8 images using the N-image path.
+
+Build:
+```
+bazelisk build //tests:test_cuda_blend_n
+```
+
+Run (soft seam example with 4 inputs):
+```
+./bazel-bin/tests/test_cuda_blend_n \
+  --num-images=4 --levels=6 \
+  --directory=<data_dir> \
+  --output=out.png --show
+```
+
+Run (hard seam, no pyramid):
+```
+./bazel-bin/tests/test_cuda_blend_n \
+  --num-images=3 --levels=0 \
+  --directory=<data_dir> \
+  --output=out.png
+```
+
+Expected files under `<data_dir>` for N images (0..N-1):
+- Input frames: `image0.png`, `image1.png`, ..., `image{N-1}.png`
+- Remaps (CV_16U): `mapping_000i_x.tif`, `mapping_000i_y.tif` for each i
+- Positions (TIFF tags): `mapping_000i.tif` (used to derive canvas placement)
+- Seam mask (indexed 8-bit paletted): `seam_file.png` with classes `[0..N-1]` (one class per image)

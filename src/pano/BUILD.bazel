@@ -132,3 +132,53 @@ cc_test(
     "@googletest//:gtest_main",
   ]
 )
+
+# Header-only variant for N-image pano (no CUDA link), for compilation tests
+cc_library(
+    name = "cuda_pano_n_headers",
+    hdrs = [
+        "cudaPanoN.h",
+        "cudaPanoN.inl",
+        "canvasManagerN.h",
+        "controlMasksN.h",
+    ],
+    copts = [
+        "--std=c++17",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cv_types",
+        ":canvas_manager",
+        ":canvas",
+        ":cuda_matrix",
+        "//src/cuda:cuda_blend_cuda_lib_headers",
+        "@opencv_linux//:opencv",
+    ],
+)
+
+
+# Generic N-image pano library
+cc_library(
+    name = "cuda_pano_n",
+    hdrs = [
+        "cudaPanoN.h",
+        "cudaPanoN.inl",
+        "canvasManagerN.h",
+        "controlMasksN.h",
+    ],
+    srcs = [
+        "controlMasksN.cpp",
+    ],
+    copts = [
+        "--std=c++17",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cv_types",
+        ":canvas",
+        "//src/cuda:cuda_blend_cuda_lib",
+        "@opencv_linux//:opencv",
+    ],
+)

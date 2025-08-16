@@ -645,9 +645,91 @@ template cudaError_t cudaBatchedLaplacianBlendN<float, float, 3, 4>(
     int,
     cudaStream_t);
 
+// Explicit instantiations for common pixel types and N in [2..8]
+// float3 (3 channels)
+// Base scalar float (mask and image buffers are passed as scalar arrays)
+template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 2, 3>(
+    const std::vector<const float*>&,
+    const float*,
+    float*,
+    CudaBatchLaplacianBlendContextN<float, 2>&,
+    cudaStream_t);
+template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 3, 3>(
+    const std::vector<const float*>&,
+    const float*,
+    float*,
+    CudaBatchLaplacianBlendContextN<float, 3>&,
+    cudaStream_t);
+template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 4, 3>(
+    const std::vector<const float*>&,
+    const float*,
+    float*,
+    CudaBatchLaplacianBlendContextN<float, 4>&,
+    cudaStream_t);
+template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 5, 3>(
+    const std::vector<const float*>&,
+    const float*,
+    float*,
+    CudaBatchLaplacianBlendContextN<float, 5>&,
+    cudaStream_t);
+template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 6, 3>(
+    const std::vector<const float*>&,
+    const float*,
+    float*,
+    CudaBatchLaplacianBlendContextN<float, 6>&,
+    cudaStream_t);
+template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 7, 3>(
+    const std::vector<const float*>&,
+    const float*,
+    float*,
+    CudaBatchLaplacianBlendContextN<float, 7>&,
+    cudaStream_t);
+template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 8, 3>(
+    const std::vector<const float*>&,
+    const float*,
+    float*,
+    CudaBatchLaplacianBlendContextN<float, 8>&,
+    cudaStream_t);
+
+template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 2, 4>(
+    const std::vector<const float*>&,
+    const float*,
+    float*,
+    CudaBatchLaplacianBlendContextN<float, 2>&,
+    cudaStream_t);
 template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 3, 4>(
     const std::vector<const float*>&,
     const float*,
     float*,
     CudaBatchLaplacianBlendContextN<float, 3>&,
+    cudaStream_t);
+template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 4, 4>(
+    const std::vector<const float*>&,
+    const float*,
+    float*,
+    CudaBatchLaplacianBlendContextN<float, 4>&,
+    cudaStream_t);
+template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 5, 4>(
+    const std::vector<const float*>&,
+    const float*,
+    float*,
+    CudaBatchLaplacianBlendContextN<float, 5>&,
+    cudaStream_t);
+template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 6, 4>(
+    const std::vector<const float*>&,
+    const float*,
+    float*,
+    CudaBatchLaplacianBlendContextN<float, 6>&,
+    cudaStream_t);
+template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 7, 4>(
+    const std::vector<const float*>&,
+    const float*,
+    float*,
+    CudaBatchLaplacianBlendContextN<float, 7>&,
+    cudaStream_t);
+template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 8, 4>(
+    const std::vector<const float*>&,
+    const float*,
+    float*,
+    CudaBatchLaplacianBlendContextN<float, 8>&,
     cudaStream_t);
