@@ -24,7 +24,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     const CudaMat<T_pipeline>& inputImage2,
     StitchingContext3<T_pipeline, T_compute>& stitch_context,
     const CanvasManager3& canvas_manager,
-    const std::optional<float3>& image_adjustment,
+    const std::optional<ImageAdjust3>& image_adjustment,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
   CudaStatus cuerr;
@@ -40,10 +40,15 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     CUDA_RETURN_IF_ERROR(cuerr);
   }
 
-  // Prepare adjustments
-  float3 adj0 = image_adjustment.value_or(make_float3(0.0f, 0.0f, 0.0f));
-  float3 adj1 = adj0; // Same adjustment for all images in this implementation
-  float3 adj2 = adj0;
+  // Prepare per-image adjustments
+  float3 adj0 = make_float3(0.0f, 0.0f, 0.0f);
+  float3 adj1 = make_float3(0.0f, 0.0f, 0.0f);
+  float3 adj2 = make_float3(0.0f, 0.0f, 0.0f);
+  if (image_adjustment.has_value()) {
+    adj0 = image_adjustment->adj0;
+    adj1 = image_adjustment->adj1;
+    adj2 = image_adjustment->adj2;
+  }
 
   if (!stitch_context.is_hard_seam()) {
     // ===================== SOFT SEAM PATH =====================

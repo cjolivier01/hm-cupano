@@ -156,7 +156,7 @@ CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_blending
         /*offsetX=*/dest_canvas_x,
         /*offsetY=*/dest_canvas_y,
         /*no_unmapped_write=*/false,
-        tmp3::neg(*image_adjustment),
+        *image_adjustment,
         stream);
   } else {
     cuerr = batched_remap_kernel_ex_offset(
@@ -305,7 +305,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     const CudaMat<T_pipeline>& inputImage2,
     StitchingContext3<T_pipeline, T_compute>& stitch_context,
     const CanvasManager3& canvas_manager,
-    const std::optional<float3>& image_adjustment,
+    const std::optional<ImageAdjust3>& image_adjustment,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
   CudaStatus cuerr;
@@ -338,7 +338,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         *canvas,
         canvas_manager.canvas_positions()[0].x,
         canvas_manager.canvas_positions()[0].y,
-        image_adjustment,
+        image_adjustment.has_value() ? std::optional<float3>(image_adjustment->adj0) : std::nullopt,
         stitch_context.batch_size(),
         stream));
 
@@ -395,7 +395,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         *canvas,
         canvas_manager.canvas_positions()[0].x,
         canvas_manager.canvas_positions()[0].y,
-        image_adjustment,
+        image_adjustment.has_value() ? std::optional<float3>(image_adjustment->adj0) : std::nullopt,
         stitch_context.batch_size(),
         stream));
   }
@@ -413,7 +413,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         *canvas,
         canvas_manager.canvas_positions()[1].x,
         canvas_manager.canvas_positions()[1].y,
-        image_adjustment,
+        image_adjustment.has_value() ? std::optional<float3>(image_adjustment->adj1) : std::nullopt,
         stitch_context.batch_size(),
         stream));
 
@@ -442,7 +442,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         *canvas,
         canvas_manager.canvas_positions()[1].x,
         canvas_manager.canvas_positions()[1].y,
-        image_adjustment,
+        image_adjustment.has_value() ? std::optional<float3>(image_adjustment->adj1) : std::nullopt,
         stitch_context.batch_size(),
         stream));
   }
@@ -461,7 +461,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         *canvas,
         canvas_manager.canvas_positions()[2].x,
         canvas_manager.canvas_positions()[2].y,
-        image_adjustment,
+        image_adjustment.has_value() ? std::optional<float3>(image_adjustment->adj2) : std::nullopt,
         stitch_context.batch_size(),
         stream));
 
@@ -491,7 +491,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         *canvas,
         canvas_manager.canvas_positions()[2].x,
         canvas_manager.canvas_positions()[2].y,
-        image_adjustment,
+        image_adjustment.has_value() ? std::optional<float3>(image_adjustment->adj2) : std::nullopt,
         stitch_context.batch_size(),
         stream));
   }
@@ -581,57 +581,44 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
   return result;
 }
 
+// Compute per-image additive offsets (RGB) that minimize seam differences.
 template <typename T_pipeline, typename T_compute>
-std::optional<float3> CudaStitchPano3<T_pipeline, T_compute>::compute_image_adjustment(
+std::optional<typename CudaStitchPano3<T_pipeline, T_compute>::ImageAdjust3>
+CudaStitchPano3<T_pipeline, T_compute>::compute_image_adjustment(
+    const CudaMat<T_pipeline>& inputImage0,
     const CudaMat<T_pipeline>& inputImage1,
-    const CudaMat<T_pipeline>& inputImage2,
-    const CudaMat<T_pipeline>& inputImage3) {
-  // cv::Mat tmp1 = inputImage1.download();
-  // cv::Mat tmp2 = inputImage2.download();
-  // std::optional<cv::Scalar> adjustment_result = match_seam_images(
-  //     tmp1,
-  //     tmp2,
-  //     *whole_seam_mask_image_,
-  //     /*N=*/100,
-  //     canvas_manager_->canvas_positions()[0],
-  //     canvas_manager_->canvas_positions()[1]);
-  // if (adjustment_result.has_value()) {
-  //   const cv::Scalar& adjustment = *adjustment_result;
-  //   return float3{
-  //       .x = (float)adjustment[0],
-  //       .y = (float)adjustment[1],
-  //       .z = (float)adjustment[2],
-  //   };
-  // }
-  return std::nullopt;
-}
-/**
- * A naive, direct extension of “match_seam_images” that now takes THREE images and a 3‐channel seam.
- * We sample around the seam boundary for each image’s region, accumulate per‐channel sums in image0, image1, image2,
- * then compute a shared offset.  For brevity, we simply average all three sets of pixels and compute
- * a single 3‐vector to apply to all three.
- * (Implementation omitted—same logic as match_seam_images, but extended to three.)
- */
-template <typename T_pipeline, typename T_compute>
-std::optional<cv::Scalar> match_seam_images3(
-    cv::Mat& image0,
-    cv::Mat& image1,
-    cv::Mat& image2,
-    const cv::Mat& seam_color,
-    int N,
-    const cv::Point& topLeft0,
-    const cv::Point& topLeft1,
-    const cv::Point& topLeft2,
-    bool verbose) {
-  // For brevity, imagine we partition the seam_color into three single‐channel masks:
-  // ch0, ch1, ch2.  Then sample from “inside” each image similarly to match_seam_images,
-  // accumulate sums_0, sums_1, sums_2.  Then produce a single cv::Scalar offset3 = (sums_0/ct0 + sums_1/ct1 +
-  // sums_2/ct2)/3, return offset3 so that image0 -= offset3, image1 += offset3, image2 += offset3. (Full code would
-  // mirror the two‐image version.)
-  //
-  // … [Implementation Omitted Here for Brevity] …
-  //
-  return std::nullopt;
+    const CudaMat<T_pipeline>& inputImage2) {
+  if (!whole_seam_mask_image_.has_value()) {
+    return std::nullopt;
+  }
+  // Download images to CPU Mats
+  cv::Mat img0 = inputImage0.download();
+  cv::Mat img1 = inputImage1.download();
+  cv::Mat img2 = inputImage2.download();
+
+  // Use the indexed seam (CV_8U with values {0,1,2})
+  const cv::Mat& seam_indexed = *whole_seam_mask_image_;
+
+  // Call the CPU helper to compute per-image cv::Scalar adjustments
+  auto adj = match_seam_images3(
+      img0,
+      img1,
+      img2,
+      seam_indexed,
+      /*N=*/100,
+      canvas_manager_->canvas_positions()[0],
+      canvas_manager_->canvas_positions()[1],
+      canvas_manager_->canvas_positions()[2],
+      /*verbose=*/false);
+  if (!adj.has_value()) {
+    return std::nullopt;
+  }
+  ImageAdjust3 out{
+      .adj0 = float3{.x = (float)(*adj)[0][0], .y = (float)(*adj)[0][1], .z = (float)(*adj)[0][2]},
+      .adj1 = float3{.x = (float)(*adj)[1][0], .y = (float)(*adj)[1][1], .z = (float)(*adj)[1][2]},
+      .adj2 = float3{.x = (float)(*adj)[2][0], .y = (float)(*adj)[2][1], .z = (float)(*adj)[2][2]},
+  };
+  return out;
 }
 
 // template <typename T_pipeline, typename T_compute>

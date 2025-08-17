@@ -136,6 +136,12 @@ class CudaStitchPano3 {
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
  protected:
+  // Per-image additive adjustment (RGB) for three inputs
+  struct ImageAdjust3 {
+    float3 adj0;
+    float3 adj1;
+    float3 adj2;
+  };
   // Original process_impl for compatibility
   static CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process_impl(
       const CudaMat<T_pipeline>& inputImage0,
@@ -143,7 +149,7 @@ class CudaStitchPano3 {
       const CudaMat<T_pipeline>& inputImage2,
       StitchingContext3<T_pipeline, T_compute>& stitch_context,
       const CanvasManager3& canvas_manager,
-      const std::optional<float3>& image_adjustment,
+      const std::optional<ImageAdjust3>& image_adjustment,
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
@@ -154,7 +160,7 @@ class CudaStitchPano3 {
       const CudaMat<T_pipeline>& inputImage2,
       StitchingContext3<T_pipeline, T_compute>& stitch_context,
       const CanvasManager3& canvas_manager,
-      const std::optional<float3>& image_adjustment,
+      const std::optional<ImageAdjust3>& image_adjustment,
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
@@ -195,12 +201,7 @@ class CudaStitchPano3 {
       int batch_size,
       cudaStream_t stream);
 
-  /**
-   * @brief If “match_exposure_” is true, tries to compute a per‐channel offset
-   * that aligns image0 vs. image1 vs. image2 across the seam.  Returns three
-   * floats. Otherwise returns std::nullopt.
-   */
-  std::optional<float3> compute_image_adjustment(
+  std::optional<ImageAdjust3> compute_image_adjustment(
       const CudaMat<T_pipeline>& inputImage0,
       const CudaMat<T_pipeline>& inputImage1,
       const CudaMat<T_pipeline>& inputImage2);
@@ -210,18 +211,20 @@ class CudaStitchPano3 {
   std::unique_ptr<StitchingContext3<T_pipeline, T_compute>> stitch_context_;
   std::unique_ptr<CanvasManager3> canvas_manager_;
   bool match_exposure_;
-  std::optional<float3> image_adjustment_;
+  std::optional<ImageAdjust3> image_adjustment_;
   std::optional<cv::Mat> whole_seam_mask_image_; // now 3‐channel if soft seam
   CudaStatus status_;
 };
 
 } // namespace cuda
 
-std::optional<cv::Scalar> match_seam_images3(
-    cv::Mat& image0,
-    cv::Mat& image1,
-    cv::Mat& image2,
-    const cv::Mat& seam_color, // 3‐channel seam mask
+// Compute additive RGB offsets for each of three images so that seams are minimized.
+// Returns per-image adjustments (B,G,R) in an array indexed by image 0/1/2.
+std::optional<std::array<cv::Scalar, 3>> match_seam_images3(
+    const cv::Mat& image0,
+    const cv::Mat& image1,
+    const cv::Mat& image2,
+    const cv::Mat& seam_indexed, // CV_8U, values in {0,1,2}
     int N,
     const cv::Point& topLeft0,
     const cv::Point& topLeft1,

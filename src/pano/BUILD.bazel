@@ -133,6 +133,16 @@ cc_test(
   ]
 )
 
+cc_test(
+  name = "matchSeam3_test",
+  srcs = ["matchSeam3_test.cpp"],
+  deps = [
+    ":cuda_pano",
+    "@googletest//:gtest",
+    "@googletest//:gtest_main",
+  ]
+)
+
 # Header-only variant for N-image pano (no CUDA link), for compilation tests
 cc_library(
     name = "cuda_pano_n_headers",
