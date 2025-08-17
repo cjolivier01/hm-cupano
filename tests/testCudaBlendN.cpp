@@ -18,7 +18,8 @@
 static std::vector<cv::Mat> as_batch(const cv::Mat& mat, int batch_size) {
   std::vector<cv::Mat> batch;
   batch.reserve(batch_size);
-  for (int i = 0; i < batch_size; ++i) batch.emplace_back(mat.clone());
+  for (int i = 0; i < batch_size; ++i)
+    batch.emplace_back(mat.clone());
   return batch;
 }
 
@@ -57,22 +58,44 @@ int main(int argc, char** argv) {
   int opt;
   while ((opt = getopt_long(argc, argv, short_opts, long_options, &option_index)) != -1) {
     switch (opt) {
-      case 'l': num_levels = std::atoi(optarg); break;
-      case 'b': batch_size = std::atoi(optarg); break;
-      case 'a': adjust_images = !!std::atoi(optarg); break;
-      case 'p': perf = true; break;
-      case 's': show = true; break;
-      case 'c': device_id = std::atoi(optarg); break;
-      case 'g': game_id = optarg; break;
-      case 'd': directory = optarg; break;
-      case 'o': output = optarg; break;
-      case 'n': num_images = std::max(2, std::atoi(optarg)); break;
+      case 'l':
+        num_levels = std::atoi(optarg);
+        break;
+      case 'b':
+        batch_size = std::atoi(optarg);
+        break;
+      case 'a':
+        adjust_images = !!std::atoi(optarg);
+        break;
+      case 'p':
+        perf = true;
+        break;
+      case 's':
+        show = true;
+        break;
+      case 'c':
+        device_id = std::atoi(optarg);
+        break;
+      case 'g':
+        game_id = optarg;
+        break;
+      case 'd':
+        directory = optarg;
+        break;
+      case 'o':
+        output = optarg;
+        break;
+      case 'n':
+        num_images = std::max(2, std::atoi(optarg));
+        break;
       case '?':
-        std::cerr << "Usage: " << argv[0]
-                  << " [--show] [--perf] [--game-id <id>] [--directory <dir>] [--cuda-device <v>] [--output <v>] [--adjust <0|1>] [--levels <v>] [--num-images <N>]"
-                  << std::endl;
+        std::cerr
+            << "Usage: " << argv[0]
+            << " [--show] [--perf] [--game-id <id>] [--directory <dir>] [--cuda-device <v>] [--output <v>] [--adjust <0|1>] [--levels <v>] [--num-images <N>]"
+            << std::endl;
         return 2;
-      default: break;
+      default:
+        break;
     }
   }
 
@@ -80,8 +103,10 @@ int main(int argc, char** argv) {
   cudaStream_t stream;
   cudaStreamCreate(&stream);
 
-  if (directory.empty()) directory = std::string(::getenv("HOME")) + "/Videos";
-  if (!game_id.empty()) directory += std::string("/") + game_id;
+  if (directory.empty())
+    directory = std::string(::getenv("HOME")) + "/Videos";
+  if (!game_id.empty())
+    directory += std::string("/") + game_id;
 
   // Load N input images: image0.png .. image{N-1}.png
   std::vector<cv::Mat> imgs_cv;
@@ -144,7 +169,8 @@ int main(int argc, char** argv) {
 
   cudaStreamSynchronize(stream);
 
-  if (!output.empty()) cv::imwrite(output, canvas->download());
+  if (!output.empty())
+    cv::imwrite(output, canvas->download());
   if (show) {
     SHOW_SCALED(canvas, 1);
     usleep(10000);
@@ -170,4 +196,3 @@ int main(int argc, char** argv) {
   cudaStreamDestroy(stream);
   return cudaSuccess;
 }
-

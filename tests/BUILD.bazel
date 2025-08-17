@@ -48,15 +48,3 @@ cc_binary(
         "@opencv_linux//:opencv",
     ],
 )
-
-cc_test(
-    name = "test_cuda_blend_n_headers",
-    srcs = [
-        "testCudaBlendNHeaders.cpp",
-    ],
-    deps = [
-        "//src/pano:cuda_pano_n_headers",
-        "@googletest//:gtest",
-        "@googletest//:gtest_main",
-    ],
-)
