@@ -133,7 +133,7 @@
       "cwd": "${workspaceFolder}",
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend3",
       "args": [
-        "--game-id=3stitch",
+        "--game-id=camp3",
         "--show",
         "--adjust=0",
         "--levels=6",
