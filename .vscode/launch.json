@@ -135,7 +135,7 @@
       "args": [
         "--game-id=camp3",
         "--show",
-        "--adjust=0",
+        "--adjust=1",
         "--levels=6",
         //"--perf",
         "--output=${workspaceRoot}/output.png",
