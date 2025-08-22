@@ -407,6 +407,7 @@ CudaStatus launchFusedRemapHardSeam3(
 
 // Common instantiations
 INSTANTIATE_FUSED_KERNELS(uchar3, float3)
+INSTANTIATE_FUSED_KERNELS(uchar3, float4)
 INSTANTIATE_FUSED_KERNELS(uchar4, float4)
 INSTANTIATE_FUSED_KERNELS(float3, float3)
 INSTANTIATE_FUSED_KERNELS(float4, float4)
