@@ -619,6 +619,7 @@ __global__ void BatchedReconstructKernel(
 #ifdef PRINT_STRANGE_ALPHAS
       float alpha = static_cast<float>(reconImage[idxOut + 3]);
       if (alpha != 0 && alpha != 255) {
+        assert(false);
         printf("BatchedReconstructKernel(): Strange alpha %f\n", alpha);
       }
 #endif
