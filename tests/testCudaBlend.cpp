@@ -163,7 +163,8 @@ int main(int argc, char** argv) {
 #if 1
   using T_pipeline = uchar4;
   // using T_pipeline = uchar3;
-  // using T_pipeline = float3;
+  // using T_pipeline = float4;
+  // using T_compute = float4;
   // using T_compute = float4;
   using T_compute = float4;
   // using T_compute = half4;
@@ -186,8 +187,8 @@ int main(int argc, char** argv) {
 
   if (sample_img_left.type() != cvPipelineType) {
     if (std::is_floating_point<BaseScalar_t<T_pipeline>>()) {
-      sample_img_left.convertTo(sample_img_left, cvPipelineType, 1.0 / 255.0);
-      sample_img_right.convertTo(sample_img_right, cvPipelineType, 1.0 / 255.0);
+      sample_img_left.convertTo(sample_img_left, cvPipelineType, 1.0);
+      sample_img_right.convertTo(sample_img_right, cvPipelineType, 1.0);
     } else {
       if (sizeof(T_pipeline) / sizeof(BaseScalar_t<T_pipeline>) == 4) {
         cv::cvtColor(sample_img_left, sample_img_left, cv::COLOR_BGR2BGRA);
@@ -215,7 +216,7 @@ int main(int argc, char** argv) {
   }
   if (show) {
     for (int i = 0; i < pano.batch_size(); ++i) {
-      SHOW_SCALED_BATCH_ITEM(canvas, 0.25, i);
+      SHOW_SCALED_BATCH_ITEM(canvas, 0.5, i);
     }
     // hm::utils::show_surface("Canvas", canvas->surface(), /*wait=*/true);
     usleep(10000);
