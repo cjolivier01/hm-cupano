@@ -401,17 +401,24 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     // Copy the blended portion (overlapping portion + some padding) onto
     // the canvas over some of the remapped image 1 and image 2
     //
-    cuerr = copy_roi_batched(
-        cudaBlendedFull.surface(),
-        cudaBlendedFull.width(),
-        cudaBlendedFull.height(),
-        0,
-        0,
-        canvas->surface(),
-        /*offsetX=*/canvas_manager._x2 - canvas_manager.overlap_padding(),
-        /*offsetY=*/0,
-        /*batchSize=*/stitch_context.batch_size(),
-        stream);
+  // Only paste within the vertical span that contains remapped content
+  const int contentTop = std::max(0, std::min(canvas_manager._y1, canvas_manager._y2));
+  const int contentBottom = std::min(
+    canvas->height(),
+    std::max(canvas_manager._y1 + stitch_context.remap_1_x->height(),
+         canvas_manager._y2 + stitch_context.remap_2_x->height()));
+  const int contentHeight = std::max(0, contentBottom - contentTop);
+  cuerr = copy_roi_batched(
+    cudaBlendedFull.surface(),
+    cudaBlendedFull.width(),
+    contentHeight,
+    /*srcROI_x=*/0,
+    /*srcROI_y=*/contentTop,
+    canvas->surface(),
+    /*offsetX=*/canvas_manager._x2 - canvas_manager.overlap_padding(),
+    /*offsetY=*/contentTop,
+    /*batchSize=*/stitch_context.batch_size(),
+    stream);
     CUDA_RETURN_IF_ERROR(cuerr);
     // SHOW_IMAGE(canvas);
     // SHOW_SCALED(canvas, 0.15);
