@@ -125,8 +125,10 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   assert(inputImage1.batch_size() == stitch_context.batch_size());
   assert(inputImage2.batch_size() == stitch_context.batch_size());
   assert(canvas->batch_size() == stitch_context.batch_size());
-
   const size_t batch_size = stitch_context.batch_size();
+
+  assert(canvas->pitch());
+  CUDA_RETURN_IF_ERROR(cudaMemsetAsync(canvas->data_raw(), 0, canvas->pitch() * canvas->height(), stream));
 
   // bool cross_pollenate_images = true;
   auto roi_width = [](const cv::Rect2i& roi) { return roi.width; };
