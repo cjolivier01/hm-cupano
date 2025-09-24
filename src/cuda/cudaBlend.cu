@@ -627,30 +627,30 @@ __global__ void BatchedReconstructKernel(
       int idx10 = (gyi * lowWidth + gxi1) * channels + c;
       int idx01 = (gyi1 * lowWidth + gxi) * channels + c;
       int idx11 = (gyi1 * lowWidth + gxi1) * channels + c;
+#if 1
+      F_T sum = 0;
+      F_T weightSum = 0;
 
-      // F_T sum = 0;
-      // F_T weightSum = 0;
+      auto try_add = [&](int idx, F_T wx, F_T wy) {
+        F_T w = wx * wy;
+        if (channels == 4 && static_cast<F_T>(lowImage[idx + 3]) == F_T(0)) return;
+        sum += static_cast<F_T>(lowImage[idx + c]) * w;
+        weightSum += w;
+      };
 
-      // auto try_add = [&](int idx, F_T wx, F_T wy) {
-      //   F_T w = wx * wy;
-      //   if (channels == 4 && static_cast<F_T>(lowImage[idx + 3]) == F_T(0)) return;
-      //   sum += static_cast<F_T>(lowImage[idx + c]) * w;
-      //   weightSum += w;
-      // };
+      try_add(idx00, F_ONE - dx, F_ONE - dy);
+      try_add(idx10, dx, F_ONE - dy);
+      try_add(idx01, F_ONE - dx, dy);
+      try_add(idx11, dx, dy);
 
-      // try_add(idx00, F_ONE - dx, F_ONE - dy);
-      // try_add(idx10, dx, F_ONE - dy);
-      // try_add(idx01, F_ONE - dx, dy);
-      // try_add(idx11, dx, dy);
+      // Normalize or fallback to original Lap if no valid neighbors
+      F_T interp = (weightSum > F_T(0)) ? (sum / weightSum) : F_T(0);
 
-      // // Normalize or fallback to original Lap if no valid neighbors
-      // F_T interp = (weightSum > F_T(0)) ? (sum / weightSum) : F_T(0);
+      // Add Laplacian detail
+      F_T blended = interp + static_cast<F_T>(lapImage[idxOut + c]);
 
-      // // Add Laplacian detail
-      // F_T blended = interp + static_cast<F_T>(lapImage[idxOut + c]);
-
-      // reconImage[idxOut + c] = static_cast<T>(blended);
-
+      reconImage[idxOut + c] = static_cast<T>(blended);
+#else
       F_T val00 = static_cast<F_T>(lowImage[idx00]);
       F_T val10 = static_cast<F_T>(lowImage[idx10]);
       F_T val01 = static_cast<F_T>(lowImage[idx01]);
@@ -658,6 +658,7 @@ __global__ void BatchedReconstructKernel(
       F_T upVal = (val00 * (F_ONE - dx) + val10 * dx) * (F_ONE - dy) + (val01 * (F_ONE - dx) + val11 * dx) * dy;
       F_T computedValue = static_cast<T>(upVal + static_cast<F_T>(lapImage[idxOut + c]));
       reconImage[idxOut + c] = computedValue;
+#endif
     }
   }
 }
