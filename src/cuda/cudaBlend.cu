@@ -614,7 +614,7 @@ __global__ void BatchedReconstructKernel(
   int gyi1 = min(gyi + 1, lowHeight - 1);
   int idxOut = (y * highWidth + x) * channels;
   for (int c = 0; c < channels; c++) {
-    if (channels == 4 && c == 3) {
+    if (channels == 4 && c == 3 && false) {
       reconImage[idxOut + 3] = lapImage[idxOut + 3];
 #ifdef PRINT_STRANGE_ALPHAS
       float alpha = static_cast<float>(reconImage[idxOut + 3]);
@@ -632,7 +632,11 @@ __global__ void BatchedReconstructKernel(
       F_T val01 = static_cast<F_T>(lowImage[idx01]);
       F_T val11 = static_cast<F_T>(lowImage[idx11]);
       F_T upVal = (val00 * (F_ONE - dx) + val10 * dx) * (F_ONE - dy) + (val01 * (F_ONE - dx) + val11 * dx) * dy;
-      reconImage[idxOut + c] = static_cast<T>(upVal + static_cast<F_T>(lapImage[idxOut + c]));
+      F_T computedValue = static_cast<T>(upVal + static_cast<F_T>(lapImage[idxOut + c]));
+      reconImage[idxOut + c] = computedValue;
+      if (channels == 4 && c == 3) {
+        reconImage[idxOut + c] = computedValue >= F_T(128) ? T(255) : T(0);
+      }
     }
   }
 }

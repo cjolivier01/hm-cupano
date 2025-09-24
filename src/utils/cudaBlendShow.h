@@ -88,7 +88,8 @@ inline void displayPyramid(
     const std::vector<int>& widths,
     const std::vector<int>& heights,
     int channels,
-    float scale) {
+    float scale,
+    int only_level = -1) {
   const int cvType = getCVTypeForPixel<T>(channels);
   int totalHeight = 0;
   int maxWidth = 0;
@@ -100,7 +101,7 @@ inline void displayPyramid(
 
   cudaDeviceSynchronize();
   // For each pyramid level, copy data from device and create a cv::Mat.
-  for (int level = 0; level < numLevels; level++) {
+  for (int level = only_level == -1 ? 0 : only_level; level < numLevels; level++) {
     int w = widths[level];
     int h = heights[level];
     maxWidth = std::max(maxWidth, w);
@@ -123,6 +124,9 @@ inline void displayPyramid(
     // cv::waitKey(0);
 
     levelMats.emplace_back(std::move(levelMat));
+    if (only_level != -1) {
+      break;
+    }
   }
 
   // Create a composite image that is large enough to hold all levels stacked vertically.
@@ -152,7 +156,30 @@ inline void displayPyramid(
   cv::imshow(windowName, composite);
 }
 
+template <typename T>
+inline void displayLevel(
+    const std::string& windowName,
+    const std::vector<T*>& pyramid,
+    const std::vector<int>& widths,
+    const std::vector<int>& heights,
+    int channels,
+    int level,
+    float scale = 1.0f) {
+  displayPyramid(windowName, pyramid, widths, heights, channels, scale, level);
+}
+
 } // namespace
+
+template <typename T>
+void CudaBatchLaplacianBlendContext<T>::displayLevel(
+    int level,
+    const std::vector<T*>& surfaces,
+    int channels,
+    float scale,
+    bool wait) const {
+  displayLevel("Pyramid Level " + std::to_string(level), surfaces, widths, heights, channels, level, scale);
+  cv::waitKey(wait ? 0 : 1);
+}
 
 template <typename T>
 inline void CudaBatchLaplacianBlendContext<T>::displayPyramids(int channels, float scale, bool wait) const {
@@ -164,20 +191,21 @@ inline void CudaBatchLaplacianBlendContext<T>::displayPyramids(int channels, flo
   }
 
   // Display different pyramids. (Adjust which ones you want to show.)
-  // displayPyramid("Gaussian 1", d_gauss1, widths, heights, channels, scale);
+  displayPyramid("Gaussian 1", d_gauss1, widths, heights, channels, scale);
   // displayPyramid("Gaussian 2", d_gauss2, widths, heights, channels, scale);
-  // displayPyramid("Mask Pyramid", d_maskPyr, widths, heights, 1, scale); // assuming mask is single channel
-  // displayPyramid("Laplacian 1", d_lap1, widths, heights, channels, scale);
+  displayPyramid("Laplacian 1", d_lap1, widths, heights, channels, scale);
   // displayPyramid("Laplacian 2", d_lap2, widths, heights, channels, scale);
-  
+
+  // displayPyramid("Mask Pyramid", d_maskPyr, widths, heights, 1, scale); // assuming mask is single channel
+
   displayPyramid("Blended Pyramid", d_blend, widths, heights, channels, scale);
+
   // Optionally, you could also display the reconstructed images from d_resonstruct if desired.
   // displayPyramid("Reconstructed", d_resonstruct, widths, heights, channels, scale);
 
   // Wait for a key press to close the windows.
   cv::waitKey(wait ? 0 : 1);
 }
-
 
 template <typename T>
 inline void CudaBatchLaplacianBlendContext3<T>::displayPyramids(int channels, float scale, bool wait) const {

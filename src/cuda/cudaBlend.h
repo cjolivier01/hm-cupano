@@ -120,6 +120,7 @@ struct CudaBatchLaplacianBlendContext {
 
   // Must link to utils for this
   inline void displayPyramids(int channels, float scale, bool wait) const;
+  inline void displayLevel(int level, const std::vector<T*>& surfaces, int channels, float scale, bool wait) const;
 
   void show_image(
       const std::string& label,
@@ -187,7 +188,6 @@ inline void CudaBatchLaplacianBlendContext<T>::show_image(
   show_image(label, vec_d_ptrs.at(level), level, channels, wait, scale, squish);
 }
 
-
 /**
  * @brief Performs batched Laplacian blending on images.
  *
@@ -245,4 +245,3 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     CudaBatchLaplacianBlendContext<T>& context,
     int channels,
     cudaStream_t stream);
-
