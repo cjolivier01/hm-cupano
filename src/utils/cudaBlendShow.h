@@ -155,6 +155,31 @@ inline void displayPyramid(
 } // namespace
 
 template <typename T>
+inline void CudaBatchLaplacianBlendContext<T>::displayPyramids(int channels, float scale, bool wait) const {
+  // Determine the OpenCV type from T and the number of channels.
+  const int cvType = getCVTypeForPixel<T>(channels);
+  if (cvType == -1) {
+    printf("Unsupported pixel type or channel count.\n");
+    return;
+  }
+
+  // Display different pyramids. (Adjust which ones you want to show.)
+  // displayPyramid("Gaussian 1", d_gauss1, widths, heights, channels, scale);
+  // displayPyramid("Gaussian 2", d_gauss2, widths, heights, channels, scale);
+  // displayPyramid("Mask Pyramid", d_maskPyr, widths, heights, 1, scale); // assuming mask is single channel
+  // displayPyramid("Laplacian 1", d_lap1, widths, heights, channels, scale);
+  // displayPyramid("Laplacian 2", d_lap2, widths, heights, channels, scale);
+  
+  displayPyramid("Blended Pyramid", d_blend, widths, heights, channels, scale);
+  // Optionally, you could also display the reconstructed images from d_resonstruct if desired.
+  // displayPyramid("Reconstructed", d_resonstruct, widths, heights, channels, scale);
+
+  // Wait for a key press to close the windows.
+  cv::waitKey(wait ? 0 : 1);
+}
+
+
+template <typename T>
 inline void CudaBatchLaplacianBlendContext3<T>::displayPyramids(int channels, float scale, bool wait) const {
   // Determine the OpenCV type from T and the number of channels.
   const int cvType = getCVTypeForPixel<T>(channels);

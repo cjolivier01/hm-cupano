@@ -6,6 +6,7 @@
 #include "cupano/cuda/cudaTypes.h"
 #include "cupano/pano/cudaPano.h"
 #include "cupano/utils/showImage.h" /*NOLINT*/
+#include "cupano/utils/cudaBlendShow.h"
 
 #include <csignal>
 #include <optional>
@@ -395,7 +396,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
     // SHOW_IMAGE(&cudaBlendedFull);
-    // stitch_context.laplacian_blend_context->displayPyramids(tmp::num_channels<T_compute>(), 0.25);
+    stitch_context.laplacian_blend_context->displayPyramids(tmp::num_channels<T_compute>(), 0.25, /*wait=*/true);
 #if 1
     //
     // Copy the blended portion (overlapping portion + some padding) onto
