@@ -129,6 +129,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
 
   assert(canvas->pitch());
   CUDA_RETURN_IF_ERROR(cudaMemsetAsync(canvas->data_raw(), 0, canvas->pitch() * canvas->height(), stream));
+
+  // TODO: remove me
   CUDA_RETURN_IF_ERROR(cudaMemsetAsync(stitch_context.cudaFull1->data_raw(), 0, stitch_context.cudaFull1->pitch() * stitch_context.cudaFull1->height(), stream));
   CUDA_RETURN_IF_ERROR(cudaMemsetAsync(stitch_context.cudaFull2->data_raw(), 0, stitch_context.cudaFull2->pitch() * stitch_context.cudaFull2->height(), stream));
 
