@@ -120,7 +120,6 @@ struct CudaBatchLaplacianBlendContext {
 
   // Must link to utils for this
   inline void displayPyramids(int channels, float scale, bool wait) const;
-  inline void displayLevel(int level, const std::vector<T*>& surfaces, int channels, float scale, bool wait) const;
 
   void show_image(
       const std::string& label,

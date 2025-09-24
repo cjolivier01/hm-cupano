@@ -158,6 +158,7 @@ inline void displayPyramid(
   cv::imshow(windowName, composite);
 }
 
+} // namespace
 
 template <typename T>
 inline void CudaBatchLaplacianBlendContext<T>::displayPyramids(int channels, float scale, bool wait) const {

@@ -627,6 +627,30 @@ __global__ void BatchedReconstructKernel(
       int idx10 = (gyi * lowWidth + gxi1) * channels + c;
       int idx01 = (gyi1 * lowWidth + gxi) * channels + c;
       int idx11 = (gyi1 * lowWidth + gxi1) * channels + c;
+
+      // F_T sum = 0;
+      // F_T weightSum = 0;
+
+      // auto try_add = [&](int idx, F_T wx, F_T wy) {
+      //   F_T w = wx * wy;
+      //   if (channels == 4 && static_cast<F_T>(lowImage[idx + 3]) == F_T(0)) return;
+      //   sum += static_cast<F_T>(lowImage[idx + c]) * w;
+      //   weightSum += w;
+      // };
+
+      // try_add(idx00, F_ONE - dx, F_ONE - dy);
+      // try_add(idx10, dx, F_ONE - dy);
+      // try_add(idx01, F_ONE - dx, dy);
+      // try_add(idx11, dx, dy);
+
+      // // Normalize or fallback to original Lap if no valid neighbors
+      // F_T interp = (weightSum > F_T(0)) ? (sum / weightSum) : F_T(0);
+
+      // // Add Laplacian detail
+      // F_T blended = interp + static_cast<F_T>(lapImage[idxOut + c]);
+
+      // reconImage[idxOut + c] = static_cast<T>(blended);
+
       F_T val00 = static_cast<F_T>(lowImage[idx00]);
       F_T val10 = static_cast<F_T>(lowImage[idx10]);
       F_T val01 = static_cast<F_T>(lowImage[idx01]);
@@ -634,9 +658,6 @@ __global__ void BatchedReconstructKernel(
       F_T upVal = (val00 * (F_ONE - dx) + val10 * dx) * (F_ONE - dy) + (val01 * (F_ONE - dx) + val11 * dx) * dy;
       F_T computedValue = static_cast<T>(upVal + static_cast<F_T>(lapImage[idxOut + c]));
       reconImage[idxOut + c] = computedValue;
-      if (channels == 4 && c == 3) {
-        reconImage[idxOut + c] = computedValue >= F_T(128) ? T(255) : T(0);
-      }
     }
   }
 }
@@ -1015,7 +1036,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
   assert(d_reconstruct == d_output);
   context.initialized = true;
 
-  return cudaSuccess;
+  return cudaError_t::cudaSuccess;
 }
 
 //------------------------------------------------------------------------------
