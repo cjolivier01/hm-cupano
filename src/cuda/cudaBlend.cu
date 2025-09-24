@@ -550,13 +550,6 @@ __global__ void BatchedBlendKernel(
   if (channels == 4) {
     const T alpha1 = lap1Image[idx + 3];
     const T alpha2 = lap2Image[idx + 3];
-    // If both inputs are fully transparent, zero out the entire pixel
-    if (is_zero(alpha1) && is_zero(alpha2)) {
-      for (int c = 0; c < channels; c++) {
-        blendImage[idx + c] = T(0);
-      }
-      return;
-    }
     if (is_zero(alpha1)) {
       for (int c = 0; c < channels; c++) {
         blendImage[idx + c] = static_cast<F_T>(lap2Image[idx + c]);

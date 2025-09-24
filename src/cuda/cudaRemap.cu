@@ -113,8 +113,12 @@ __global__ void BatchedRemapKernelExOffset(
     if (!no_unmapped_write || srcX != kUnmappedPositionValue) {
       *dest_pos = perform_cast<T_out>(deflt);
       if constexpr (sizeof(T_out) / sizeof(BaseScalar_t<T_out>) == 4) {
-        // Out-of-bounds or unmapped: always clear alpha
-        dest_pos->w = 0;
+        // Has an alpha channel, so clear it
+        if (srcX == kUnmappedPositionValue) {
+          dest_pos->w = 0;
+        } else {
+          dest_pos->w = BaseScalar_t<T_out>(255);
+        }
       }
     }
   }
@@ -175,8 +179,10 @@ __global__ void BatchedRemapKernelExOffsetAdjust(
     if (!no_unmapped_write || srcX != kUnmappedPositionValue) {
       *dest_pos = perform_cast<T_out>(deflt);
       if constexpr (sizeof(T_out) / sizeof(BaseScalar_t<T_out>) == 4) {
-        // Out-of-bounds or unmapped: always clear alpha
-        dest_pos->w = 0;
+        // Has an alpha channel, so clear it
+        if (srcX == kUnmappedPositionValue) {
+          dest_pos->w = 0;
+        }
       }
     }
   }
