@@ -588,6 +588,9 @@ __global__ void BatchedReconstructKernel(
     T* __restrict__ reconstruction,
     int batchSize,
     int channels) {
+  assert(lowerRes != reconstruction);
+  assert(lap != reconstruction);
+
   int b = blockIdx.z;
   if (b >= batchSize)
     return;
@@ -599,67 +602,71 @@ __global__ void BatchedReconstructKernel(
 
   int lowImageSize = lowWidth * lowHeight * channels;
   int highImageSize = highWidth * highHeight * channels;
+
   const T* lowImage = lowerRes + b * lowImageSize;
   const T* lapImage = lap + b * highImageSize;
   T* reconImage = reconstruction + b * highImageSize;
 
   const F_T F_ONE = static_cast<F_T>(1.0);
+
+  // No center alignment — pure top-left pixel mapping
   F_T gx = static_cast<F_T>(x) / 2.0f;
   F_T gy = static_cast<F_T>(y) / 2.0f;
-  int gxi = floorf(gx);
-  int gyi = floorf(gy);
-  F_T dx = gx - static_cast<F_T>(gxi);
-  F_T dy = gy - static_cast<F_T>(gyi);
+
+  int gxi = max(0, min(static_cast<int>(floorf(gx)), lowWidth - 1));
+  int gyi = max(0, min(static_cast<int>(floorf(gy)), lowHeight - 1));
   int gxi1 = min(gxi + 1, lowWidth - 1);
   int gyi1 = min(gyi + 1, lowHeight - 1);
+
+  F_T dx = gx - static_cast<F_T>(gxi);
+  F_T dy = gy - static_cast<F_T>(gyi);
+
   int idxOut = (y * highWidth + x) * channels;
-  for (int c = 0; c < channels; c++) {
-    if (channels == 4 && c == 3 && false) {
-      reconImage[idxOut + 3] = lapImage[idxOut + 3];
+
+  for (int c = 0; c < channels; ++c) {
+    if (channels == 4 && c == 3) {
+      // Copy alpha channel from Laplacian image
+      F_T alpha = static_cast<F_T>(lapImage[idxOut + c]);
+
 #ifdef PRINT_STRANGE_ALPHAS
-      float alpha = static_cast<float>(reconImage[idxOut + 3]);
-      if (alpha != 0 && alpha != 255) {
-        printf("BatchedReconstructKernel(): Strange alpha %f\n", alpha);
+      if (alpha != F_T(0) && alpha != F_T(255)) {
+        printf("BatchedReconstructKernel(): Strange alpha %f\n", static_cast<float>(alpha));
       }
 #endif
-    } else {
-      int idx00 = (gyi * lowWidth + gxi) * channels + c;
-      int idx10 = (gyi * lowWidth + gxi1) * channels + c;
-      int idx01 = (gyi1 * lowWidth + gxi) * channels + c;
-      int idx11 = (gyi1 * lowWidth + gxi1) * channels + c;
-#if 1
-      F_T sum = 0;
-      F_T weightSum = 0;
 
-      auto try_add = [&](int idx, F_T wx, F_T wy) {
-        F_T w = wx * wy;
-        if (channels == 4 && static_cast<F_T>(lowImage[idx + 3]) == F_T(0)) return;
-        sum += static_cast<F_T>(lowImage[idx + c]) * w;
-        weightSum += w;
-      };
-
-      try_add(idx00, F_ONE - dx, F_ONE - dy);
-      try_add(idx10, dx, F_ONE - dy);
-      try_add(idx01, F_ONE - dx, dy);
-      try_add(idx11, dx, dy);
-
-      // Normalize or fallback to original Lap if no valid neighbors
-      F_T interp = (weightSum > F_T(0)) ? (sum / weightSum) : F_T(0);
-
-      // Add Laplacian detail
-      F_T blended = interp + static_cast<F_T>(lapImage[idxOut + c]);
-
-      reconImage[idxOut + c] = static_cast<T>(blended);
-#else
-      F_T val00 = static_cast<F_T>(lowImage[idx00]);
-      F_T val10 = static_cast<F_T>(lowImage[idx10]);
-      F_T val01 = static_cast<F_T>(lowImage[idx01]);
-      F_T val11 = static_cast<F_T>(lowImage[idx11]);
-      F_T upVal = (val00 * (F_ONE - dx) + val10 * dx) * (F_ONE - dy) + (val01 * (F_ONE - dx) + val11 * dx) * dy;
-      F_T computedValue = static_cast<T>(upVal + static_cast<F_T>(lapImage[idxOut + c]));
-      reconImage[idxOut + c] = computedValue;
-#endif
+      reconImage[idxOut + c] = static_cast<T>(alpha);
+      continue;
     }
+
+    // Gather RGBA neighbor indices (needed to check alpha)
+    int idx00 = (gyi * lowWidth + gxi) * channels;
+    int idx10 = (gyi * lowWidth + gxi1) * channels;
+    int idx01 = (gyi1 * lowWidth + gxi) * channels;
+    int idx11 = (gyi1 * lowWidth + gxi1) * channels;
+
+    // Alpha-aware bilinear interpolation
+    F_T sum = 0;
+    F_T weightSum = 0;
+
+    auto try_add = [&](int idx, F_T wx, F_T wy) {
+      F_T w = wx * wy;
+      if (channels == 4 && static_cast<F_T>(lowImage[idx + 3]) == F_T(0))
+        return;
+      sum += static_cast<F_T>(lowImage[idx + c]) * w;
+      weightSum += w;
+    };
+
+    try_add(idx00, F_ONE - dx, F_ONE - dy);
+    try_add(idx10, dx, F_ONE - dy);
+    try_add(idx01, F_ONE - dx, dy);
+    try_add(idx11, dx, dy);
+
+    // Normalize or fall back
+    F_T upVal = (weightSum > F_T(0)) ? (sum / weightSum) : F_T(0);
+
+    // Add Laplacian detail
+    F_T computedValue = upVal + static_cast<F_T>(lapImage[idxOut + c]);
+    reconImage[idxOut + c] = static_cast<T>(computedValue);
   }
 }
 
