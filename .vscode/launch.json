@@ -62,7 +62,7 @@
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
       "args": [
         //"--game-id=stitch-fix",
-        "--game-id=foxes",
+        "--game-id=dh-tv-12-2_2",
         //"--game-id=ev-tv-1a",
         //"--game-id=mylive",
         // "--game-id=pdp",
