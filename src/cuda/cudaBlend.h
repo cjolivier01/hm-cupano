@@ -13,7 +13,7 @@
 
 #pragma once
 
-#include "src/cuda/cudaTypes.h"
+#include "src/pano/cudaMat.h"
 #include "src/utils/showImage.h"
 
 #include <cuda_fp16.h>
@@ -118,7 +118,76 @@ struct CudaBatchLaplacianBlendContext {
   std::vector<T*> d_resonstruct; ///< Device pointers for temporary reconstruction buffers.
   bool initialized{false}; ///< Flag indicating whether the context has been initialized.
 
+  // Must link to utils for this
+  inline void displayPyramids(int channels, float scale, bool wait) const;
+
+  void show_image(
+      const std::string& label,
+      const std::vector<T*>& vec_d_ptrs,
+      int level,
+      int channels,
+      bool wait,
+      float scale = 0.0f,
+      bool squish = false);
+  void show_image(
+      const std::string& label,
+      const T* vec_d_ptrs,
+      int level,
+      int channels,
+      bool wait,
+      float scale = 0.0f,
+      bool squish = false);
+
+  cv::Mat download(const std::vector<T*>& vec_d_ptrs, int level, int channels) const;
 };
+
+template <typename T>
+cv::Mat CudaBatchLaplacianBlendContext<T>::download(const std::vector<T*>& vec_d_ptrs, int level, int channels) const {
+  T* d_ptr = vec_d_ptrs.at(level);
+  if (channels == 3) {
+    assert(sizeof(T) * channels == sizeof(float3));
+    hm::CudaMat<float3> mat((float3*)d_ptr, 1, widths.at(level), heights.at(level));
+    return mat.download();
+  } else {
+    assert(sizeof(T) * channels == sizeof(float4));
+    hm::CudaMat<float4> mat((float4*)d_ptr, 1, widths.at(level), heights.at(level));
+    return mat.download();
+  }
+}
+
+template <typename T>
+inline void CudaBatchLaplacianBlendContext<T>::show_image(
+    const std::string& label,
+    const T* d_ptr,
+    int level,
+    int channels,
+    bool wait,
+    float scale,
+    bool squish) {
+  if (channels == 3) {
+    assert(sizeof(T) * channels == sizeof(float3));
+    hm::CudaMat<float3> mat((float3*)d_ptr, 1, widths.at(level), heights.at(level));
+    hm::utils::show_image(label, mat.download(), wait, scale, squish);
+  } else {
+    assert(sizeof(T) * channels == sizeof(float4));
+    hm::CudaMat<float4> mat((float4*)d_ptr, 1, widths.at(level), heights.at(level));
+    hm::utils::show_image(label, mat.download(), wait, scale, squish);
+  }
+}
+
+template <typename T>
+inline void CudaBatchLaplacianBlendContext<T>::show_image(
+    const std::string& label,
+    const std::vector<T*>& vec_d_ptrs,
+    int level,
+    int channels,
+    bool wait,
+    float scale,
+    bool squish) {
+  show_image(label, vec_d_ptrs.at(level), level, channels, wait, scale, squish);
+}
+
+
 /**
  * @brief Performs batched Laplacian blending on images.
  *
