@@ -253,22 +253,32 @@ __global__ void BatchedReconstructKernelN(
   int b = blockIdx.z;
   if (b >= batchSize)
     return;
+
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
   if (x >= highW || y >= highH)
     return;
 
-  F_T gx = static_cast<F_T>(x) / 2, gy = static_cast<F_T>(y) / 2;
-  int gxi = floorf(gx), gyi = floorf(gy);
-  int gxi1 = min(gxi + 1, lowW - 1), gyi1 = min(gyi + 1, lowH - 1);
-  F_T dx = gx - gxi, dy = gy - gyi;
+  // Map to lower-res coordinates (no center alignment)
+  F_T gx = static_cast<F_T>(x) / 2;
+  F_T gy = static_cast<F_T>(y) / 2;
+  int gxi = max(0, min(static_cast<int>(floorf(gx)), lowW - 1));
+  int gyi = max(0, min(static_cast<int>(floorf(gy)), lowH - 1));
+  int gxi1 = min(gxi + 1, lowW - 1);
+  int gyi1 = min(gyi + 1, lowH - 1);
+  F_T dx = gx - static_cast<F_T>(gxi);
+  F_T dy = gy - static_cast<F_T>(gyi);
 
+  // Output pixel location
   int baseH = b * (highW * highH * CHANNELS) + (y * highW + x) * CHANNELS;
+
+  // Lower-res 2x2 base offsets
   int base00 = b * (lowW * lowH * CHANNELS) + (gyi * lowW + gxi) * CHANNELS;
   int base10 = b * (lowW * lowH * CHANNELS) + (gyi * lowW + gxi1) * CHANNELS;
   int base01 = b * (lowW * lowH * CHANNELS) + (gyi1 * lowW + gxi) * CHANNELS;
   int base11 = b * (lowW * lowH * CHANNELS) + (gyi1 * lowW + gxi1) * CHANNELS;
 
+  // Loop over N_IMAGES
   for (int i = 0; i < N_IMAGES; ++i) {
     const T* L00 = lowerRes[i] + base00;
     const T* L10 = lowerRes[i] + base10;
@@ -279,18 +289,33 @@ __global__ void BatchedReconstructKernelN(
 
     for (int c = 0; c < CHANNELS; ++c) {
       if (CHANNELS == 4 && c == 3) {
+        // Copy alpha directly
         outPtr[3] = lap[3];
-      } else {
-        F_T v00 = static_cast<F_T>(L00[c]);
-        F_T v10 = static_cast<F_T>(L10[c]);
-        F_T v01 = static_cast<F_T>(L01[c]);
-        F_T v11 = static_cast<F_T>(L11[c]);
-        F_T up = (v00 * (1 - dx) + v10 * dx) * (1 - dy) + (v01 * (1 - dx) + v11 * dx) * dy;
-        outPtr[c] = static_cast<T>(up + static_cast<F_T>(lap[c]));
+        continue;
       }
+
+      F_T sum = 0;
+      F_T weightSum = 0;
+
+      auto try_add = [&](const T* px, F_T wx, F_T wy) {
+        F_T w = wx * wy;
+        if (CHANNELS == 4 && static_cast<F_T>(px[3]) == F_T(0))
+          return;
+        sum += static_cast<F_T>(px[c]) * w;
+        weightSum += w;
+      };
+
+      try_add(L00, F_T(1) - dx, F_T(1) - dy);
+      try_add(L10, dx, F_T(1) - dy);
+      try_add(L01, F_T(1) - dx, dy);
+      try_add(L11, dx, dy);
+
+      F_T interp = (weightSum > F_T(0)) ? (sum / weightSum) : F_T(0);
+      outPtr[c] = static_cast<T>(interp + static_cast<F_T>(lap[c]));
     }
   }
 }
+
 } // namespace
 
 // -----------------------------------------------------------------------------
