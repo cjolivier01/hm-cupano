@@ -131,8 +131,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   CUDA_RETURN_IF_ERROR(cudaMemsetAsync(canvas->data_raw(), 0, canvas->pitch() * canvas->height(), stream));
 
   // TODO: remove me
-  CUDA_RETURN_IF_ERROR(cudaMemsetAsync(stitch_context.cudaFull1->data_raw(), 0, stitch_context.cudaFull1->pitch() * stitch_context.cudaFull1->height(), stream));
-  CUDA_RETURN_IF_ERROR(cudaMemsetAsync(stitch_context.cudaFull2->data_raw(), 0, stitch_context.cudaFull2->pitch() * stitch_context.cudaFull2->height(), stream));
+  // CUDA_RETURN_IF_ERROR(cudaMemsetAsync(stitch_context.cudaFull1->data_raw(), 0, stitch_context.cudaFull1->pitch() * stitch_context.cudaFull1->height(), stream));
+  // CUDA_RETURN_IF_ERROR(cudaMemsetAsync(stitch_context.cudaFull2->data_raw(), 0, stitch_context.cudaFull2->pitch() * stitch_context.cudaFull2->height(), stream));
 
   // bool cross_pollenate_images = true;
   auto roi_width = [](const cv::Rect2i& roi) { return roi.width; };
@@ -250,7 +250,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     CUDA_RETURN_IF_ERROR(cuerr);
     // SHOW_SMALL(&inputImage1);
     // SHOW_IMAGE(canvas);
-    // SHOW_SCALED(canvas, 0.15);
+    // SHOW_SCALED(canvas, 0.5);
 #endif
   }
   //
@@ -417,7 +417,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     // SHOW_SCALED(canvas, 0.15);
 #endif
   }
-  cudaStreamSynchronize(stream);
+  // cudaStreamSynchronize(stream);
   return std::move(canvas);
 }
 
