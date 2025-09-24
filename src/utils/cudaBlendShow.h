@@ -2,7 +2,7 @@
 
 #include "src/cuda/cudaBlend.h"
 #include "src/cuda/cudaBlend3.h"
-#include "src/utils/showImage.h"
+#include "src/utils/imageUtils.h"
 
 #include <string>
 #include <vector>
@@ -107,17 +107,19 @@ inline void displayPyramid(
     maxWidth = std::max(maxWidth, w);
     totalHeight += h;
 
-    assert(pyramid[level]);
-
     const size_t dataSize = w * h * sizeof(T) * channels;
     std::unique_ptr<T[]> buffer = std::make_unique<T[]>(w * h * channels);
-    cudaError_t cuerr = cudaMemcpy(buffer.get(), pyramid[level], dataSize, cudaMemcpyDeviceToHost);
-    assert(cuerr == cudaError_t::cudaSuccess);
+    if (pyramid[level]) {
+      cudaError_t cuerr = cudaMemcpy(buffer.get(), pyramid[level], dataSize, cudaMemcpyDeviceToHost);
+      assert(cuerr == cudaError_t::cudaSuccess);
+    } else {
+      memset(buffer.get(), 0, dataSize);
+    }
 
     // Create a cv::Mat header that points to the host data.
     // (We clone immediately so that the Mat owns its data.)
     cv::Mat levelMat = cv::Mat(h, w, cvType, buffer.get()).clone();
-
+    // hm::utils::stretch(levelMat, 0.0f, 255.0f);
     levelMat = convert_to_uchar(levelMat);
 
     // cv::imshow(windowName, levelMat);
@@ -156,30 +158,6 @@ inline void displayPyramid(
   cv::imshow(windowName, composite);
 }
 
-template <typename T>
-inline void displayLevel(
-    const std::string& windowName,
-    const std::vector<T*>& pyramid,
-    const std::vector<int>& widths,
-    const std::vector<int>& heights,
-    int channels,
-    int level,
-    float scale = 1.0f) {
-  displayPyramid(windowName, pyramid, widths, heights, channels, scale, level);
-}
-
-} // namespace
-
-template <typename T>
-void CudaBatchLaplacianBlendContext<T>::displayLevel(
-    int level,
-    const std::vector<T*>& surfaces,
-    int channels,
-    float scale,
-    bool wait) const {
-  displayLevel("Pyramid Level " + std::to_string(level), surfaces, widths, heights, channels, level, scale);
-  cv::waitKey(wait ? 0 : 1);
-}
 
 template <typename T>
 inline void CudaBatchLaplacianBlendContext<T>::displayPyramids(int channels, float scale, bool wait) const {
@@ -201,7 +179,7 @@ inline void CudaBatchLaplacianBlendContext<T>::displayPyramids(int channels, flo
   displayPyramid("Blended Pyramid", d_blend, widths, heights, channels, scale);
 
   // Optionally, you could also display the reconstructed images from d_resonstruct if desired.
-  // displayPyramid("Reconstructed", d_resonstruct, widths, heights, channels, scale);
+  displayPyramid("Reconstructed", d_resonstruct, widths, heights, channels, scale);
 
   // Wait for a key press to close the windows.
   cv::waitKey(wait ? 0 : 1);
