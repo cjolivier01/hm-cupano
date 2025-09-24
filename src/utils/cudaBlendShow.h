@@ -172,7 +172,7 @@ inline void CudaBatchLaplacianBlendContext<T>::displayPyramids(int channels, flo
   
   displayPyramid("Blended Pyramid", d_blend, widths, heights, channels, scale);
   // Optionally, you could also display the reconstructed images from d_resonstruct if desired.
-  displayPyramid("Reconstructede", d_resonstruct, widths, heights, channels, scale);
+  // displayPyramid("Reconstructed", d_resonstruct, widths, heights, channels, scale);
 
   // Wait for a key press to close the windows.
   cv::waitKey(wait ? 0 : 1);
