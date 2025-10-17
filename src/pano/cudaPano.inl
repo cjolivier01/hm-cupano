@@ -5,8 +5,8 @@
 #include "cupano/cuda/cudaRemap.h"
 #include "cupano/cuda/cudaTypes.h"
 #include "cupano/pano/cudaPano.h"
-#include "cupano/utils/showImage.h" /*NOLINT*/
 #include "cupano/utils/cudaBlendShow.h"
+#include "cupano/utils/showImage.h" /*NOLINT*/
 
 #include <csignal>
 #include <optional>
@@ -129,11 +129,14 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   const size_t batch_size = stitch_context.batch_size();
 
   assert(canvas->pitch());
-  CUDA_RETURN_IF_ERROR(cudaMemsetAsync(canvas->data_raw(), 0, canvas->pitch() * canvas->height(), stream));
+  CUDA_RETURN_IF_ERROR(
+      cudaMemsetAsync(canvas->data_raw(), 0, canvas->pitch() * canvas->height() * stitch_context.batch_size(), stream));
 
   // TODO: remove me
-  // CUDA_RETURN_IF_ERROR(cudaMemsetAsync(stitch_context.cudaFull1->data_raw(), 0, stitch_context.cudaFull1->pitch() * stitch_context.cudaFull1->height(), stream));
-  // CUDA_RETURN_IF_ERROR(cudaMemsetAsync(stitch_context.cudaFull2->data_raw(), 0, stitch_context.cudaFull2->pitch() * stitch_context.cudaFull2->height(), stream));
+  // CUDA_RETURN_IF_ERROR(cudaMemsetAsync(stitch_context.cudaFull1->data_raw(), 0, stitch_context.cudaFull1->pitch() *
+  // stitch_context.cudaFull1->height(), stream));
+  // CUDA_RETURN_IF_ERROR(cudaMemsetAsync(stitch_context.cudaFull2->data_raw(), 0, stitch_context.cudaFull2->pitch() *
+  // stitch_context.cudaFull2->height(), stream));
 
   // bool cross_pollenate_images = true;
   auto roi_width = [](const cv::Rect2i& roi) { return roi.width; };
