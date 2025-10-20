@@ -17,6 +17,78 @@ rules_cuda_dependencies()
 
 register_detected_cuda_toolchains()
 
+# External seam blender used to compute indexed seam masks for N-image/3-image paths
+git_repository(
+    name = "multiblend",
+    remote = "https://github.com/cjolivier01/multiblend",
+    branch = "colivier/hm",
+)
+
+# System libraries required by multiblend
+new_local_repository(
+    name = "libtiff",
+    path = "/usr",
+    build_file_content = """
+cc_library(
+    name = "tiff",
+    hdrs = glob(["include/tiff*.h", "include/x86_64-linux-gnu/tiff*.h"], allow_empty = True),
+    includes = ["include", "include/x86_64-linux-gnu"],
+    linkopts = [
+        "-L/usr/lib/x86_64-linux-gnu",
+        "-L/usr/lib",
+        "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
+        "-ltiff",
+        "-lwebp",
+        "-lsharpyuv",
+        "-lLerc",
+        "-ljbig",
+        "-ldeflate",
+        "-lz",
+    ],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+new_local_repository(
+    name = "libjpeg",
+    path = "/usr",
+    build_file_content = """
+cc_library(
+    name = "jpeg",
+    hdrs = glob(["include/j*.h", "include/x86_64-linux-gnu/j*.h"], allow_empty = True),
+    includes = ["include", "include/x86_64-linux-gnu"],
+    linkopts = [
+        "-L/usr/lib/x86_64-linux-gnu",
+        "-L/usr/lib",
+        "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
+        "-ljpeg",
+    ],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+new_local_repository(
+    name = "libpng",
+    path = "/usr",
+    build_file_content = """
+cc_library(
+    name = "png",
+    hdrs = glob(["include/png*.h", "include/libpng*/*.h"], allow_empty = True),
+    includes = ["include"],
+    linkopts = [
+        "-L/usr/lib/x86_64-linux-gnu",
+        "-L/usr/lib",
+        "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
+        "-lpng",
+        "-lz",
+    ],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
 new_local_repository(
     name = "opencv_linux",
     build_file = "@//buildfiles:third_party/opencv_linux.BUILD",
@@ -38,4 +110,3 @@ new_git_repository(
     tag = "v1.17.0",
     remote = "https://github.com/google/googletest.git",
 )
-

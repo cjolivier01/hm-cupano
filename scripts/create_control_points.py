@@ -495,8 +495,9 @@ def configure_stitching(
     project_file_path: str = os.path.join(directory, "hm_project.pto")
     pto_path: Path = Path(project_file_path)
     dir_name: str = str(pto_path.parent)
-    hm_project: str = project_file_path
-    autooptimiser_out: str = os.path.join(dir_name, "autooptimiser_out.pto")
+    # After chdir into dir_name, pass relative filenames to Hugin tools
+    hm_project: str = pto_path.name
+    autooptimiser_out: str = "autooptimiser_out.pto"
     assert (
         autooptimiser_out != hm_project
     ), "Output project file conflicts with input project file."
@@ -538,10 +539,12 @@ def configure_stitching(
             max_control_points=max_control_points,
             device=device,
             max_num_keypoints=2048,
-            output_directory=directory,
+            # save visualizations in current working directory after chdir
+            output_directory=".",
         )
         # Update the PTO file with the new control points.
-        update_pto_file(project_file_path, control_points)
+        # Update the PTO in the current working directory
+        update_pto_file(hm_project, control_points)
 
         # Run autooptimiser (e.g., using RANSAC) on the project file.
         cmd = [
@@ -581,8 +584,8 @@ def configure_stitching(
             "enblend",
             "--save-masks=seam_file.png",
             "-o",
-            os.path.join(dir_name, "panorama.tif"),
-            os.path.join(dir_name, "mapping_????.tif"),
+            "panorama.tif",
+            "mapping_????.tif",
         ]
         os.system(" ".join(cmd))
     finally:
