@@ -55,6 +55,81 @@ Matches (LightGlue)
 Stitched Panorama (CUDA Kernels, hard seam or laplacian blending + color correction)
 ![alt text](./assets/s.png)
 
+## Working Examples
+
+The commands below are tested on the provided assets using the Python from the `ubuntu` conda env and the built Bazel binaries.
+
+### 1) Two-Image Stitch (assets/left.png + assets/right.png)
+
+- Generate control points and Hugin mappings (writes into `assets/`):
+```
+python3 scripts/create_control_points.py --left assets/left.png --right assets/right.png --max-control-points 200
+```
+- Run the CUDA stitcher (0 levels = hard seam, fastest):
+```
+./bazel-bin/tests/test_cuda_blend --levels=6 --adjust=1 --directory=assets --output=assets/pano_left_right.png
+```
+- View the result:
+```
+viewnior assets/pano_left_right.png &
+```
+- Result preview (clickable path): `assets/pano_left_right.png`
+
+Example outputs and diagnostics written to `assets/`:
+- Matches: `assets/matches.png`
+- Keypoints: `assets/keypoints.png`
+- Seam file (from enblend): `assets/seam_file.png`
+- Mappings: `assets/mapping_000{0,1}_[xy].tif`
+
+### 2) Three-Image Stitch (assets/weir_1,2,3 → assets/three/)
+
+Prepare a small working folder and convert the inputs to the naming the demos expect (`image0.png`, `image1.png`, `image2.png`):
+```
+mkdir -p assets/three
+ffmpeg -y -loglevel error -i assets/weir_1.jpg assets/three/image0.png
+ffmpeg -y -loglevel error -i assets/weir_2.jpg assets/three/image1.png
+ffmpeg -y -loglevel error -i assets/weir_3.jpg assets/three/image2.png
+```
+
+Create the Hugin project, find control points, optimize, and export remap files (`mapping_000i_[xy].tif`) and warped layers (`mapping_000i.tif`):
+```
+cd assets/three
+pto_gen -p 0 -o three.pto -f 65 image0.png image1.png image2.png
+cpfind --multirow -o three_cp.pto three.pto
+autooptimiser -a -m -l -s -o three_opt.pto three_cp.pto
+nona -m TIFF_m -z NONE --bigtiff -c -o mapping_ three_opt.pto
+```
+
+Generate the seam mask with multiblend (recommended for 3+). This uses the Bazel external `@multiblend`:
+```
+bazelisk run @multiblend//:multiblend -- --save-seams=seam_file.png -o panorama.tif mapping_????.tif
+```
+Alternatively, you can use enblend (also available as Bazel external `@enblend`) and convert to a 3‑class paletted mask automatically:
+```
+python3 scripts/generate_seam.py --directory=$(pwd) --num-images=3 --seam enblend
+```
+
+Stitch using the 3-image path (6 levels + exposure adjust) and view it:
+```
+cd -
+./bazel-bin/tests/test_cuda_blend3 --levels=6 --adjust=1 --directory=assets/three --output=assets/three/pano_three_3way.png
+viewnior assets/three/pano_three_3way.png &
+```
+
+Alternatively, the generic N-image path works with the same folder (num-images=3):
+```
+./bazel-bin/tests/test_cuda_blend_n --levels=6 --adjust=1 --num-images=3 --directory=assets/three --output=assets/three/pano_three_n.png
+```
+
+Input previews:
+- `assets/three/image0.png`
+- `assets/three/image1.png`
+- `assets/three/image2.png`
+
+Output previews:
+- `assets/three/pano_three_3way.png`
+- `assets/three/pano_three_n.png`
+
 ## N-Image Stitching (Arbitrary N)
 
 You can stitch 2–8 images using the N-image path.
@@ -67,7 +142,7 @@ bazelisk build //tests:test_cuda_blend_n
 Run (soft seam example with 4 inputs):
 ```
 ./bazel-bin/tests/test_cuda_blend_n \
-  --num-images=4 --levels=6 \
+  --num-images=4 --levels=6 --adjust=1 \
   --directory=<data_dir> \
   --output=out.png --show
 ```

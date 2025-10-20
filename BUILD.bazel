@@ -1,0 +1,31 @@
+# Config switches used by @enblend selects; keep undefined by default so
+# selects fall back to their defaults when building @enblend.
+config_setting(
+    name = "with_openexr",
+    values = {"define": "enblend_openexr=true"},
+)
+
+config_setting(
+    name = "with_openmp",
+    values = {"define": "enblend_openmp=true"},
+)
+
+config_setting(
+    name = "with_dynamic_loader",
+    values = {"define": "enblend_dynamic_loader=true"},
+)
+
+config_setting(
+    name = "with_exiv2",
+    values = {"define": "enblend_exiv2=true"},
+)
+
+config_setting(
+    name = "with_opencl",
+    values = {"define": "enblend_opencl=true"},
+)
+
+config_setting(
+    name = "with_cuda",
+    values = {"define": "enblend_cuda=true"},
+)
