@@ -92,21 +92,18 @@ TEST(CudaBlend3SmallTest, SinglePixelIdentityMasks) {
     CudaVector mask(h_mask);
     CudaVector output(h_output);
     CUDA_CHECK(cudaMemset(output.data(), 0, pixelCount * sizeof(float)));
+    CudaBatchLaplacianBlendContext3<float> ctx(width, height, numLevels, batchSize);
     ASSERT_EQ(
-        cudaBatchedLaplacianBlend3<float>(
+        cudaBatchedLaplacianBlendWithContext3<float>(
             img1.data(),
             img2.data(),
             img3.data(),
             mask.data(),
             output.data(),
-            width,
-            height,
+            ctx,
             channels,
-            numLevels,
-            batchSize,
             0),
         cudaSuccess);
-    // Synchronize to ensure the host copy is done
     CUDA_CHECK(cudaDeviceSynchronize());
   }
   // Output should match image1 exactly
@@ -120,18 +117,16 @@ TEST(CudaBlend3SmallTest, SinglePixelIdentityMasks) {
     CudaVector mask(h_mask);
     CudaVector output(h_output);
     CUDA_CHECK(cudaMemset(output.data(), 0, pixelCount * sizeof(float)));
+    CudaBatchLaplacianBlendContext3<float> ctx(width, height, numLevels, batchSize);
     ASSERT_EQ(
-        cudaBatchedLaplacianBlend3<float>(
+        cudaBatchedLaplacianBlendWithContext3<float>(
             img1.data(),
             img2.data(),
             img3.data(),
             mask.data(),
             output.data(),
-            width,
-            height,
+            ctx,
             channels,
-            numLevels,
-            batchSize,
             0),
         cudaSuccess);
     CUDA_CHECK(cudaDeviceSynchronize());
@@ -199,18 +194,16 @@ TEST(CudaBlend3SmallTest, TwoByTwoUniformMask) {
   {
     CudaVector output(h_output);
     CUDA_CHECK(cudaMemset(output.data(), 0, pixelCount * sizeof(float)));
+    CudaBatchLaplacianBlendContext3<float> ctx(width, height, numLevels, batchSize);
     ASSERT_EQ(
-        cudaBatchedLaplacianBlend3<float>(
+        cudaBatchedLaplacianBlendWithContext3<float>(
             img1.data(),
             img2.data(),
             img3.data(),
             mask.data(),
             output.data(),
-            width,
-            height,
+            ctx,
             channels,
-            numLevels,
-            batchSize,
             0),
         cudaSuccess);
     CUDA_CHECK(cudaDeviceSynchronize());
@@ -254,18 +247,16 @@ TEST(CudaBlend3SmallTest, SinglePixelRGBAAlphaBlending) {
   {
     CudaVector output(h_output);
     CUDA_CHECK(cudaMemset(output.data(), 0, pixelCount * sizeof(float)));
+    CudaBatchLaplacianBlendContext3<float> ctx(width, height, numLevels, batchSize);
     ASSERT_EQ(
-        cudaBatchedLaplacianBlend3<float>(
+        cudaBatchedLaplacianBlendWithContext3<float>(
             img1.data(),
             img2.data(),
             img3.data(),
             mask.data(),
             output.data(),
-            width,
-            height,
+            ctx,
             channels,
-            numLevels,
-            batchSize,
             0),
         cudaSuccess);
     CUDA_CHECK(cudaDeviceSynchronize());
@@ -286,4 +277,144 @@ TEST(CudaBlend3SmallTest, SinglePixelRGBAAlphaBlending) {
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
+}
+
+// Test 4: RGBA, alpha==0 in one image should skip that image (weights renormalized)
+TEST(CudaBlend3SmallTest, AlphaZeroSkipsContribution) {
+  const int width = 1;
+  const int height = 1;
+  const int channels = 4; // RGBA
+  const int batchSize = 1;
+  const int numLevels = 1;
+  const int pixelCount = width * height * channels * batchSize;
+  const int maskCount = width * height * 3;
+
+  // Three RGBA pixels with distinct colors; image2 alpha=0 (fully transparent)
+  std::vector<float> h_image1{10.0f, 20.0f, 30.0f, 255.0f};
+  std::vector<float> h_image2{100.0f, 110.0f, 120.0f, 0.0f};
+  std::vector<float> h_image3{90.0f, 100.0f, 110.0f, 255.0f};
+  std::vector<float> h_mask{0.1f, 0.8f, 0.1f}; // mostly chooses image2, but it's alpha==0
+  std::vector<float> h_output(pixelCount, 0.0f);
+
+  CudaVector img1(h_image1), img2(h_image2), img3(h_image3);
+  CudaVector mask(h_mask);
+  CudaVector output(h_output);
+  CUDA_CHECK(cudaMemset(output.data(), 0, pixelCount * sizeof(float)));
+  CudaBatchLaplacianBlendContext3<float> ctx(width, height, numLevels, batchSize);
+  ASSERT_EQ(
+      cudaBatchedLaplacianBlendWithContext3<float>(
+          img1.data(),
+          img2.data(),
+          img3.data(),
+          mask.data(),
+          output.data(),
+          ctx,
+          channels,
+          0),
+      cudaSuccess);
+  CUDA_CHECK(cudaDeviceSynchronize());
+  // Pull result back to host for verification
+  CUDA_CHECK(cudaMemcpy(h_output.data(), output.data(), pixelCount * sizeof(float), cudaMemcpyDeviceToHost));
+
+  // Because image2 has alpha==0, its weight is zeroed and remaining weights renormalize:
+  // m1' = 0.1/(0.1+0.1) = 0.5, m3' = 0.5. So RGB = (img1+img3)/2, A = (255+255)/2 = 255.
+  std::vector<float> expected{(10.0f + 90.0f) * 0.5f,
+                              (20.0f + 100.0f) * 0.5f,
+                              (30.0f + 110.0f) * 0.5f,
+                              255.0f};
+  for (int c = 0; c < channels; ++c) {
+    EXPECT_NEAR(h_output[c], expected[c], kEpsilon) << "Channel " << c << " mismatch with alpha gating.";
+  }
+}
+
+// Test 5: If mask selects a transparent source (weight=1 on alpha==0),
+// kernel should fallback to a non-transparent contributor (highest alpha)
+TEST(CudaBlend3SmallTest, MaskSelectsTransparentThenFallback) {
+  const int width = 1;
+  const int height = 1;
+  const int channels = 4; // RGBA
+  const int batchSize = 1;
+  const int numLevels = 1;
+  const int pixelCount = width * height * channels * batchSize;
+
+  // image1: solid red, alpha 255
+  std::vector<float> h_image1{255.0f, 0.0f, 0.0f, 255.0f};
+  // image2: green, but fully transparent
+  std::vector<float> h_image2{0.0f, 255.0f, 0.0f, 0.0f};
+  // image3: blue, lower alpha
+  std::vector<float> h_image3{0.0f, 0.0f, 255.0f, 128.0f};
+  // Mask selects only image2
+  std::vector<float> h_mask{0.0f, 1.0f, 0.0f};
+  std::vector<float> h_output(pixelCount, 0.0f);
+
+  CudaVector img1(h_image1), img2(h_image2), img3(h_image3);
+  CudaVector mask(h_mask);
+  CudaVector output(h_output);
+  CUDA_CHECK(cudaMemset(output.data(), 0, pixelCount * sizeof(float)));
+  CudaBatchLaplacianBlendContext3<float> ctx(width, height, numLevels, batchSize);
+  ASSERT_EQ(
+      cudaBatchedLaplacianBlendWithContext3<float>(
+          img1.data(), img2.data(), img3.data(), mask.data(), output.data(), ctx, channels, 0),
+      cudaSuccess);
+  CUDA_CHECK(cudaDeviceSynchronize());
+  CUDA_CHECK(cudaMemcpy(h_output.data(), output.data(), pixelCount * sizeof(float), cudaMemcpyDeviceToHost));
+
+  // Expect fallback picked image1 (highest alpha 255)
+  std::vector<float> expected{255.0f, 0.0f, 0.0f, 255.0f};
+  for (int c = 0; c < channels; ++c) {
+    EXPECT_NEAR(h_output[c], expected[c], kEpsilon) << "Channel " << c << " mismatch in fallback.";
+  }
+}
+
+// Test 6: Multi-level overlap seam (no alpha holes)
+// Construct a 4x4 RGBA with full alpha; mask has top-half channel0, bottom-half channel1.
+// With 2+ levels, blended alpha should remain 255 across seam and RGB should be non-zero.
+TEST(CudaBlend3SmallTest, MultiLevelOverlapHasNoAlphaHoles) {
+  const int W = 4, H = 4, C = 4, B = 1, L = 2; // two levels
+  const int N = W * H * C;
+
+  // image1 = red(100), image2 = green(150), image3 = blue(200); all alpha=255
+  std::vector<float> i1(N, 0.0f), i2(N, 0.0f), i3(N, 0.0f);
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      int idx = (y * W + x) * C;
+      i1[idx + 0] = 100.0f; i1[idx + 3] = 255.0f; // R, A
+      i2[idx + 1] = 150.0f; i2[idx + 3] = 255.0f; // G, A
+      i3[idx + 2] = 200.0f; i3[idx + 3] = 255.0f; // B, A
+    }
+  }
+  // Mask: channel0=1 for top half (y<2), channel1=1 for bottom (y>=2), channel2=0
+  std::vector<float> m(W * H * 3, 0.0f);
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      int mi = (y * W + x) * 3;
+      if (y < H / 2) m[mi + 0] = 1.0f; else m[mi + 1] = 1.0f;
+    }
+  }
+  std::vector<float> out(N, 0.0f);
+
+  CudaVector d_i1(i1), d_i2(i2), d_i3(i3);
+  CudaVector d_m(m);
+  CudaVector d_out(out);
+  CUDA_CHECK(cudaMemset(d_out.data(), 0, N * sizeof(float)));
+
+  CudaBatchLaplacianBlendContext3<float> ctx(W, H, L, B);
+  ASSERT_EQ(
+      cudaBatchedLaplacianBlendWithContext3<float>(
+          d_i1.data(), d_i2.data(), d_i3.data(), d_m.data(), d_out.data(), ctx, C, 0),
+      cudaSuccess);
+  CUDA_CHECK(cudaDeviceSynchronize());
+  CUDA_CHECK(cudaMemcpy(out.data(), d_out.data(), N * sizeof(float), cudaMemcpyDeviceToHost));
+
+  // Check seam row (y==1 and y==2) — alpha must be 255; RGB should be from red/green mix, not zeros
+  auto check_pixel = [&](int y, int x) {
+    int idx = (y * W + x) * C;
+    EXPECT_GE(out[idx + 3], 250.0f) << "Alpha hole at (" << x << "," << y << ")";
+    float rgb_sum = out[idx + 0] + out[idx + 1] + out[idx + 2];
+    EXPECT_GT(rgb_sum, 50.0f) << "RGB vanished at (" << x << "," << y << ")";
+  };
+  for (int x = 0; x < W; ++x) {
+    check_pixel(1, x);
+    check_pixel(2, x);
+  }
 }
