@@ -13,6 +13,8 @@ cuda_library(
     srcs = [
         "cudaBlend.cu",
         "cudaBlend3.cu",
+        "cudaBlend3_optimized.cu",
+        "cudaFusedKernels3.cu",
         "cudaBlendN.cu",
         "cudaImageAdjust.cu",
         "cudaMakeFull.cu",
@@ -21,22 +23,24 @@ cuda_library(
         "cudaUtils.cu",
     ],
     hdrs = [
+        "cudaImageAdjust.cuh",
         "cudaUtils.cuh",
     ],
     copts = [
+        # "-Xcompiler=-std=c++17",
+        "-std=c++14",
         "-Xcompiler=-fPIC",
-        "-Xcompiler=-std=c++17",
         "-Wno-deprecated-gpu-targets",
         "-Xcompiler=-fdiagnostics-color=always",
     ] + select({
         # only in debug mode:
         ":debug_build": [
-            "-Xcompiler=-O0",
+            # "-Xcompiler=-O0",
             "-Xcompiler=-g",
             "-G",
             "-g",
             "-keep",
-            "-O0",
+            # "-O0",
         ],
         # in all other modes, no extra flags
         "//conditions:default": [],
@@ -45,6 +49,7 @@ cuda_library(
     deps = [
         ":cuda_blend_cuda_lib_headers",
         "//src/utils:show_image",
+        "//src/pano:canvas_manager",
         "@local_cuda//:cuda_runtime",
         "@opencv_linux//:opencv",
     ],
@@ -57,13 +62,14 @@ cc_library(
     hdrs = [
         "cudaBlend.h",
         "cudaBlend3.h",
+        "cudaFusedKernels3.h",
         "cudaBlendN.h",
-        "cudaImageAdjust.h",
         "cudaMakeFull.h",
         "cudaRemap.h",
         "cudaStatus.h",
     ],
     include_prefix = INCLUDE_PREFIX,
+    visibility = ["//visibility:public"],
     deps = [
         ":cuda_status",
         ":cuda_types",
@@ -90,6 +96,7 @@ cc_library(
         "cudaStatus.h",
     ],
     include_prefix = INCLUDE_PREFIX,
+    visibility = ["//visibility:public"],
 )
 
 cc_test(

@@ -42,6 +42,11 @@ cv::Mat make_fake_mask_like(const cv::Mat& mask);
     ::hm::utils::display_scaled_image(std::string(#_mat$), (_mat$)->download(), _scale$, /*wait=*/true); \
   } while (false)
 
+#define SHOW_SCALED_BATCH_ITEM(_mat$, _scale$, _batch_item$)                                                         \
+  do {                                                                                                               \
+    ::hm::utils::display_scaled_image(std::string(#_mat$), (_mat$)->download(_batch_item$), _scale$, /*wait=*/true); \
+  } while (false)
+
 #define SHOW_SMALL(_mat$)     \
   do {                        \
     SHOW_SCALED(_mat$, 0.05); \

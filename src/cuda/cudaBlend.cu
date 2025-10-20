@@ -1,5 +1,5 @@
 #include "cudaBlend.h"
-#include "cudaTypes.h"
+#include "cudaUtils.cuh"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -8,12 +8,13 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
-#include <iostream>
 #include <vector>
 
 #define PRINT_STRANGE_ALPHAS
 
 #define EXTRA_ALPHA_CHECKS
+
+using namespace hm::cupano::cuda;
 
 // =============================================================================
 // Macro to check CUDA calls and return on error.
@@ -93,8 +94,8 @@ __global__ void FusedBatchedDownsampleKernel(
       bool keep1 = true;
       if (channels == 4) {
         T a1 = in1[idx + 3];
-        alpha1 = std::max(alpha1, a1);
-        keep1 = (a1 != T(0));
+        alpha1 = max_of(alpha1, a1);
+        keep1 = !is_zero(a1);
       }
       if (keep1) {
         for (int c = 0; c < sumCh; ++c)
@@ -106,8 +107,8 @@ __global__ void FusedBatchedDownsampleKernel(
       bool keep2 = true;
       if (channels == 4) {
         T a2 = in2[idx + 3];
-        alpha2 = std::max(alpha2, a2);
-        keep2 = (a2 != T(0));
+        alpha2 = max_of(alpha2, a2);
+        keep2 = !is_zero(a2);
       }
       if (keep2) {
         for (int c = 0; c < sumCh; ++c)
@@ -132,8 +133,11 @@ __global__ void FusedBatchedDownsampleKernel(
   }
 
 #ifdef PRINT_STRANGE_ALPHAS
-  if ((alpha1 != T_CONST(0) && alpha1 != T_CONST(255)) || (alpha2 != T_CONST(0) && alpha2 != T_CONST(255))) {
-    printf("FusedBatchedDownsampleKernel(): Strange alphas %f and %f\n", (float)alpha1, (float)alpha2);
+  // stupid overload issues
+  if constexpr (!std::is_same<T, __half>::value) {
+    if ((alpha1 != T_CONST(0) && alpha1 != T_CONST(255)) || (alpha2 != T_CONST(0) && alpha2 != T_CONST(255))) {
+      printf("FusedBatchedDownsampleKernel(): Strange alphas %f and %f\n", (float)alpha1, (float)alpha2);
+    }
   }
 #endif
 }
@@ -419,19 +423,19 @@ __global__ void BatchedComputeLaplacianKernel(
         F_T sumW = 0, sumV = 0;
         // alpha offsets
         int aOff = 3;
-        if (lowImage[base00 + aOff] != T(0)) {
+        if (!is_zero(lowImage[base00 + aOff])) {
           sumW += w00;
           sumV += v00 * w00;
         }
-        if (lowImage[base10 + aOff] != T(0)) {
+        if (!is_zero(lowImage[base10 + aOff])) {
           sumW += w10;
           sumV += v10 * w10;
         }
-        if (lowImage[base01 + aOff] != T(0)) {
+        if (!is_zero(lowImage[base01 + aOff])) {
           sumW += w01;
           sumV += v01 * w01;
         }
-        if (lowImage[base11 + aOff] != T(0)) {
+        if (!is_zero(lowImage[base11 + aOff])) {
           sumW += w11;
           sumV += v11 * w11;
         }
@@ -544,14 +548,13 @@ __global__ void BatchedBlendKernel(
   F_T mm1 = F_ONE - m;
   int max_channel = std::min(channels, 3);
   if (channels == 4) {
-    const T T_ZERO = static_cast<T>(0);
     const T alpha1 = lap1Image[idx + 3];
     const T alpha2 = lap2Image[idx + 3];
-    if (alpha1 == T_ZERO) {
+    if (is_zero(alpha1)) {
       for (int c = 0; c < channels; c++) {
         blendImage[idx + c] = static_cast<F_T>(lap2Image[idx + c]);
       }
-    } else if (alpha2 == T_ZERO) {
+    } else if (is_zero(alpha2)) {
       for (int c = 0; c < channels; c++) {
         blendImage[idx + c] = static_cast<F_T>(lap1Image[idx + c]);
       }
@@ -585,6 +588,9 @@ __global__ void BatchedReconstructKernel(
     T* __restrict__ reconstruction,
     int batchSize,
     int channels) {
+  assert(lowerRes != reconstruction);
+  assert(lap != reconstruction);
+
   int b = blockIdx.z;
   if (b >= batchSize)
     return;
@@ -596,41 +602,71 @@ __global__ void BatchedReconstructKernel(
 
   int lowImageSize = lowWidth * lowHeight * channels;
   int highImageSize = highWidth * highHeight * channels;
+
   const T* lowImage = lowerRes + b * lowImageSize;
   const T* lapImage = lap + b * highImageSize;
   T* reconImage = reconstruction + b * highImageSize;
 
   const F_T F_ONE = static_cast<F_T>(1.0);
+
+  // No center alignment — pure top-left pixel mapping
   F_T gx = static_cast<F_T>(x) / 2.0f;
   F_T gy = static_cast<F_T>(y) / 2.0f;
-  int gxi = floorf(gx);
-  int gyi = floorf(gy);
-  F_T dx = gx - static_cast<F_T>(gxi);
-  F_T dy = gy - static_cast<F_T>(gyi);
+
+  int gxi = max(0, min(static_cast<int>(floorf(gx)), lowWidth - 1));
+  int gyi = max(0, min(static_cast<int>(floorf(gy)), lowHeight - 1));
   int gxi1 = min(gxi + 1, lowWidth - 1);
   int gyi1 = min(gyi + 1, lowHeight - 1);
+
+  F_T dx = gx - static_cast<F_T>(gxi);
+  F_T dy = gy - static_cast<F_T>(gyi);
+
   int idxOut = (y * highWidth + x) * channels;
-  for (int c = 0; c < channels; c++) {
+
+  for (int c = 0; c < channels; ++c) {
     if (channels == 4 && c == 3) {
-      reconImage[idxOut + 3] = lapImage[idxOut + 3];
+      // Copy alpha channel from Laplacian image
+      F_T alpha = static_cast<F_T>(lapImage[idxOut + c]);
+
 #ifdef PRINT_STRANGE_ALPHAS
-      float alpha = static_cast<float>(reconImage[idxOut + 3]);
-      if (alpha != 0 && alpha != 255) {
-        printf("BatchedReconstructKernel(): Strange alpha %f\n", alpha);
+      if (alpha != F_T(0) && alpha != F_T(255)) {
+        printf("BatchedReconstructKernel(): Strange alpha %f\n", static_cast<float>(alpha));
       }
 #endif
-    } else {
-      int idx00 = (gyi * lowWidth + gxi) * channels + c;
-      int idx10 = (gyi * lowWidth + gxi1) * channels + c;
-      int idx01 = (gyi1 * lowWidth + gxi) * channels + c;
-      int idx11 = (gyi1 * lowWidth + gxi1) * channels + c;
-      F_T val00 = static_cast<F_T>(lowImage[idx00]);
-      F_T val10 = static_cast<F_T>(lowImage[idx10]);
-      F_T val01 = static_cast<F_T>(lowImage[idx01]);
-      F_T val11 = static_cast<F_T>(lowImage[idx11]);
-      F_T upVal = (val00 * (F_ONE - dx) + val10 * dx) * (F_ONE - dy) + (val01 * (F_ONE - dx) + val11 * dx) * dy;
-      reconImage[idxOut + c] = static_cast<T>(upVal + static_cast<F_T>(lapImage[idxOut + c]));
+
+      reconImage[idxOut + c] = static_cast<T>(alpha);
+      continue;
     }
+
+    // Gather RGBA neighbor indices (needed to check alpha)
+    int idx00 = (gyi * lowWidth + gxi) * channels;
+    int idx10 = (gyi * lowWidth + gxi1) * channels;
+    int idx01 = (gyi1 * lowWidth + gxi) * channels;
+    int idx11 = (gyi1 * lowWidth + gxi1) * channels;
+
+    // Alpha-aware bilinear interpolation
+    F_T sum = 0;
+    F_T weightSum = 0;
+
+    auto try_add = [&](int idx, F_T wx, F_T wy) {
+      F_T w = wx * wy;
+      if (channels == 4 && static_cast<F_T>(lowImage[idx + 3]) == F_T(0))
+        return;
+      sum += static_cast<F_T>(lowImage[idx + c]) * w;
+      weightSum += w;
+    };
+
+    try_add(idx00, F_ONE - dx, F_ONE - dy);
+    try_add(idx10, dx, F_ONE - dy);
+    try_add(idx01, F_ONE - dx, dy);
+    try_add(idx11, dx, dy);
+
+    // Normalize or fall back
+    F_T upVal = (weightSum > F_T(0)) ? (sum / weightSum) : F_T(0);
+
+    // Add Laplacian detail
+    F_T computedValue = upVal + static_cast<F_T>(lapImage[idxOut + c]);
+    reconImage[idxOut + c] = static_cast<T>(computedValue);
   }
 }
 
@@ -1008,7 +1044,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
   assert(d_reconstruct == d_output);
   context.initialized = true;
 
-  return cudaSuccess;
+  return cudaError_t::cudaSuccess;
 }
 
 //------------------------------------------------------------------------------

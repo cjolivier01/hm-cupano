@@ -14,6 +14,8 @@ class ControlMasks3 {
   ControlMasks3() = default;
   ControlMasks3(const std::string& game_dir);
 
+  static cv::Mat split_to_channels(const cv::Mat& seam_mask);
+
   bool load(const std::string& game_dir);
   bool is_valid() const;
 

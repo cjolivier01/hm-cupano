@@ -55,6 +55,27 @@
       }
     },
     {
+      //
+      // Python: Create Control Points
+      //
+      "name": "Python: create_control_points_multi.py",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/create_control_points_multi.py",
+      "args": [
+        "--inputs",
+        "${env:HOME}/Videos/camp3/left.mp4",
+        "${env:HOME}/Videos/camp3/middle.mp4",
+        "${env:HOME}/Videos/camp3/right.mp4",
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceRoot}/build:${workspaceRoot}/src:${workspaceRoot}/external/MOTChallengeEvalKit"
+      }
+    },
+    {
       "name": "(LLDB) cudaBlend",
       "type": "lldb",
       "request": "launch",
@@ -62,16 +83,17 @@
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
       "args": [
         //"--game-id=stitch-fix",
-        "--game-id=foxes",
+        "--game-id=dh-tv-12-2_2",
         //"--game-id=ev-tv-1a",
         //"--game-id=mylive",
         // "--game-id=pdp",
         "--show",
-        "--adjust=1",
-        //"--levels=0",
+        "--adjust=0",
         "--levels=6",
+        //"--levels=6",
+        "--batch-size=1",
         //"--perf",
-        //"--output=${workspaceRoot}/output.png",
+        "--output=${workspaceRoot}/output.png",
       ],
       "sourceMap": {
         "/proc/self/cwd": "${workspaceFolder}",
@@ -92,7 +114,7 @@
       "cwd": "${workspaceFolder}",
       "debuggerPath": "/usr/local/cuda/bin/cuda-gdb",
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
-      "args": "--game-id=mylive --adjust=0 --levels=1",
+      "args": "--game-id=dh-tv-12-2_2 --adjust=0 --levels=6 --batch-size=1 --show",
       "initCommands": [
         "directory ${workspaceFolder}",
       ],
@@ -111,9 +133,9 @@
       "cwd": "${workspaceFolder}",
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend3",
       "args": [
-        "--game-id=3stitch",
+        "--game-id=camp3",
         "--show",
-        "--adjust=0",
+        "--adjust=1",
         "--levels=6",
         //"--perf",
         "--output=${workspaceRoot}/output.png",
@@ -137,7 +159,53 @@
       "cwd": "${workspaceFolder}",
       "debuggerPath": "/usr/local/cuda/bin/cuda-gdb",
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend3",
-      "args": "--game-id=3stitch --show --adjust=0 --levels=2",
+      "args": "--game-id=camp3 --show --adjust=0 --levels=6",
+      "initCommands": [
+        "directory ${workspaceFolder}",
+      ],
+      "preLaunchTask": "Build All",
+      "environment": [
+        {
+          "name": "CUDA_LAUNCH_BLOCKING",
+          "value": "1"
+        }
+      ],
+    },
+    {
+      "name": "(LLDB) cudaBlendN",
+      "type": "lldb",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend_n",
+      "args": [
+        "--game-id=camp3",
+        "--show",
+        // "--adjust=0",
+        "-n=3",
+        "--levels=6",
+        //"--perf",
+        "--output=${workspaceRoot}/output.png",
+      ],
+      "sourceMap": {
+        "/proc/self/cwd": "${workspaceFolder}",
+        "~/src": "${env:HOME}/src",
+        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils",
+      },
+      "env": {
+        "DISPLAY": ":1",
+        "CUDA_LAUNCH_BLOCKING": "1",
+      },
+      //"stopOnEntry": true,
+      "preLaunchTask": "Build All",
+    },
+    {
+      "name": "(CUDA) cudaBlendN",
+      "type": "cuda-gdb",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "debuggerPath": "/usr/local/cuda/bin/cuda-gdb",
+      "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend_n",
+      "args": "--game-id=camp3 --show --adjust=0 --levels=6",
       "initCommands": [
         "directory ${workspaceFolder}",
       ],

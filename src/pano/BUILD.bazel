@@ -36,18 +36,40 @@ cc_library(
 cc_library(
     name = "canvas",
     srcs = [
-        "canvasManager.cpp",
-        "canvasManager3.cpp",
         "controlMasks.cpp",
         "controlMasks3.cpp",
     ],
     hdrs = [
-        "canvasManager.h",
-        "canvasManager3.h",
         "controlMasks.h",
         "controlMasks3.h",
     ],
     copts = [
+      "--std=c++17",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    linkopts = [
+        "-ltiff",
+        "-lpng",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":canvas_manager",
+        "@opencv_linux//:opencv",
+    ],
+)
+
+cc_library(
+    name = "canvas_manager",
+    srcs = [
+        "canvasManager.cpp",
+        "canvasManager3.cpp",
+    ],
+    hdrs = [
+        "canvasManager.h",
+        "canvasManager3.h",
+    ],
+    copts = [
+      "--std=c++17",
     ],
     include_prefix = INCLUDE_PREFIX,
     linkopts = [
@@ -81,8 +103,12 @@ cc_library(
         "cudaPano.inl",
         "cudaPano3.h",
         "cudaPano3.inl",
+        "cudaPano3_optimized.inl",
     ],
     copts = [
+    ],
+    linkopts = [
+      "-lstdc++fs",
     ],
     include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
@@ -91,6 +117,9 @@ cc_library(
         ":canvas",
         ":cuda_matrix",
         "//src/utils",
+    ],
+    data = [
+      # "//scripts:create_control_points.py",
     ],
 )
 
@@ -102,4 +131,64 @@ cc_test(
     "@googletest//:gtest",
     "@googletest//:gtest_main",
   ]
+)
+
+cc_test(
+  name = "matchSeam3_test",
+  srcs = ["matchSeam3_test.cpp"],
+  deps = [
+    ":cuda_pano",
+    "@googletest//:gtest",
+    "@googletest//:gtest_main",
+  ]
+)
+
+# Header-only variant for N-image pano (no CUDA link), for compilation tests
+cc_library(
+    name = "cuda_pano_n_headers",
+    hdrs = [
+        "cudaPanoN.h",
+        "cudaPanoN.inl",
+        "canvasManagerN.h",
+        "controlMasksN.h",
+    ],
+    copts = [
+        "--std=c++17",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cv_types",
+        ":canvas_manager",
+        ":canvas",
+        ":cuda_matrix",
+        "//src/cuda:cuda_blend_cuda_lib_headers",
+        "@opencv_linux//:opencv",
+    ],
+)
+
+
+# Generic N-image pano library
+cc_library(
+    name = "cuda_pano_n",
+    hdrs = [
+        "cudaPanoN.h",
+        "cudaPanoN.inl",
+        "canvasManagerN.h",
+        "controlMasksN.h",
+    ],
+    srcs = [
+        "controlMasksN.cpp",
+    ],
+    copts = [
+        "--std=c++17",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cv_types",
+        ":canvas",
+        "//src/cuda:cuda_blend_cuda_lib",
+        "@opencv_linux//:opencv",
+    ],
 )

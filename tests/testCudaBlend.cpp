@@ -77,7 +77,6 @@ int main(int argc, char** argv) {
   // 'g:' means option 'g' requires an argument,
   // 'd:' means option 'd' requires an argument.
   const char* short_opts = "spg:d:o:c:a:l:";
-
   int option_index = 0;
   int opt;
   // Loop through and parse each option.
@@ -162,12 +161,12 @@ int main(int argc, char** argv) {
   // Configurable parameter: number of pyramid levels.
 #if 1
 #if 1
-  // using T_pipeline = uchar4;
-  using T_pipeline = uchar3;
-  // using T_pipeline = float3;
+  using T_pipeline = uchar4;
+  // using T_pipeline = uchar3;
+  // using T_pipeline = float4;
   // using T_compute = float4;
-  // using T_compute = float4;
-  using T_compute = half4;
+  using T_compute = float4;
+  // using T_compute = half4;
   // using T_compute = half3;
 #else
   using T_pipeline = float3;
@@ -187,8 +186,8 @@ int main(int argc, char** argv) {
 
   if (sample_img_left.type() != cvPipelineType) {
     if (std::is_floating_point<BaseScalar_t<T_pipeline>>()) {
-      sample_img_left.convertTo(sample_img_left, cvPipelineType, 1.0 / 255.0);
-      sample_img_right.convertTo(sample_img_right, cvPipelineType, 1.0 / 255.0);
+      sample_img_left.convertTo(sample_img_left, cvPipelineType, 1.0);
+      sample_img_right.convertTo(sample_img_right, cvPipelineType, 1.0);
     } else {
       if (sizeof(T_pipeline) / sizeof(BaseScalar_t<T_pipeline>) == 4) {
         cv::cvtColor(sample_img_left, sample_img_left, cv::COLOR_BGR2BGRA);
@@ -196,9 +195,6 @@ int main(int argc, char** argv) {
       }
     }
   }
-
-  // cv::imshow("", sample_img_right);
-  // cv::waitKey(0);
 
   hm::CudaMat<T_pipeline> inputImage1(as_batch(sample_img_left, batch_size));
   hm::CudaMat<T_pipeline> inputImage2(as_batch(sample_img_right, batch_size));
@@ -218,9 +214,10 @@ int main(int argc, char** argv) {
     cv::imwrite(output, canvas->download());
   }
   if (show) {
-    // SHOW_SCALED(canvas, 0.25);
-    // SHOW_SCALED(canvas, 1.0);
-    hm::utils::show_surface("Canvas", canvas->surface(), /*wait=*/true);
+    for (int i = 0; i < pano.batch_size(); ++i) {
+      SHOW_SCALED_BATCH_ITEM(canvas, 0.5, i);
+    }
+    // hm::utils::show_surface("Canvas", canvas->surface(), /*wait=*/true);
     usleep(10000);
   }
 

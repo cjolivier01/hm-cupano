@@ -5,6 +5,7 @@
 #include "cupano/cuda/cudaRemap.h"
 #include "cupano/cuda/cudaTypes.h"
 #include "cupano/pano/cudaPano.h"
+#include "cupano/utils/cudaBlendShow.h"
 #include "cupano/utils/showImage.h" /*NOLINT*/
 
 #include <csignal>
@@ -125,6 +126,17 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   assert(inputImage1.batch_size() == stitch_context.batch_size());
   assert(inputImage2.batch_size() == stitch_context.batch_size());
   assert(canvas->batch_size() == stitch_context.batch_size());
+  const size_t batch_size = stitch_context.batch_size();
+
+  assert(canvas->pitch());
+  CUDA_RETURN_IF_ERROR(
+      cudaMemsetAsync(canvas->data_raw(), 0, canvas->pitch() * canvas->height() * stitch_context.batch_size(), stream));
+
+  // TODO: remove me
+  // CUDA_RETURN_IF_ERROR(cudaMemsetAsync(stitch_context.cudaFull1->data_raw(), 0, stitch_context.cudaFull1->pitch() *
+  // stitch_context.cudaFull1->height(), stream));
+  // CUDA_RETURN_IF_ERROR(cudaMemsetAsync(stitch_context.cudaFull2->data_raw(), 0, stitch_context.cudaFull2->pitch() *
+  // stitch_context.cudaFull2->height(), stream));
 
   // bool cross_pollenate_images = true;
   auto roi_width = [](const cv::Rect2i& roi) { return roi.width; };
@@ -147,7 +159,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stitch_context.remap_1_x->data(),
           stitch_context.remap_1_y->data(),
           {0, 0, 0},
-          /*batchSize=*/stitch_context.batch_size(),
+          /*batchSize=*/batch_size,
           stitch_context.remap_1_x->width(),
           stitch_context.remap_1_x->height(),
           /*offsetX=*/canvas_manager._x1,
@@ -162,7 +174,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stitch_context.remap_1_x->data(),
           stitch_context.remap_1_y->data(),
           {0, 0, 0},
-          /*batchSize=*/stitch_context.batch_size(),
+          /*batchSize=*/batch_size,
           stitch_context.remap_1_x->width(),
           stitch_context.remap_1_x->height(),
           /*offsetX=*/canvas_manager._x1,
@@ -171,6 +183,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           stream);
     }
     CUDA_RETURN_IF_ERROR(cuerr);
+    // SHOW_SCALED_BATCH_ITEM(canvas, 0.2, 0);
+    // SHOW_SCALED_BATCH_ITEM(canvas, 0.2, 1);
     // SHOW_SCALED(&inputImage1, 0.2);
     // SHOW_SCALED(canvas, 0.5);
 #endif
@@ -189,10 +203,12 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
         /*destOffsetX=*/canvas_manager._remapper_1.xpos,
         /*destOffsetY=*/0,
         /*adjust_origin=*/false,
-        /*batchSize=*/stitch_context.batch_size(),
+        /*batchSize=*/batch_size,
         stitch_context.cudaFull1->surface(),
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
+    // SHOW_SCALED_BATCH_ITEM(stitch_context.cudaFull1, 0.2, 0);
+    // SHOW_SCALED_BATCH_ITEM(stitch_context.cudaFull1, 0.2, 1);
     // SHOW_SCALED(stitch_context.cudaFull1, 0.5);
     // SHOW_IMAGE(stitch_context.cudaFull1);
 #endif
@@ -238,7 +254,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     CUDA_RETURN_IF_ERROR(cuerr);
     // SHOW_SMALL(&inputImage1);
     // SHOW_IMAGE(canvas);
-    // SHOW_SCALED(canvas, 0.15);
+    // SHOW_SCALED(canvas, 0.5);
 #endif
   }
   //
@@ -383,7 +399,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
     // SHOW_IMAGE(&cudaBlendedFull);
-    // stitch_context.laplacian_blend_context->displayPyramids(tmp::num_channels<T_compute>(), 0.25);
+    // stitch_context.laplacian_blend_context->displayPyramids(tmp::num_channels<T_compute>(), 0.25, /*wait=*/true);
 #if 1
     //
     // Copy the blended portion (overlapping portion + some padding) onto
@@ -405,6 +421,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     // SHOW_SCALED(canvas, 0.15);
 #endif
   }
+  // cudaStreamSynchronize(stream);
   return std::move(canvas);
 }
 

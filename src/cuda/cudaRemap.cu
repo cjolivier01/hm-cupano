@@ -1,7 +1,7 @@
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 #include <device_launch_parameters.h>
-#include "cudaImageAdjust.h"
+#include "cudaImageAdjust.cuh"
 #include "cudaRemap.h" // Assumed to declare these host functions
 
 #include "cudaUtils.cuh"
@@ -529,6 +529,7 @@ INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(float3, float3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(uchar3, uchar3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(float4, float4)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(uchar4, uchar4)
+// INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(uchar4, float4)
 
 // For batched_remap_kernel_ex
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX(float3, float3)

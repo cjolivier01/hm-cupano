@@ -38,6 +38,7 @@ cc_library(
         "-lglfw",
         "-lGLEW",
         "-lGL",
+        "-I/usr/include",
     ],
     visibility = ["//visibility:public"],
     deps = [

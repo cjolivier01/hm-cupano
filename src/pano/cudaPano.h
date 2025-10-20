@@ -42,10 +42,10 @@ struct StitchingContext {
   // Laplacian Blend Scratch context
   std::unique_ptr<CudaBatchLaplacianBlendContext<BaseScalar_t<T_compute>>> laplacian_blend_context;
 
-  constexpr int batch_size() const {
+  int batch_size() const {
     return batch_size_;
   }
-  constexpr bool is_hard_seam() const {
+  bool is_hard_seam() const {
     return is_hard_seam_;
   }
 

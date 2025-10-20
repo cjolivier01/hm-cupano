@@ -38,3 +38,4 @@ new_git_repository(
     tag = "v1.17.0",
     remote = "https://github.com/google/googletest.git",
 )
+

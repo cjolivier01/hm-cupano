@@ -2,7 +2,7 @@
 
 #include "src/cuda/cudaBlend.h"
 #include "src/cuda/cudaBlend3.h"
-#include "src/utils/showImage.h"
+#include "src/utils/imageUtils.h"
 
 #include <string>
 #include <vector>
@@ -88,7 +88,8 @@ inline void displayPyramid(
     const std::vector<int>& widths,
     const std::vector<int>& heights,
     int channels,
-    float scale) {
+    float scale,
+    int only_level = -1) {
   const int cvType = getCVTypeForPixel<T>(channels);
   int totalHeight = 0;
   int maxWidth = 0;
@@ -100,29 +101,34 @@ inline void displayPyramid(
 
   cudaDeviceSynchronize();
   // For each pyramid level, copy data from device and create a cv::Mat.
-  for (int level = 0; level < numLevels; level++) {
+  for (int level = only_level == -1 ? 0 : only_level; level < numLevels; level++) {
     int w = widths[level];
     int h = heights[level];
     maxWidth = std::max(maxWidth, w);
     totalHeight += h;
 
-    assert(pyramid[level]);
-
     const size_t dataSize = w * h * sizeof(T) * channels;
     std::unique_ptr<T[]> buffer = std::make_unique<T[]>(w * h * channels);
-    cudaError_t cuerr = cudaMemcpy(buffer.get(), pyramid[level], dataSize, cudaMemcpyDeviceToHost);
-    assert(cuerr == cudaError_t::cudaSuccess);
+    if (pyramid[level]) {
+      cudaError_t cuerr = cudaMemcpy(buffer.get(), pyramid[level], dataSize, cudaMemcpyDeviceToHost);
+      assert(cuerr == cudaError_t::cudaSuccess);
+    } else {
+      memset(buffer.get(), 0, dataSize);
+    }
 
     // Create a cv::Mat header that points to the host data.
     // (We clone immediately so that the Mat owns its data.)
     cv::Mat levelMat = cv::Mat(h, w, cvType, buffer.get()).clone();
-
+    // hm::utils::stretch(levelMat, 0.0f, 255.0f);
     levelMat = convert_to_uchar(levelMat);
 
     // cv::imshow(windowName, levelMat);
     // cv::waitKey(0);
 
     levelMats.emplace_back(std::move(levelMat));
+    if (only_level != -1) {
+      break;
+    }
   }
 
   // Create a composite image that is large enough to hold all levels stacked vertically.
@@ -153,6 +159,32 @@ inline void displayPyramid(
 }
 
 } // namespace
+
+template <typename T>
+inline void CudaBatchLaplacianBlendContext<T>::displayPyramids(int channels, float scale, bool wait) const {
+  // Determine the OpenCV type from T and the number of channels.
+  const int cvType = getCVTypeForPixel<T>(channels);
+  if (cvType == -1) {
+    printf("Unsupported pixel type or channel count.\n");
+    return;
+  }
+
+  // Display different pyramids. (Adjust which ones you want to show.)
+  displayPyramid("Gaussian 1", d_gauss1, widths, heights, channels, scale);
+  // displayPyramid("Gaussian 2", d_gauss2, widths, heights, channels, scale);
+  displayPyramid("Laplacian 1", d_lap1, widths, heights, channels, scale);
+  // displayPyramid("Laplacian 2", d_lap2, widths, heights, channels, scale);
+
+  // displayPyramid("Mask Pyramid", d_maskPyr, widths, heights, 1, scale); // assuming mask is single channel
+
+  displayPyramid("Blended Pyramid", d_blend, widths, heights, channels, scale);
+
+  // Optionally, you could also display the reconstructed images from d_resonstruct if desired.
+  displayPyramid("Reconstructed", d_resonstruct, widths, heights, channels, scale);
+
+  // Wait for a key press to close the windows.
+  cv::waitKey(wait ? 0 : 1);
+}
 
 template <typename T>
 inline void CudaBatchLaplacianBlendContext3<T>::displayPyramids(int channels, float scale, bool wait) const {

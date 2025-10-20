@@ -1,6 +1,6 @@
 #include "cupano/utils/showImage.h"
-#include "cupano/utils/imageUtils.h"
 #include "cupano/utils/cudaGLWindow.h"
+#include "cupano/utils/imageUtils.h"
 
 #include <set>
 #include <unordered_set>
@@ -74,7 +74,7 @@ void show_image(const std::string& label, const cv::Mat& img, bool wait, float s
     if (scale < 1) {
       cv::resize(img, dest, newSize, 0.0, 0.0, cv::INTER_NEAREST);
     } else {
-      cv::resize(img, dest, newSize, 0.0, 0.0, cv::INTER_NEAREST/*cv::INTER_LINEAR*/);
+      cv::resize(img, dest, newSize, 0.0, 0.0, cv::INTER_NEAREST /*cv::INTER_LINEAR*/);
     }
     cv::imshow(label, convert_to_uchar(std::move(dest)));
   } else {
@@ -85,7 +85,8 @@ void show_image(const std::string& label, const cv::Mat& img, bool wait, float s
 
 template <typename PIXEL_T>
 void show_surface(const std::string& label, const CudaSurface<PIXEL_T>& surface, bool wait) {
-  CudaGLWindow* gl_window = get_gl_window(surface.width, surface.height, sizeof(PIXEL_T), label.c_str());
+  CudaGLWindow* gl_window = get_gl_window(
+      surface.width, surface.height, sizeof(PIXEL_T) / sizeof(PIXEL_T::x), label.c_str());
   if (!gl_window) {
     return;
   }
@@ -96,6 +97,7 @@ void show_surface(const std::string& label, const CudaSurface<PIXEL_T>& surface,
 }
 
 template void show_surface<uchar3>(const std::string& label, const CudaSurface<uchar3>& surface, bool wait);
+template void show_surface<float3>(const std::string& label, const CudaSurface<float3>& surface, bool wait);
 template void show_surface<uchar4>(const std::string& label, const CudaSurface<uchar4>& surface, bool wait);
 
 bool destroy_surface_window() {

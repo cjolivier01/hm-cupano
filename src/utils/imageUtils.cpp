@@ -36,7 +36,7 @@ void set_alpha_pixels(cv::Mat& image, const cv::Vec3b& color) {
 
 cv::Mat convert_to_uchar(cv::Mat image) {
   // Check if the image is of a floating-point type
-  if (image.depth() == CV_32F || image.depth() == CV_64F) {
+  if (image.depth() == CV_16F || image.depth() == CV_32F || image.depth() == CV_64F) {
     cv::Mat ucharImage;
     // convertTo automatically applies saturate_cast, clamping values to [0, 255]
     image.convertTo(ucharImage, CV_8U);
@@ -98,7 +98,20 @@ void clamp(cv::Mat& img, float minVal, float maxVal) {
 // Linearly stretch/squish all pixel values in-place so that
 // the overall min→max range maps to [lo, hi]
 void stretch(cv::Mat& img, float lo, float hi) {
-  CV_Assert(img.type() == CV_32FC3);
+  CV_Assert(!img.empty());
+
+  int type = img.type();
+
+  if (type == CV_32FC3) {
+    // Already in float32
+  } else if (type == CV_8UC3 || type == CV_8UC4) {
+    // Convert to float and normalize to [0, 1]
+    img.convertTo(img, CV_32F, 1.0 / 255.0);
+    if (type == CV_8UC3) img = img.reshape(3); // Ensure 3 channels
+    else if (type == CV_8UC4) img = img.reshape(4);
+  } else {
+    CV_Error(cv::Error::StsUnsupportedFormat, "Unsupported image type in stretch()");
+  }
 
   // flatten to single-channel view for min/max computation
   cv::Mat flat = img.reshape(1);
@@ -108,20 +121,21 @@ void stretch(cv::Mat& img, float lo, float hi) {
   // if constant image, set to midpoint
   if (imgMin == imgMax) {
     float mid = 0.5f * (lo + hi);
-    img.setTo(cv::Scalar(mid, mid, mid));
+    img.setTo(cv::Scalar(mid, mid, mid, mid));
     return;
   }
 
   // compute scale and bias
   float scale = (hi - lo) / static_cast<float>(imgMax - imgMin);
-  cv::Scalar sMin(imgMin, imgMin, imgMin);
-  cv::Scalar sLo(lo, lo, lo);
+  cv::Scalar sMin(imgMin, imgMin, imgMin, imgMin);
+  cv::Scalar sLo(lo, lo, lo, lo);
 
   // (img - imgMin) * scale + lo
-  cv::subtract(img, sMin, img); // img -= imgMin
-  cv::multiply(img, scale, img); // img *= scale
-  cv::add(img, sLo, img); // img += lo
+  cv::subtract(img, sMin, img);    // img -= imgMin
+  cv::multiply(img, scale, img);   // img *= scale
+  cv::add(img, sLo, img);          // img += lo
 }
+
 
 } // namespace utils
 } // namespace hm

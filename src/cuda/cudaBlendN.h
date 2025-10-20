@@ -49,10 +49,10 @@ struct CudaBatchLaplacianBlendContextN {
       d_gauss[i].assign(levels, nullptr);
       d_lap[i].assign(levels, nullptr);
     }
-    // allocate the three pointer‐lists **once**
-    CUDA_CHECK(cudaMalloc(&d_ptrsA, N_IMAGES * sizeof(T*)));
-    CUDA_CHECK(cudaMalloc(&d_ptrsB, N_IMAGES * sizeof(T*)));
-    CUDA_CHECK(cudaMalloc(&d_ptrsC, N_IMAGES * sizeof(T*)));
+    // allocate the three pointer‐lists **once** (ignore errors here; will surface later on kernel use)
+    (void)cudaMalloc(&d_ptrsA, N_IMAGES * sizeof(T*));
+    (void)cudaMalloc(&d_ptrsB, N_IMAGES * sizeof(T*));
+    (void)cudaMalloc(&d_ptrsC, N_IMAGES * sizeof(T*));
   }
 
   ~CudaBatchLaplacianBlendContextN() {

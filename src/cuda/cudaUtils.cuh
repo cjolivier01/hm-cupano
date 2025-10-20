@@ -3,6 +3,7 @@
 #include <cuda_runtime.h>
 #include "cudaTypes.h"
 
+#include <algorithm>
 #include <cstdint>
 
 namespace hm {
@@ -25,6 +26,30 @@ __device__ inline unsigned char round_to_uchar(const F& x) {
   }
   return static_cast<F_dest>(static_cast<unsigned char>(x_rounded)); // Cast result to unsigned char
 }
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wreturn-type"
+
+template <typename T>
+inline __device__ T max_of(const T& v1, const T& v2) {
+  if constexpr (std::is_same<T, __half>::value) {
+    return (T)std::max((float)v1, (float)v2);
+  } else {
+    return std::max(v1, v2);
+  }
+}
+
+template <typename T>
+inline __device__ T is_zero(const T& v) {
+  if constexpr (std::is_same<T, __half>::value) {
+    constexpr unsigned short uszero = 0;
+    return static_cast<T>(uszero);
+  } else {
+    return v == static_cast<T>(0);
+  }
+}
+
+#pragma GCC diagnostic pop
 
 // template <typename T_in, typename T_out>
 // inline T_out __device__ cast_to(const T_in& in) {
@@ -49,6 +74,9 @@ __device__ inline unsigned char round_to_uchar(const F& x) {
 //       .w = static_cast<float>(in.w)};
 // }
 
+#define DISALLOW_UNSIGNED_CHAR(_type$) \
+  static_assert(!std::is_same<_type$, unsigned char>::value, "Error: unsigned char is not allowed for this function.")
+
 template <typename T_dest, typename T_src>
 __device__ inline T_dest perform_cast(const T_src& src) {
   // Make sure this isn't casting anything down to char without proper clamping
@@ -69,12 +97,23 @@ __device__ inline T_dest perform_cast(const T_src& src) {
 #define DECLARE_PERFORM_CAST_3(_src$, _dest$)               \
   template <>                                               \
   __device__ inline _dest$ perform_cast(const _src$& src) { \
+    DISALLOW_UNSIGNED_CHAR(_dest$);                         \
     return _dest${                                          \
         .x = static_cast<BaseScalar_t<_dest$>>(src.x),      \
         .y = static_cast<BaseScalar_t<_dest$>>(src.y),      \
         .z = static_cast<BaseScalar_t<_dest$>>(src.z),      \
     };                                                      \
   }
+
+// #define DECLARE_PERFORM_CAST_H_TO_UCHAR3(_src$)                                              \
+//   template <>                                                                                \
+//   __device__ inline uchar3 perform_cast(const _src$& src) {                                  \
+//     return uchar3{                                                                           \
+//         .x = static_cast<BaseScalar_t<uchar3>>(round_to_uchar<BaseScalar_t<uchar3>>(src.x)), \
+//         .y = static_cast<BaseScalar_t<uchar3>>(round_to_uchar<BaseScalar_t<uchar3>>(src.y)), \
+//         .z = static_cast<BaseScalar_t<uchar3>>(round_to_uchar<BaseScalar_t<uchar3>>(src.z)), \
+//     };                                                                                       \
+//   }
 
 #define DECLARE_PERFORM_CAST_UCHAR_4(_src$)                                                  \
   template <>                                                                                \
@@ -90,6 +129,7 @@ __device__ inline T_dest perform_cast(const T_src& src) {
 #define DECLARE_PERFORM_CAST_4(_src$, _dest$)               \
   template <>                                               \
   __device__ inline _dest$ perform_cast(const _src$& src) { \
+    DISALLOW_UNSIGNED_CHAR(_dest$);                         \
     return _dest${                                          \
         .x = static_cast<BaseScalar_t<_dest$>>(src.x),      \
         .y = static_cast<BaseScalar_t<_dest$>>(src.y),      \
@@ -98,18 +138,19 @@ __device__ inline T_dest perform_cast(const T_src& src) {
     };                                                      \
   }
 
-#define DECLARE_PERFORM_CAST_3_TO_4(_src$, _dest$)          \
-  template <>                                               \
-  __device__ inline _dest$ perform_cast(const _src$& src) { \
-    return _dest${                                          \
-        .x = static_cast<BaseScalar_t<_dest$>>(src.x),      \
-        .y = static_cast<BaseScalar_t<_dest$>>(src.y),      \
-        .z = static_cast<BaseScalar_t<_dest$>>(src.z),      \
-        .w = static_cast<BaseScalar_t<_dest$>>(255),        \
-    };                                                      \
+#define DECLARE_PERFORM_CAST_3_TO_4(_src$, _dest$)                                     \
+  template <>                                                                          \
+  __device__ inline _dest$ perform_cast(const _src$& src) {                            \
+    DISALLOW_UNSIGNED_CHAR(_dest$);                                                    \
+    return _dest${                                                                     \
+        .x = static_cast<BaseScalar_t<_dest$>>(src.x),                                 \
+        .y = static_cast<BaseScalar_t<_dest$>>(src.y),                                 \
+        .z = static_cast<BaseScalar_t<_dest$>>(src.z),                                 \
+        .w = static_cast<BaseScalar_t<_dest$>>(static_cast<BaseScalar_t<_src$>>(255)), \
+    };                                                                                 \
   }
 
-#define DECLARE_PERFORM_CAST_F2_TO_UCHAR_4(_src$)                                            \
+#define DECLARE_PERFORM_CAST_F3_TO_UCHAR_4(_src$)                                            \
   template <>                                                                                \
   __device__ inline uchar4 perform_cast(const _src$& src) {                                  \
     return uchar4{                                                                           \
@@ -131,14 +172,31 @@ __device__ inline T_dest perform_cast(const T_src& src) {
     };                                                       \
   }
 
+#define DECLARE_PERFORM_CAST_4_TO_3(_src$, _dest$)          \
+  template <>                                               \
+  __device__ inline _dest$ perform_cast(const _src$& src) { \
+    return _dest${                                          \
+        .x = static_cast<BaseScalar_t<_dest$>>(src.x),      \
+        .y = static_cast<BaseScalar_t<_dest$>>(src.y),      \
+        .z = static_cast<BaseScalar_t<_dest$>>(src.z),      \
+    };                                                      \
+  }
+
+DECLARE_PERFORM_CAST_4_TO_3(float4, half3)
+DECLARE_PERFORM_CAST_4_TO_3(float4, float3)
+DECLARE_PERFORM_CAST_4_TO_3(half4, float3)
+DECLARE_PERFORM_CAST_4_TO_3(half4, half3)
+
+DECLARE_PERFORM_CAST_UCHAR_3(float4)
 DECLARE_PERFORM_CAST_UCHAR_3(float3)
 DECLARE_PERFORM_CAST_UCHAR_3(half3)
+DECLARE_PERFORM_CAST_UCHAR_3(half4)
 
 DECLARE_PERFORM_CAST_3_TO_4(uchar3, float4)
 DECLARE_PERFORM_CAST_3_TO_4(uchar3, half4)
+DECLARE_PERFORM_CAST_3_TO_4(float3, float4)
+DECLARE_PERFORM_CAST_3_TO_4(float3, half4)
 
-DECLARE_PERFORM_CAST_3(float4, uchar3)
-DECLARE_PERFORM_CAST_3(half4, uchar3)
 DECLARE_PERFORM_CAST_3(uchar3, float3)
 DECLARE_PERFORM_CAST_3(uchar3, half3)
 
@@ -148,8 +206,8 @@ DECLARE_PERFORM_CAST_UCHAR_4(half4)
 DECLARE_PERFORM_CAST_4(uchar4, float4)
 DECLARE_PERFORM_CAST_4(uchar4, half4)
 
-DECLARE_PERFORM_CAST_F2_TO_UCHAR_4(float3)
-DECLARE_PERFORM_CAST_F2_TO_UCHAR_4(half3)
+DECLARE_PERFORM_CAST_F3_TO_UCHAR_4(float3)
+DECLARE_PERFORM_CAST_F3_TO_UCHAR_4(half3)
 
 DECLARE_PERFORM_CAST_UCHAR4_TO_3(float3)
 DECLARE_PERFORM_CAST_UCHAR4_TO_3(half3)

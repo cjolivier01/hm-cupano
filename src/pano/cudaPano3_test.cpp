@@ -129,18 +129,11 @@ TEST(CudaStitchPano3_HardSeamTrivial, ThirdImageWins) {
 #endif
 
 // ----------------------------------------------------------------------------
-// 3) Soft‐seam trivial: single 1×1 float “label” mask = 1.5 (meaning equal weights
-//    among all three?). For a 3-image float mask, assume soft‐seam logic interprets
-//    any non-integer value as a uniform‐blend among all three. Then result = average.
+// 3) Soft‐seam trivial: 1×1 labeled seam with value=1 (one-hot for image #1).
+//    Expect the output pixel to match image #1 exactly.
 // ----------------------------------------------------------------------------
-TEST(CudaStitchPano3_SoftSeamTrivial, OutputEqualsTripleAverage) {
-  // 3a) Create a 1×1 floating‐point mask. If the class expects a single float channel
-  //     with range [0..2], we choose value=1.0 so that “image2” is fully selected? Or
-  //     if it normalizes three masks internally, we can choose 0.5 to blend. Since the
-  //     exact interpretation may vary, let’s choose 1.0 and assume “soft” means equal‐weight
-  //     among all three. (Adjust if your implementation differs.)
-
-  // All map to image 1
+TEST(CudaStitchPano3_SoftSeamTrivial, OneHotLabelSelectsMiddleImage) {
+  // 3a) Create a 1×1 indexed seam (CV_8U) with value=1 → selects image #1.
   cv::Mat seam_mask_f(1, 1, CV_8U, cv::Scalar(1));
 
   // All map to same pixel 0,0
@@ -187,7 +180,7 @@ TEST(CudaStitchPano3_SoftSeamTrivial, OutputEqualsTripleAverage) {
       /*quiet=*/true);
   ASSERT_TRUE(stitch.status().ok());
 
-  // 3e) Call process(). For a simple “uniform blend” interpretation, the output = (30+60+90)/3 = 60.
+  // 3e) Call process(). Expect output equals image #1 value (60).
   auto resultOr = stitch.process(*d_img1, *d_img2, *d_img3, /*stream=*/0, std::move(d_canvas));
   ASSERT_TRUE(resultOr.ok()) << resultOr.status().message();
 
