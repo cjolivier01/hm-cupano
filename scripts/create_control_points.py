@@ -579,15 +579,31 @@ def configure_stitching(
         ]
         os.system(" ".join(cmd))
 
-        # Blend the mappings into a panorama using enblend.
-        cmd = [
-            "enblend",
+        # Blend the mappings into a panorama using enblend (prefer Bazel tool if available).
+        import shutil
+        def prefer_bazel_tool(name: str) -> list:
+            if name == "enblend":
+                if shutil.which("bazelisk") or shutil.which("bazel"):
+                    return ["bazelisk", "run", "@enblend//:enblend", "--"]
+            return [name]
+
+        cmd = prefer_bazel_tool("enblend") + [
             "--save-masks=seam_file.png",
             "-o",
             "panorama.tif",
             "mapping_????.tif",
         ]
-        os.system(" ".join(cmd))
+        rc = os.system(" ".join(cmd))
+        if rc != 0:
+            # Fallback to system enblend
+            cmd = [
+                "enblend",
+                "--save-masks=seam_file.png",
+                "-o",
+                "panorama.tif",
+                "mapping_????.tif",
+            ]
+            os.system(" ".join(cmd))
     finally:
         os.chdir(curr_dir)
     return True

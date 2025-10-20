@@ -323,6 +323,7 @@ def configure_stitching_multi(
     max_control_points: int = 240,
     fov: float = 108.0,
     scale: Optional[float] = None,
+    seam: str = "multiblend",  # "multiblend" (default for >=3) or "enblend"
 ) -> None:
     """
     Save frames, generate PTO, compute cps & visuals, run Hugin tools.
@@ -373,13 +374,70 @@ def configure_stitching_multi(
         cmd += ["-x", str(scale)]
     os.system(" ".join(cmd))
 
-    # nona & enblend
+    # nona & seam blender
     os.system(
         f"nona --bigtiff -m TIFF_m -z NONE -c -o {os.path.join(directory, 'mapping_')} {autooptimiser}"
     )
-    os.system(
-        f"multiblend --save-seams={os.path.join(directory, 'seam_file.png')} -o {os.path.join(directory, 'panorama.tif')} {os.path.join(directory, 'mapping_????.tif')}"
-    )
+
+    def prefer_bazel_tool(name: str) -> List[str]:
+        import shutil
+        if name == "multiblend":
+            if shutil.which("bazelisk") or shutil.which("bazel"):
+                return ["bazelisk", "run", "@multiblend//:multiblend", "--"]
+        if name == "enblend":
+            if shutil.which("bazelisk") or shutil.which("bazel"):
+                return ["bazelisk", "run", "@enblend//:enblend", "--"]
+        return [name]
+
+    n_imgs = len(frames)
+    if seam == "multiblend" or (n_imgs >= 3 and seam not in ("multiblend", "enblend")):
+        cmd = prefer_bazel_tool("multiblend") + [
+            f"--save-seams={os.path.join(directory, 'seam_file.png')}",
+            "-o",
+            os.path.join(directory, "panorama.tif"),
+            os.path.join(directory, "mapping_????.tif"),
+        ]
+        os.system(" ".join(cmd))
+    else:
+        # enblend path (also supported for 3 images): save masks and convert to paletted seam
+        cmd = prefer_bazel_tool("enblend") + [
+            f"--save-masks={os.path.join(directory, 'seam-%i.png')}",
+            "-o",
+            os.path.join(directory, "panorama.tif"),
+            os.path.join(directory, "mapping_????.tif"),
+        ]
+        os.system(" ".join(cmd))
+
+        # Convert seam-*.png (grayscale) into a single paletted seam_file.png with classes [0..N-1]
+        try:
+            import glob
+            from PIL import Image
+            import numpy as np
+            import cv2
+
+            mask_files = sorted(glob.glob(os.path.join(directory, "seam-*.png")))
+            if not mask_files:
+                raise RuntimeError("No seam-*.png produced by enblend")
+
+            # Base labels: first mask separates class 0 vs 1 (threshold at 128)
+            labels = (np.array(Image.open(mask_files[0])) >= 128).astype(np.uint8)
+            # Subsequent masks promote regions to the next class index
+            for idx, mf in enumerate(mask_files[1:], start=2):
+                arr = np.array(Image.open(mf))
+                if arr.shape != labels.shape:
+                    arr = cv2.resize(arr, (labels.shape[1], labels.shape[0]), interpolation=cv2.INTER_NEAREST)
+                labels[arr >= 128] = idx
+
+            img = Image.fromarray(labels, mode="P")
+            palette = []
+            base = [(0,0,0), (0,255,0), (255,0,0), (0,0,255), (255,255,0), (255,0,255), (0,255,255), (128,128,128)]
+            for i in range(256):
+                c = base[i % len(base)] if i < max(2, len(mask_files)+1) else (0,0,0)
+                palette.extend(list(c))
+            img.putpalette(palette)
+            img.save(os.path.join(directory, "seam_file.png"))
+        except Exception as e:
+            print(f"Warning: failed to convert enblend seams: {e}")
 
 
 def compute_global_offsets(pairs: List[Tuple[float, float]]) -> List[float]:
@@ -426,6 +484,12 @@ def main() -> None:
         help="Maximum number of control points",
     )
     parser.add_argument("--scale", type=float, default=None, help="Panorama scale")
+    parser.add_argument(
+        "--seam",
+        choices=["multiblend", "enblend"],
+        default="multiblend",
+        help="Seam generator (>=3 images): multiblend (default) or enblend",
+    )
     args = parser.parse_args()
 
     files: List[str] = args.inputs
@@ -455,6 +519,7 @@ def main() -> None:
         force=True,
         max_control_points=args.max_control_points,
         scale=args.scale,
+        seam=args.seam,
     )
 
 

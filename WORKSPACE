@@ -110,3 +110,11 @@ new_git_repository(
     tag = "v1.17.0",
     remote = "https://github.com/google/googletest.git",
 )
+
+# Optional seam blender alternative (two-image default; can also be used for three)
+# Fork with Bazel build rules for enblend/enfuse
+git_repository(
+    name = "enblend",
+    remote = "https://github.com/cjolivier01/enblend-enfuse",
+    branch = "colivier/hockeymom",
+)
