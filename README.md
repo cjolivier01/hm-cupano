@@ -160,3 +160,40 @@ Expected files under `<data_dir>` for N images (0..N-1):
 - Remaps (CV_16U): `mapping_000i_x.tif`, `mapping_000i_y.tif` for each i
 - Positions (TIFF tags): `mapping_000i.tif` (used to derive canvas placement)
 - Seam mask (indexed 8-bit paletted): `seam_file.png` with classes `[0..N-1]` (one class per image)
+
+## Video Stitching Apps
+
+Two runnable apps use OpenCV to decode/encode entire videos while stitching each frame with the CUDA pano:
+
+- `//tests:stitch_two_videos`
+- `//tests:stitch_three_videos`
+
+Build:
+```
+bazelisk build //tests:stitch_two_videos //tests:stitch_three_videos
+```
+
+Usage (two videos):
+```
+./bazel-bin/tests/stitch_two_videos \
+  --left=<left.mp4> --right=<right.mp4> \
+  --control=<dir_with_mapping_and_seam> \
+  --output=stitched_two.mp4 \
+  --levels=6 --adjust=1 --gpu-decode=1 --gpu-encode=1 \
+  --show \
+  --show-scaled=0.5
+```
+
+Usage (three videos):
+```
+./bazel-bin/tests/stitch_three_videos \
+  --left=<video0.mp4> --middle=<video1.mp4> --right=<video2.mp4> \
+  --control=<dir_with_mapping_and_seam> \
+  --output=stitched_three.mp4 \
+  --levels=6 --adjust=1 --gpu-decode=1 --gpu-encode=1
+```
+
+Notes:
+- `--control` must point to a folder containing the Hugin-generated remaps and seam: `mapping_000{i}_{x,y}.tif`, `mapping_000{i}.tif`, and `seam_file.png` (2 files for two-video, 3 files for three-video).
+- The apps attempt GPU decode/encode via OpenCV cudacodec if available; otherwise they fall back to CPU.
+- Output codec defaults to `mp4v` for broad compatibility; override with `--fourcc=avc1` or `--fourcc=hevc` if supported.

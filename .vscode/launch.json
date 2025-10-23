@@ -1,17 +1,10 @@
 {
-  // Use IntelliSense to learn about possible attributes.
-  // Hover to view descriptions of existing attributes.
-  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-  //
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "----------------- hm-cupano -----------------",
+      "name": "----------------- hm-cupano -----------------"
     },
     {
-      //
-      // Python: Current File
-      //
       "name": "Python: Current File",
       "type": "debugpy",
       "request": "launch",
@@ -25,27 +18,14 @@
       }
     },
     {
-      //
-      // Python: Create Control Points
-      //
       "name": "Python: create_control_points.py",
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/scripts/create_control_points.py",
       "args": [
-        //"--game-id=mlk-heat-1",
-        // "--left=${env:HOME}/Videos/mlk-heat-1/left.png",
-        // "--right=${env:HOME}/Videos/mlk-heat-1/right.png",
-        // "--left=${env:HOME}/Videos/mlk-heat-1/GX010097.MP4",
-        // "--right=${env:HOME}/Videos/mlk-heat-1/GX010016.MP4",
-        // "${env:HOME}/Videos/stitch-fix/hm_project.pto",
         "--left=${env:HOME}/Videos/fremont/left.png",
         "--right=${env:HOME}/Videos/fremont/right.png",
-        "--max-control-points=500",
-        // "--synchronize-only",
-        // "--lfo=0.735",
-        // "--rfo=0",
-        // "--scale=0.7",
+        "--max-control-points=500"
       ],
       "console": "integratedTerminal",
       "justMyCode": false,
@@ -55,9 +35,6 @@
       }
     },
     {
-      //
-      // Python: Create Control Points
-      //
       "name": "Python: create_control_points_multi.py",
       "type": "debugpy",
       "request": "launch",
@@ -66,7 +43,7 @@
         "--inputs",
         "${env:HOME}/Videos/camp3/left.mp4",
         "${env:HOME}/Videos/camp3/middle.mp4",
-        "${env:HOME}/Videos/camp3/right.mp4",
+        "${env:HOME}/Videos/camp3/right.mp4"
       ],
       "console": "integratedTerminal",
       "justMyCode": false,
@@ -82,30 +59,23 @@
       "cwd": "${workspaceFolder}",
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
       "args": [
-        //"--game-id=stitch-fix",
         "--game-id=dh-tv-12-2_2",
-        //"--game-id=ev-tv-1a",
-        //"--game-id=mylive",
-        // "--game-id=pdp",
         "--show",
         "--adjust=0",
         "--levels=6",
-        //"--levels=6",
         "--batch-size=1",
-        //"--perf",
-        "--output=${workspaceRoot}/output.png",
+        "--output=${workspaceRoot}/output.png"
       ],
       "sourceMap": {
         "/proc/self/cwd": "${workspaceFolder}",
         "~/src": "${env:HOME}/src",
-        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils",
+        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils"
       },
       "env": {
         "DISPLAY": ":1",
-        "CUDA_LAUNCH_BLOCKING": "1",
+        "CUDA_LAUNCH_BLOCKING": "1"
       },
-      //"stopOnEntry": true,
-      "preLaunchTask": "Build All",
+      "preLaunchTask": "Build All"
     },
     {
       "name": "(CUDA) cudaBlend",
@@ -116,7 +86,7 @@
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend",
       "args": "--game-id=dh-tv-12-2_2 --adjust=0 --levels=6 --batch-size=1 --show",
       "initCommands": [
-        "directory ${workspaceFolder}",
+        "directory ${workspaceFolder}"
       ],
       "preLaunchTask": "Build All",
       "environment": [
@@ -124,7 +94,7 @@
           "name": "CUDA_LAUNCH_BLOCKING",
           "value": "1"
         }
-      ],
+      ]
     },
     {
       "name": "(LLDB) cudaBlend3",
@@ -137,20 +107,18 @@
         "--show",
         "--adjust=1",
         "--levels=6",
-        //"--perf",
-        "--output=${workspaceRoot}/output.png",
+        "--output=${workspaceRoot}/output.png"
       ],
       "sourceMap": {
         "/proc/self/cwd": "${workspaceFolder}",
         "~/src": "${env:HOME}/src",
-        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils",
+        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils"
       },
       "env": {
         "DISPLAY": ":1",
-        "CUDA_LAUNCH_BLOCKING": "1",
+        "CUDA_LAUNCH_BLOCKING": "1"
       },
-      //"stopOnEntry": true,
-      "preLaunchTask": "Build All",
+      "preLaunchTask": "Build All"
     },
     {
       "name": "(CUDA) cudaBlend3",
@@ -161,7 +129,7 @@
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend3",
       "args": "--game-id=camp3 --show --adjust=0 --levels=6",
       "initCommands": [
-        "directory ${workspaceFolder}",
+        "directory ${workspaceFolder}"
       ],
       "preLaunchTask": "Build All",
       "environment": [
@@ -169,7 +137,7 @@
           "name": "CUDA_LAUNCH_BLOCKING",
           "value": "1"
         }
-      ],
+      ]
     },
     {
       "name": "(LLDB) cudaBlendN",
@@ -180,23 +148,20 @@
       "args": [
         "--game-id=camp3",
         "--show",
-        // "--adjust=0",
         "-n=3",
         "--levels=6",
-        //"--perf",
-        "--output=${workspaceRoot}/output.png",
+        "--output=${workspaceRoot}/output.png"
       ],
       "sourceMap": {
         "/proc/self/cwd": "${workspaceFolder}",
         "~/src": "${env:HOME}/src",
-        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils",
+        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils"
       },
       "env": {
         "DISPLAY": ":1",
-        "CUDA_LAUNCH_BLOCKING": "1",
+        "CUDA_LAUNCH_BLOCKING": "1"
       },
-      //"stopOnEntry": true,
-      "preLaunchTask": "Build All",
+      "preLaunchTask": "Build All"
     },
     {
       "name": "(CUDA) cudaBlendN",
@@ -207,7 +172,7 @@
       "program": "${workspaceFolder}/bazel-bin/tests/test_cuda_blend_n",
       "args": "--game-id=camp3 --show --adjust=0 --levels=6",
       "initCommands": [
-        "directory ${workspaceFolder}",
+        "directory ${workspaceFolder}"
       ],
       "preLaunchTask": "Build All",
       "environment": [
@@ -215,7 +180,7 @@
           "name": "CUDA_LAUNCH_BLOCKING",
           "value": "1"
         }
-      ],
+      ]
     },
     {
       "name": "(LLDB) Stabilization",
@@ -225,19 +190,18 @@
       "program": "${workspaceFolder}/bazel-bin/src/stable/stabilization",
       "args": [
         "/mnt/home/colivier-local/src/hstream/bouncy.mp4",
-        "unbouncy.mp4",
+        "unbouncy.mp4"
       ],
       "sourceMap": {
         "/proc/self/cwd": "${workspaceFolder}",
         "~/src": "${env:HOME}/src",
-        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils",
+        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils"
       },
       "env": {
         "DISPLAY": ":1",
-        "CUDA_LAUNCH_BLOCKING": "1",
+        "CUDA_LAUNCH_BLOCKING": "1"
       },
-      //"stopOnEntry": true,
-      "preLaunchTask": "Build All",
+      "preLaunchTask": "Build All"
     },
     {
       "name": "(LLDB) cudaBlend3_test",
@@ -249,14 +213,13 @@
       "sourceMap": {
         "/proc/self/cwd": "${workspaceFolder}",
         "~/src": "${env:HOME}/src",
-        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils",
+        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils"
       },
       "env": {
         "DISPLAY": ":1",
-        "CUDA_LAUNCH_BLOCKING": "1",
+        "CUDA_LAUNCH_BLOCKING": "1"
       },
-      //"stopOnEntry": true,
-      "preLaunchTask": "Build All",
+      "preLaunchTask": "Build All"
     },
     {
       "name": "(LLDB) cudaPano3_test",
@@ -268,14 +231,13 @@
       "sourceMap": {
         "/proc/self/cwd": "${workspaceFolder}",
         "~/src": "${env:HOME}/src",
-        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils",
+        "home/colivier/src/jetson-utils": "${workspaceFolder}/src/external/jetson-utils"
       },
       "env": {
         "DISPLAY": ":1",
-        "CUDA_LAUNCH_BLOCKING": "1",
+        "CUDA_LAUNCH_BLOCKING": "1"
       },
-      //"stopOnEntry": true,
-      "preLaunchTask": "Build All",
+      "preLaunchTask": "Build All"
     },
     {
       "name": "(CUDA) cudaPano3_test",
@@ -286,7 +248,7 @@
       "program": "${workspaceFolder}/bazel-bin/src/pano/cudaPano3_test",
       "args": "",
       "initCommands": [
-        "directory ${workspaceFolder}",
+        "directory ${workspaceFolder}"
       ],
       "preLaunchTask": "Build All",
       "environment": [
@@ -294,7 +256,26 @@
           "name": "CUDA_LAUNCH_BLOCKING",
           "value": "1"
         }
-      ],
+      ]
     },
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "cppdbg",
+      "request": "launch",
+      "args": [],
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "cwd": "/home/colivier-local/src/hm-cupano/tests",
+      "program": "/home/colivier-local/src/hm-cupano/tests/build/Debug/outDebug",
+      "MIMode": "gdb",
+      "miDebuggerPath": "gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    }
   ]
 }
