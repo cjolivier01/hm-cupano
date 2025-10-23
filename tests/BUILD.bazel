@@ -16,6 +16,46 @@ cc_binary(
 )
 
 cc_binary(
+    name = "stitch_two_videos",
+    srcs = [
+        "stitch_two_videos.cpp",
+    ],
+    linkopts = [
+        "-ltiff",
+        "-lopencv_imgproc",
+        "-lopencv_cudacodec",
+        "-lopencv_cudaimgproc",
+        "-lopencv_cudawarping",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/pano:cuda_pano",
+        "@local_cuda//:cuda_runtime",
+        "@opencv_linux//:opencv",
+    ],
+)
+
+cc_binary(
+    name = "stitch_three_videos",
+    srcs = [
+        "stitch_three_videos.cpp",
+    ],
+    linkopts = [
+        "-ltiff",
+        "-lopencv_imgproc",
+        "-lopencv_cudacodec",
+        "-lopencv_cudaimgproc",
+        "-lopencv_cudawarping",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/pano:cuda_pano",
+        "@local_cuda//:cuda_runtime",
+        "@opencv_linux//:opencv",
+    ],
+)
+
+cc_binary(
     name = "test_cuda_blend3",
     srcs = [
         "testCudaBlend3.cpp",
