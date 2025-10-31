@@ -1,5 +1,4 @@
-#include <cuda_runtime.h>
-#include <cuda_fp16.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <device_launch_parameters.h>
 #include "cudaImageAdjust.cuh"
 #include "cudaRemap.h" // Assumed to declare these host functions

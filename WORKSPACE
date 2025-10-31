@@ -118,3 +118,22 @@ git_repository(
     remote = "https://github.com/cjolivier01/enblend-enfuse",
     branch = "colivier/hockeymom",
 )
+
+# Local ROCm (HIP) headers and runtime (if installed under /opt/rocm)
+new_local_repository(
+    name = "local_rocm",
+    path = "/opt/rocm",
+    build_file_content = """
+cc_library(
+    name = "hip_runtime",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    linkopts = [
+        "-L/opt/rocm/lib",
+        "-Wl,-rpath,/opt/rocm/lib",
+        "-lamdhip64",
+    ],
+    visibility = ["//visibility:public"],
+)
+""",
+)

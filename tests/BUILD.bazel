@@ -8,11 +8,13 @@ cc_binary(
         "-lopencv_imgproc",
     ],
     visibility = ["//visibility:public"],
-    deps = [
-        "//src/pano:cuda_pano",
-        "@local_cuda//:cuda_runtime",
-        "@opencv_linux//:opencv",
-    ],
+    deps = (
+        ["//src/pano:cuda_pano", "@opencv_linux//:opencv"]
+        + select({
+            "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "//conditions:default": ["@local_cuda//:cuda_runtime"],
+        })
+    ),
 )
 
 cc_binary(
@@ -28,11 +30,13 @@ cc_binary(
         "-lopencv_cudawarping",
     ],
     visibility = ["//visibility:public"],
-    deps = [
-        "//src/pano:cuda_pano",
-        "@local_cuda//:cuda_runtime",
-        "@opencv_linux//:opencv",
-    ],
+    deps = (
+        ["//src/pano:cuda_pano", "@opencv_linux//:opencv"]
+        + select({
+            "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "//conditions:default": ["@local_cuda//:cuda_runtime"],
+        })
+    ),
 )
 
 cc_binary(
@@ -48,11 +52,13 @@ cc_binary(
         "-lopencv_cudawarping",
     ],
     visibility = ["//visibility:public"],
-    deps = [
-        "//src/pano:cuda_pano",
-        "@local_cuda//:cuda_runtime",
-        "@opencv_linux//:opencv",
-    ],
+    deps = (
+        ["//src/pano:cuda_pano", "@opencv_linux//:opencv"]
+        + select({
+            "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "//conditions:default": ["@local_cuda//:cuda_runtime"],
+        })
+    ),
 )
 
 cc_binary(
@@ -65,11 +71,13 @@ cc_binary(
         "-lopencv_imgproc",
     ],
     visibility = ["//visibility:public"],
-    deps = [
-        "//src/pano:cuda_pano",
-        "@local_cuda//:cuda_runtime",
-        "@opencv_linux//:opencv",
-    ],
+    deps = (
+        ["//src/pano:cuda_pano", "@opencv_linux//:opencv"]
+        + select({
+            "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "//conditions:default": ["@local_cuda//:cuda_runtime"],
+        })
+    ),
 )
 
 cc_binary(
@@ -82,9 +90,11 @@ cc_binary(
         "-lopencv_imgproc",
     ],
     visibility = ["//visibility:public"],
-    deps = [
-        "//src/pano:cuda_pano_n",
-        "@local_cuda//:cuda_runtime",
-        "@opencv_linux//:opencv",
-    ],
+    deps = (
+        ["//src/pano:cuda_pano_n", "@opencv_linux//:opencv"]
+        + select({
+            "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "//conditions:default": ["@local_cuda//:cuda_runtime"],
+        })
+    ),
 )

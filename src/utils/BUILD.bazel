@@ -41,10 +41,13 @@ cc_library(
         "-I/usr/include",
     ],
     visibility = ["//visibility:public"],
-    deps = [
-      "//src/pano:cuda_matrix",
-      "@local_cuda//:cuda_runtime",
-    ],
+    deps = (
+      ["//src/gpu:gpu_runtime", "//src/pano:cuda_matrix"]
+      + select({
+        "@//:use_hip": ["@local_rocm//:hip_runtime"],
+        "//conditions:default": ["@local_cuda//:cuda_runtime"],
+      })
+    ),
 )
 
 cc_library(
@@ -62,11 +65,13 @@ cc_library(
         "-lGL",
     ],
     visibility = ["//visibility:public"],
-    deps = [
-      ":gl_window",
-      "//src/pano:cuda_matrix",
-      "@local_cuda//:cuda_runtime",
-    ],
+    deps = (
+      ["//src/gpu:gpu_runtime", ":gl_window", "//src/pano:cuda_matrix"]
+      + select({
+        "@//:use_hip": ["@local_rocm//:hip_runtime"],
+        "//conditions:default": ["@local_cuda//:cuda_runtime"],
+      })
+    ),
 )
 
 
@@ -85,10 +90,11 @@ cc_library(
         "-lGL",
     ],
     visibility = ["//visibility:public"],
-    deps = [
-      ":image_utils",
-      ":gl_window",
-      "//src/pano:cuda_matrix",
-      "@local_cuda//:cuda_runtime",
-    ],
+    deps = (
+      ["//src/gpu:gpu_runtime", ":image_utils", ":gl_window", "//src/pano:cuda_matrix"]
+      + select({
+        "@//:use_hip": ["@local_rocm//:hip_runtime"],
+        "//conditions:default": ["@local_cuda//:cuda_runtime"],
+      })
+    ),
 )

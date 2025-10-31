@@ -36,3 +36,9 @@ build:jetson --cpu=aarch64
 build:jetson --define=target_platform=jetson
 build:jetson --action_env=target_platform="jetson"
 
+# ROCm/HIP backend config
+build:rocm --define=backend=hip
+build:rocm --cxxopt=-DUSE_HIP
+build:rocm --host_cxxopt=-DUSE_HIP
+build:rocm --action_env=HIPCC=/opt/rocm/bin/hipcc
+build:rocm --linkopt=-Wl,-rpath,/opt/rocm/lib

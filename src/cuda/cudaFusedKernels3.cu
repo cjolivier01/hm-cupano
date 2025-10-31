@@ -1,4 +1,4 @@
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <device_launch_parameters.h>
 #include <cassert>
 #include <limits>

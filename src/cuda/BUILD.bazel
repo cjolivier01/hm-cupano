@@ -46,13 +46,19 @@ cuda_library(
         "//conditions:default": [],
     }),
     visibility = ["//visibility:public"],
-    deps = [
-        ":cuda_blend_cuda_lib_headers",
-        "//src/utils:show_image",
-        "//src/pano:canvas_manager",
-        "@local_cuda//:cuda_runtime",
-        "@opencv_linux//:opencv",
-    ],
+    deps = (
+        [
+            "//src/gpu:gpu_runtime",
+            ":cuda_blend_cuda_lib_headers",
+            "//src/utils:show_image",
+            "//src/pano:canvas_manager",
+            "@opencv_linux//:opencv",
+        ]
+        + select({
+            "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "//conditions:default": ["@local_cuda//:cuda_runtime"],
+        })
+    ),
 )
 
 cc_library(
@@ -85,9 +91,13 @@ cc_library(
     ],
     include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
-    deps = [
-        "@local_cuda//:cuda_runtime",
-    ],
+    deps = (
+        ["//src/gpu:gpu_runtime"]
+        + select({
+            "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "//conditions:default": ["@local_cuda//:cuda_runtime"],
+        })
+    ),
 )
 
 cc_library(
@@ -102,9 +112,94 @@ cc_library(
 cc_test(
     name = "cudaBlend3_test",
     srcs = ["cudaBlend3_test.cpp"],
+    deps = (
+        select({
+            "@//:use_hip": [":cuda_blend_cuda_lib_hip"],
+            "//conditions:default": [":cuda_blend_cuda_lib"],
+        })
+        + [
+            "@googletest//:gtest",
+            "@googletest//:gtest_main",
+        ]
+    ),
+)
+
+cc_test(
+    name = "cudaTypes_test",
+    srcs = ["cudaTypes_test.cpp"],
     deps = [
-        ":cuda_blend_cuda_lib",
+        ":cuda_blend_cuda_lib_headers",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
+    ],
+)
+
+# HIP backend (ROCm) — builds .cu sources with hipcc into objects and links them.
+# Only used when --define=backend=hip (see //:use_hip).
+genrule(
+    name = "hip_objs",
+    srcs = [
+        "cudaBlend.cu",
+        "cudaBlend3.cu",
+        "cudaBlend3_optimized.cu",
+        "cudaFusedKernels3.cu",
+        "cudaBlendN.cu",
+        "cudaImageAdjust.cu",
+        "cudaMakeFull.cu",
+        "cudaRemap.cu",
+        "cudaStabilize.cu",
+        "cudaUtils.cu",
+    ],
+    outs = [
+        "cudaBlend.o",
+        "cudaBlend3.o",
+        "cudaBlend3_optimized.o",
+        "cudaFusedKernels3.o",
+        "cudaBlendN.o",
+        "cudaImageAdjust.o",
+        "cudaMakeFull.o",
+        "cudaRemap.o",
+        "cudaStabilize.o",
+        "cudaUtils.o",
+    ],
+    cmd = (
+        "set -e; HIPCC=/opt/rocm/bin/hipcc; "
+        + "for i in $(SRCS); do base=$$(basename $$i .cu); "
+        + "$${HIPCC} -std=c++17 -O2 -fPIC -DUSE_HIP \"$${i}\" -c -I$(GENDIR) -I. -o $(RULEDIR)/$${base}.o; done; "
+        + "for o in $(OUTS); do mv $(RULEDIR)/$$o $${o}; done"
+    ),
+    tags = ["manual"],
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "cuda_blend_cuda_lib_hip",
+    srcs = [":hip_objs"],
+    hdrs = [
+        "cudaImageAdjust.cuh",
+        "cudaUtils.cuh",
+        "cudaBlend.h",
+        "cudaBlend3.h",
+        "cudaFusedKernels3.h",
+        "cudaBlendN.h",
+        "cudaMakeFull.h",
+        "cudaRemap.h",
+        "cudaStatus.h",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    copts = ["-std=c++17"],
+    linkopts = [
+        "-Wl,-rpath,/opt/rocm/lib",
+        "-L/opt/rocm/lib",
+        "-lamdhip64",
+    ],
+    visibility = ["//visibility:public"],
+    tags = ["manual"],
+    deps = [
+        "//src/gpu:gpu_runtime",
+        "//src/utils:show_image",
+        "//src/pano:canvas_manager",
+        "@opencv_linux//:opencv",
+        "@local_rocm//:hip_runtime",
     ],
 )

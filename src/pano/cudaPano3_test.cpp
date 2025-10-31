@@ -1,6 +1,6 @@
 // cudaPano3_test.cpp
 
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <gtest/gtest.h>
 #include <opencv2/opencv.hpp>
 #include <opencv4/opencv2/core.hpp>
@@ -189,11 +189,13 @@ TEST(CudaStitchPano3_SoftSeamTrivial, OneHotLabelSelectsMiddleImage) {
   ASSERT_EQ(d_out->height(), 1);
 
   cv::Mat hostOut = d_out->download();
-  ASSERT_EQ(hostOut.type(), CV_32FC3);
-  cv::Vec3f pixel = hostOut.at<cv::Vec3f>(0, 0);
+  ASSERT_EQ(hostOut.type(), CV_32FC4);
+  cv::Vec4f pixel = hostOut.at<cv::Vec4f>(0, 0);
   EXPECT_NEAR(pixel[0], 60.0f, 1e-3f);
   EXPECT_NEAR(pixel[1], 60.0f, 1e-3f);
   EXPECT_NEAR(pixel[2], 60.0f, 1e-3f);
+  // Preserve alpha
+  EXPECT_NEAR(pixel[3], 255.0f, 1e-3f);
 }
 
 #if 0

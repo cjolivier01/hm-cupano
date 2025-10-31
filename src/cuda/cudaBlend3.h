@@ -19,8 +19,7 @@
 #include "src/pano/cudaMat.h"
 #include "src/utils/showImage.h"
 
-#include <cuda_fp16.h>
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 
 #include <opencv2/opencv.hpp>
 
@@ -287,5 +286,4 @@ cudaError_t cudaBatchedLaplacianBlendOptimized3(
     CudaBatchLaplacianBlendContext3<T>& context,
     int channels,
     cudaStream_t stream);
-
 

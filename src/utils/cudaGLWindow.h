@@ -2,8 +2,8 @@
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
-#include <cuda_gl_interop.h>
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_gl_interop.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <cassert>
 #include <stdexcept>
 #include <string>

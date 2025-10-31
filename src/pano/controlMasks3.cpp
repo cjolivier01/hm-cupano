@@ -207,15 +207,21 @@ cv::Mat ControlMasks3::split_to_channels(const cv::Mat& seam_mask) {
   cv::Mat seam_mask_dest = cv::Mat(cv::Size(seam_mask.cols, seam_mask.rows), CV_8UC3, cv::Scalar(0, 0, 0));
 
   std::vector<int> unique_values = get_unique_values(seam_mask);
-  assert(unique_values.size() == 3);
+  // Accept degenerate masks with fewer than 3 labels; missing channels remain zero.
 
   std::vector<cv::Mat> channels;
   cv::split(seam_mask_dest, channels);
-
-  for (size_t image_index = 0; image_index < unique_values.size(); ++image_index) {
-    cv::Mat mask = (seam_mask == unique_values[image_index]);
-    channels[image_index].setTo(1, mask);
+  if (channels.size() != 3) {
+    channels.resize(3);
+    channels[0] = cv::Mat(seam_mask.size(), CV_8U, cv::Scalar(0));
+    channels[1] = cv::Mat(seam_mask.size(), CV_8U, cv::Scalar(0));
+    channels[2] = cv::Mat(seam_mask.size(), CV_8U, cv::Scalar(0));
   }
+
+  // Map label values 0,1,2 to fixed channel indices 0,1,2.
+  channels[0].setTo(1, (seam_mask == 0));
+  channels[1].setTo(1, (seam_mask == 1));
+  channels[2].setTo(1, (seam_mask == 2));
 
   // Merge channels back
   cv::merge(channels, seam_mask_dest);

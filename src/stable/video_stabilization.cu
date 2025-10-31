@@ -1,5 +1,5 @@
 // video_stabilization_streaming_median.cu
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <opencv2/opencv.hpp>
 #include <algorithm>
 #include <iostream>

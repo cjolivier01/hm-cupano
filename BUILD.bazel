@@ -29,3 +29,9 @@ config_setting(
     name = "with_cuda",
     values = {"define": "enblend_cuda=true"},
 )
+
+# Global switch for selecting HIP/ROCm backend
+config_setting(
+    name = "use_hip",
+    values = {"define": "backend=hip"},
+)

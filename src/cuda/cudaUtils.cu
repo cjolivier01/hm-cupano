@@ -3,12 +3,7 @@
 
 #include "cudaUtils.cuh"
 
-#include <cuda_runtime.h>
-
-#if (CUDART_VERSION >= 11000)
-#include <cuda_bf16.h>
-#endif
-#include <cuda_fp16.h>
+#include <cupano/gpu/gpu_runtime.h>
 
 namespace hm {
 namespace cupano {

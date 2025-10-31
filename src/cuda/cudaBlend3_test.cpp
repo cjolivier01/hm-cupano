@@ -11,7 +11,7 @@
 // ./cudaBlend3_test
 /* clang-format on */
 
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <gtest/gtest.h>
 #include "cudaBlend3.h"
 

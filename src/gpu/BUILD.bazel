@@ -1,0 +1,14 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+INCLUDE_PREFIX = "cupano/gpu"
+
+cc_library(
+    name = "gpu_runtime",
+    hdrs = [
+        "gpu_runtime.h",
+        "gpu_gl_interop.h",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    visibility = ["//visibility:public"],
+)
+

@@ -1,7 +1,7 @@
 // cudaBlend3_optimized.cu - Complete optimized implementation of 3-image Laplacian blending
 
 #include <cooperative_groups.h>
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <device_launch_parameters.h>
 #include <cassert>
 #include <cmath>

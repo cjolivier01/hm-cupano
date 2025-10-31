@@ -2,7 +2,7 @@
 #include "cupano/cuda/cudaStatus.h"
 #include "cupano/cuda/cudaTypes.h"
 #include "cupano/pano/cudaMat.h"
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 
 namespace hm {
 namespace pano {
