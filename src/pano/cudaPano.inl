@@ -421,7 +421,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     // SHOW_SCALED(canvas, 0.15);
 #endif
   }
-  // cudaStreamSynchronize(stream);
   return std::move(canvas);
 }
 
@@ -464,9 +463,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   }
   auto result = process_impl(
       inputImage1, inputImage2, *stitch_context_, *canvas_manager_, image_adjustment_, stream, std::move(canvas));
-  if (stream) {
-    cudaStreamSynchronize(stream);
-  }
   if (!result.ok()) {
     status_.Update(result.status());
   }
