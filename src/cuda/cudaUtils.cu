@@ -1,3 +1,5 @@
+#include "pthread_clock_compat.h"
+
 #include "cudaMakeFull.h"
 #include "cudaTypes.h"
 

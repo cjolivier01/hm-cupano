@@ -1,3 +1,5 @@
+#include "pthread_clock_compat.h"
+
 #include "cudaBlend.h"
 #include "cudaUtils.cuh"
 

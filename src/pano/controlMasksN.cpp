@@ -1,7 +1,7 @@
 #include "controlMasksN.h"
 
-#include <opencv4/opencv2/highgui.hpp>
-#include <opencv4/opencv2/imgcodecs.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <png.h>
 #include <tiffio.h>
 #include <set>
@@ -206,4 +206,3 @@ cv::Mat ControlMasksN::split_to_channels(const cv::Mat& indexed, int n_images) {
 
 } // namespace pano
 } // namespace hm
-
