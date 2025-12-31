@@ -4,7 +4,7 @@
 #include "cupano/pano/cudaPanoN.h"
 #include "cupano/utils/showImage.h"
 
-#include <cuda_runtime.h>
+#include "cupano/gpu/gpu_runtime.h"
 #include <opencv2/opencv.hpp>
 
 #include <cassert>

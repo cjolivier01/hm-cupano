@@ -12,3 +12,12 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+# Headers used by HIP genrule to construct a virtual include tree
+filegroup(
+    name = "gpu_public_headers",
+    srcs = [
+        "gpu_runtime.h",
+        "gpu_gl_interop.h",
+    ],
+    visibility = ["//visibility:public"],
+)

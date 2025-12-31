@@ -20,8 +20,8 @@
     #if __has_include(<hip/hip_bfloat16.h>)
       #include <hip/hip_bfloat16.h>
       #define GPU_HAS_BF16 1
-      // hip declares __hip_bfloat16; provide a project-wide alias
-      using gpu_bfloat16 = __hip_bfloat16;
+      // Some ROCm versions use hip_bfloat16 (public type)
+      using gpu_bfloat16 = hip_bfloat16;
     #else
       #define GPU_HAS_BF16 0
     #endif
@@ -63,6 +63,7 @@
   #define cudaFree hipFree
   #define cudaMemset hipMemset
   #define cudaMemcpy hipMemcpy
+  #define cudaMemcpyAsync hipMemcpyAsync
 
   // Optional: macro to launch kernels with hipLaunchKernelGGL if needed
   #define GPU_LAUNCH_KERNEL(func, grid, block, shared, stream, ...) \
@@ -88,4 +89,3 @@
       func<<<(grid), (block), (shared), (stream)>>>(__VA_ARGS__)
 
 #endif  // backend select
-

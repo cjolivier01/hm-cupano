@@ -16,8 +16,10 @@
   #define cudaGraphicsUnregisterResource hipGraphicsUnregisterResource
   #define cudaGraphicsRegisterFlagsNone hipGraphicsRegisterFlagsNone
   #define cudaGraphicsMapFlagsNone hipGraphicsMapFlagsNone
+  #define cudaGraphicsRegisterFlagsWriteDiscard hipGraphicsRegisterFlagsWriteDiscard
+  #define cudaArray_t hipArray_t
+  #define cudaMemcpy2DToArray hipMemcpy2DToArray
 #else
   // CUDA-OpenGL interop header
   #include <cuda_gl_interop.h>
 #endif
-

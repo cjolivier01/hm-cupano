@@ -18,11 +18,16 @@ cc_library(
         "-lpng",
     ],
     visibility = ["//visibility:public"],
-    deps = [
-        ":show_image",
-        "//src/cuda:cuda_blend_cuda_lib",
-        "@opencv_linux//:opencv",
-    ],
+    deps = (
+        [
+            ":show_image",
+            "@opencv_linux//:opencv",
+        ]
+        + select({
+            "@//:use_hip": ["//src/cuda:cuda_blend_cuda_lib_hip"],
+            "//conditions:default": ["//src/cuda:cuda_blend_cuda_lib"],
+        })
+    ),
 )
 
 cc_library(
@@ -97,4 +102,16 @@ cc_library(
         "//conditions:default": ["@local_cuda//:cuda_runtime"],
       })
     ),
+)
+
+# Headers used by HIP genrule to construct a virtual include tree
+filegroup(
+    name = "utils_public_headers",
+    srcs = [
+        "cudaBlendShow.h",
+        "cudaGLWindow.h",
+        "imageUtils.h",
+        "showImage.h",
+    ],
+    visibility = ["//visibility:public"],
 )

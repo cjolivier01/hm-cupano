@@ -29,7 +29,7 @@
 #include "cupano/pano/cudaPano.h"
 #include "cupano/utils/showImage.h"
 
-#include <cuda_runtime.h>
+#include "cupano/gpu/gpu_runtime.h"
 
 #include <opencv2/core/cuda.hpp>
 #include <opencv2/core/hal/interface.h>

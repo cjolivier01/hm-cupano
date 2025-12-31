@@ -214,3 +214,13 @@ cc_library(
         })
     ),
 )
+
+# Headers used by HIP genrule to construct a virtual include tree
+filegroup(
+    name = "pano_public_headers",
+    srcs = glob([
+        "*.h",
+        "*.inl",
+    ]),
+    visibility = ["//visibility:public"],
+)

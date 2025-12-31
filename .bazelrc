@@ -40,5 +40,7 @@ build:jetson --action_env=target_platform="jetson"
 build:rocm --define=backend=hip
 build:rocm --cxxopt=-DUSE_HIP
 build:rocm --host_cxxopt=-DUSE_HIP
+build:rocm --cxxopt=-D__HIP_PLATFORM_AMD__
+build:rocm --host_cxxopt=-D__HIP_PLATFORM_AMD__
 build:rocm --action_env=HIPCC=/opt/rocm/bin/hipcc
 build:rocm --linkopt=-Wl,-rpath,/opt/rocm/lib
