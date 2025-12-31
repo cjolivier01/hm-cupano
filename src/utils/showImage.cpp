@@ -3,6 +3,7 @@
 #include "cupano/utils/imageUtils.h"
 
 #include <set>
+#include <memory>
 #include <unordered_set>
 
 #include <opencv2/highgui.hpp>
