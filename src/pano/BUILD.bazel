@@ -21,9 +21,6 @@ cc_library(
         "cudaMat.h",
         "cudaMat.inl",
     ],
-    defines = [
-        "_GLIBCXX_USE_CXX11_ABI=0",
-    ],
     copts = [
     ],
     include_prefix = INCLUDE_PREFIX,
@@ -45,9 +42,6 @@ cc_library(
     hdrs = [
         "controlMasks.h",
         "controlMasks3.h",
-    ],
-    defines = [
-        "_GLIBCXX_USE_CXX11_ABI=0",
     ],
     copts = [
       "--std=c++17",
@@ -73,9 +67,6 @@ cc_library(
     hdrs = [
         "canvasManager.h",
         "canvasManager3.h",
-    ],
-    defines = [
-        "_GLIBCXX_USE_CXX11_ABI=0",
     ],
     copts = [
       "--std=c++17",
@@ -113,9 +104,6 @@ cc_library(
         "cudaPano3.h",
         "cudaPano3.inl",
         "cudaPano3_optimized.inl",
-    ],
-    defines = [
-        "_GLIBCXX_USE_CXX11_ABI=0",
     ],
     copts = [
     ],
@@ -191,9 +179,6 @@ cc_library(
     ],
     srcs = [
         "controlMasksN.cpp",
-    ],
-    defines = [
-        "_GLIBCXX_USE_CXX11_ABI=0",
     ],
     copts = [
         "--std=c++17",

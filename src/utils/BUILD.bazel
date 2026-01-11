@@ -10,9 +10,6 @@ cc_library(
     hdrs = [
         "cudaBlendShow.h",
     ],
-    defines = [
-        "_GLIBCXX_USE_CXX11_ABI=0",
-    ],
     copts = [
     ],
     include_prefix = INCLUDE_PREFIX,
@@ -36,9 +33,6 @@ cc_library(
     hdrs = [
         "cudaGLWindow.h",
     ],
-    defines = [
-        "_GLIBCXX_USE_CXX11_ABI=0",
-    ],
     include_prefix = INCLUDE_PREFIX,
     linkopts = [
         "-lglfw",
@@ -60,9 +54,6 @@ cc_library(
     ],
     hdrs = [
         "imageUtils.h",
-    ],
-    defines = [
-        "_GLIBCXX_USE_CXX11_ABI=0",
     ],
     include_prefix = INCLUDE_PREFIX,
     linkopts = [
@@ -86,9 +77,6 @@ cc_library(
     ],
     hdrs = [
         "showImage.h",
-    ],
-    defines = [
-        "_GLIBCXX_USE_CXX11_ABI=0",
     ],
     include_prefix = INCLUDE_PREFIX,
     linkopts = [
