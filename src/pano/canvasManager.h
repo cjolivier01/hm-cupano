@@ -105,6 +105,16 @@ class CanvasManager {
   }
 
   /**
+   * @brief Returns whether blend minimization is enabled.
+   *
+   * When enabled, the seam/mask and blend buffers are cropped to just the
+   * overlapping strip (plus padding) for better performance.
+   */
+  constexpr bool minimize_blend() const {
+    return _minimize_blend;
+  }
+
+  /**
    * @brief Returns the overlapping width computed by `updateMinimizeBlend()`.
    */
   constexpr int overlapping_width() const {

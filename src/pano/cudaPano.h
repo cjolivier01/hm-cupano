@@ -6,6 +6,7 @@
 #include "cupano/pano/controlMasks.h"
 #include "cupano/pano/cudaMat.h"
 
+#include <array>
 #include <memory>
 #include <optional>
 
@@ -38,6 +39,7 @@ struct StitchingContext {
   // Scratch buffers
   std::unique_ptr<CudaMat<T_compute>> cudaFull1;
   std::unique_ptr<CudaMat<T_compute>> cudaFull2;
+  std::unique_ptr<CudaMat<T_compute>> cudaBlended;
 
   // Laplacian Blend Scratch context
   std::unique_ptr<CudaBatchLaplacianBlendContext<BaseScalar_t<T_compute>>> laplacian_blend_context;
@@ -72,7 +74,9 @@ class CudaStitchPano {
       int num_levels,
       const ControlMasks& control_masks,
       bool match_exposure = false,
-      bool quiet = false);
+      bool quiet = false,
+      bool minimize_blend = true,
+      int max_output_width = 0);
 
   int canvas_width() const {
     return canvas_manager_->canvas_width();
@@ -114,6 +118,7 @@ class CudaStitchPano {
   std::unique_ptr<StitchingContext<T_pipeline, T_compute>> stitch_context_;
   std::unique_ptr<CanvasManager> canvas_manager_;
   bool match_exposure_;
+  std::optional<std::array<cv::Point, 2>> exposure_positions_;
   std::optional<float3> image_adjustment_;
   std::optional<cv::Mat> whole_seam_mask_image_;
   CudaStatus status_;

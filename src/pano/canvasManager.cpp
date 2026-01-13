@@ -1,5 +1,7 @@
 #include "canvasManager.h"
 
+#include <algorithm>
+
 namespace hm {
 namespace pano {
 
@@ -25,12 +27,13 @@ void CanvasManager::updateMinimizeBlend(const cv::Size& remapped_size_1, const c
 
   // Compute the overlap width based on the first image's width minus the X of the second image.
   int width_1 = _remapper_1.width;
-  _overlapping_width = width_1 - _x2;
-  assert(width_1 > _x2); // Must have positive overlap.
-
-  const int blend_width = _overlapping_width + 2 * _overlap_pad;
+  _overlapping_width = std::max(0, width_1 - _x2);
 
   if (_minimize_blend) {
+    // Minimizing blend requires positive overlap to define the seam strip.
+    assert(width_1 > _x2);
+
+    const int blend_width = _overlapping_width + 2 * _overlap_pad;
     // Assign X offsets for the two remappers for minimal blending region.
     _remapper_1.xpos = _x1;
     // Start overlapping right away in the second remapper.
@@ -57,6 +60,13 @@ void CanvasManager::updateMinimizeBlend(const cv::Size& remapped_size_1, const c
     remapped_image_roi_blend_2 = {0, 0, blend_width - _overlap_pad, remapped_size_2.height};
     assert(remapped_image_roi_blend_1.width == remapped_image_roi_blend_2.width);
     assert(remapped_image_roi_blend_1.x + remapped_image_roi_blend_1.width <= _remapper_1.width);
+  } else {
+    // Full-canvas blending: keep ROIs as the full remapped images placed at their
+    // actual canvas offsets. The seam/mask will not be cropped in this mode.
+    _remapper_1.xpos = _x1;
+    _remapper_2.xpos = _x2;
+    remapped_image_roi_blend_1 = {_x1, 0, remapped_size_1.width, remapped_size_1.height};
+    remapped_image_roi_blend_2 = {_x2, 0, remapped_size_2.width, remapped_size_2.height};
   }
 }
 

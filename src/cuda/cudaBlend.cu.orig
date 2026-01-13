@@ -10,9 +10,7 @@
 #include <cstdio>
 #include <vector>
 
-//#ifndef NDEBUG
 #define PRINT_STRANGE_ALPHAS
-//#endif
 
 #define EXTRA_ALPHA_CHECKS
 
@@ -380,57 +378,6 @@ __global__ void BatchedComputeLaplacianKernel(
   const T* lowImage = gaussLow + b * lowImageSize;
   T* lapImage = laplacian + b * highImageSize;
 
-  int idxHigh = (y * highWidth + x) * channels;
-
-  if (channels == 4) {
-    const int gxi = x >> 1;
-    const int gyi = y >> 1;
-    const int gxi1 = min(gxi + 1, lowWidth - 1);
-    const int gyi1 = min(gyi + 1, lowHeight - 1);
-
-    const F_T wx1 = (x & 1) ? F_T(0.5) : F_T(0);
-    const F_T wx0 = F_T(1) - wx1;
-    const F_T wy1 = (y & 1) ? F_T(0.5) : F_T(0);
-    const F_T wy0 = F_T(1) - wy1;
-
-    const F_T w00 = wx0 * wy0;
-    const F_T w10 = wx1 * wy0;
-    const F_T w01 = wx0 * wy1;
-    const F_T w11 = wx1 * wy1;
-
-    const int base00 = (gyi * lowWidth + gxi) * channels;
-    const int base10 = (gyi * lowWidth + gxi1) * channels;
-    const int base01 = (gyi1 * lowWidth + gxi) * channels;
-    const int base11 = (gyi1 * lowWidth + gxi1) * channels;
-
-    const bool v00 = static_cast<F_T>(lowImage[base00 + 3]) != F_T(0);
-    const bool v10 = static_cast<F_T>(lowImage[base10 + 3]) != F_T(0);
-    const bool v01 = static_cast<F_T>(lowImage[base01 + 3]) != F_T(0);
-    const bool v11 = static_cast<F_T>(lowImage[base11 + 3]) != F_T(0);
-
-    const F_T w00v = v00 ? w00 : F_T(0);
-    const F_T w10v = v10 ? w10 : F_T(0);
-    const F_T w01v = v01 ? w01 : F_T(0);
-    const F_T w11v = v11 ? w11 : F_T(0);
-
-    const F_T sumW = w00v + w10v + w01v + w11v;
-    const F_T invW = (sumW > F_T(0)) ? (F_T(1) / sumW) : F_T(0);
-
-#pragma unroll
-    for (int c = 0; c < 3; ++c) {
-      const F_T sumV =
-          static_cast<F_T>(lowImage[base00 + c]) * w00v +
-          static_cast<F_T>(lowImage[base10 + c]) * w10v +
-          static_cast<F_T>(lowImage[base01 + c]) * w01v +
-          static_cast<F_T>(lowImage[base11 + c]) * w11v;
-      const F_T upVal = sumV * invW;
-      lapImage[idxHigh + c] = static_cast<T>(static_cast<F_T>(highImage[idxHigh + c]) - upVal);
-    }
-    // alpha channel: just copy high-res alpha
-    lapImage[idxHigh + 3] = highImage[idxHigh + 3];
-    return;
-  }
-
   // map (x,y) in high-res to fractional coord in low-res
   F_T gx = static_cast<F_T>(x) / 2.0f;
   F_T gy = static_cast<F_T>(y) / 2.0f;
@@ -440,6 +387,8 @@ __global__ void BatchedComputeLaplacianKernel(
   F_T dy = gy - static_cast<F_T>(gyi);
   int gxi1 = min(gxi + 1, lowWidth - 1);
   int gyi1 = min(gyi + 1, lowHeight - 1);
+
+  int idxHigh = (y * highWidth + x) * channels;
 
   for (int c = 0; c < channels; ++c) {
     if (channels == 4 && c == 3) {
@@ -658,66 +607,6 @@ __global__ void BatchedReconstructKernel(
   const T* lapImage = lap + b * highImageSize;
   T* reconImage = reconstruction + b * highImageSize;
 
-  int idxOut = (y * highWidth + x) * channels;
-
-  if (channels == 4) {
-    const int gxi = x >> 1;
-    const int gyi = y >> 1;
-    const int gxi1 = min(gxi + 1, lowWidth - 1);
-    const int gyi1 = min(gyi + 1, lowHeight - 1);
-
-    const F_T wx1 = (x & 1) ? F_T(0.5) : F_T(0);
-    const F_T wx0 = F_T(1) - wx1;
-    const F_T wy1 = (y & 1) ? F_T(0.5) : F_T(0);
-    const F_T wy0 = F_T(1) - wy1;
-
-    const F_T w00 = wx0 * wy0;
-    const F_T w10 = wx1 * wy0;
-    const F_T w01 = wx0 * wy1;
-    const F_T w11 = wx1 * wy1;
-
-    const int base00 = (gyi * lowWidth + gxi) * channels;
-    const int base10 = (gyi * lowWidth + gxi1) * channels;
-    const int base01 = (gyi1 * lowWidth + gxi) * channels;
-    const int base11 = (gyi1 * lowWidth + gxi1) * channels;
-
-    const bool v00 = static_cast<F_T>(lowImage[base00 + 3]) != F_T(0);
-    const bool v10 = static_cast<F_T>(lowImage[base10 + 3]) != F_T(0);
-    const bool v01 = static_cast<F_T>(lowImage[base01 + 3]) != F_T(0);
-    const bool v11 = static_cast<F_T>(lowImage[base11 + 3]) != F_T(0);
-
-    const F_T w00v = v00 ? w00 : F_T(0);
-    const F_T w10v = v10 ? w10 : F_T(0);
-    const F_T w01v = v01 ? w01 : F_T(0);
-    const F_T w11v = v11 ? w11 : F_T(0);
-
-    const F_T sumW = w00v + w10v + w01v + w11v;
-    const F_T invW = (sumW > F_T(0)) ? (F_T(1) / sumW) : F_T(0);
-
-#pragma unroll
-    for (int c = 0; c < 3; ++c) {
-      const F_T sumV =
-          static_cast<F_T>(lowImage[base00 + c]) * w00v +
-          static_cast<F_T>(lowImage[base10 + c]) * w10v +
-          static_cast<F_T>(lowImage[base01 + c]) * w01v +
-          static_cast<F_T>(lowImage[base11 + c]) * w11v;
-      const F_T upVal = sumV * invW;
-      reconImage[idxOut + c] = static_cast<T>(upVal + static_cast<F_T>(lapImage[idxOut + c]));
-    }
-
-    // Copy alpha channel from Laplacian image
-    const F_T alpha = static_cast<F_T>(lapImage[idxOut + 3]);
-
-#ifdef PRINT_STRANGE_ALPHAS
-    if (alpha != F_T(0) && alpha != F_T(255)) {
-      printf("BatchedReconstructKernel(): Strange alpha %f\n", static_cast<float>(alpha));
-    }
-#endif
-
-    reconImage[idxOut + 3] = static_cast<T>(alpha);
-    return;
-  }
-
   const F_T F_ONE = static_cast<F_T>(1.0);
 
   // No center alignment — pure top-left pixel mapping
@@ -731,6 +620,8 @@ __global__ void BatchedReconstructKernel(
 
   F_T dx = gx - static_cast<F_T>(gxi);
   F_T dy = gy - static_cast<F_T>(gyi);
+
+  int idxOut = (y * highWidth + x) * channels;
 
   for (int c = 0; c < channels; ++c) {
     if (channels == 4 && c == 3) {
@@ -989,37 +880,15 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
         context.allocation_size += sizeRGB;
         CUDA_CHECK(cudaMalloc((void**)&context.d_gauss2[level], sizeRGB));
         context.allocation_size += sizeRGB;
+      } else {
+        context.d_maskPyr[0] = const_cast<T*>(d_mask);
+        context.d_gauss1[0] = const_cast<T*>(d_image1);
+        context.d_gauss2[0] = const_cast<T*>(d_image2);
       }
     }
   }
 
-  // Level-0 pointers are owned by user code (passed into the function each time).
-  // These may change between calls, even when the context is already initialized.
-  context.d_gauss1[0] = const_cast<T*>(d_image1);
-  context.d_gauss2[0] = const_cast<T*>(d_image2);
-
   dim3 block(16, 16, 1);
-
-  // The blend mask pyramid depends only on the input mask. Build it once and reuse it across
-  // frames to avoid an extra downsample kernel per level, per call.
-  if (context.mask_ptr != d_mask) {
-    context.d_maskPyr[0] = const_cast<T*>(d_mask);
-    context.mask_ptr = d_mask;
-    for (int level = 0; level < context.numLevels - 1; level++) {
-      dim3 gridMask(
-          (context.widths[level + 1] + block.x - 1) / block.x,
-          (context.heights[level + 1] + block.y - 1) / block.y,
-          1);
-      BatchedDownsampleKernelMask<T><<<gridMask, block, 0, stream>>>(
-          context.d_maskPyr[level],
-          context.widths[level],
-          context.heights[level],
-          context.d_maskPyr[level + 1],
-          context.widths[level + 1],
-          context.heights[level + 1]);
-      CUDA_CHECK(cudaGetLastError());
-    }
-  }
 
   // 1. Build Gaussian pyramids.
   for (int level = 0; level < context.numLevels - 1; level++) {
@@ -1039,6 +908,18 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
         context.batchSize,
         channels);
     CUDA_CHECK(cudaGetLastError());
+    {
+      dim3 gridMask(
+          (context.widths[level + 1] + block.x - 1) / block.x, (context.heights[level + 1] + block.y - 1) / block.y, 1);
+      BatchedDownsampleKernelMask<T><<<gridMask, block, 0, stream>>>(
+          context.d_maskPyr[level],
+          context.widths[level],
+          context.heights[level],
+          context.d_maskPyr[level + 1],
+          context.widths[level + 1],
+          context.heights[level + 1]);
+      CUDA_CHECK(cudaGetLastError());
+    }
   }
 
   // 2. Build Laplacian pyramids.

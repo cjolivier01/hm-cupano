@@ -106,6 +106,7 @@ struct CudaBatchLaplacianBlendContext {
   const int imageHeight; ///< Height of the full-resolution image.
   const int batchSize; ///< Number of images in the batch.
   size_t allocation_size{0}; ///< Total allocated device memory size (in bytes).
+  const T* mask_ptr{nullptr}; ///< Base mask pointer used to build d_maskPyr.
 
   std::vector<int> widths; ///< Width of images at each pyramid level.
   std::vector<int> heights; ///< Height of images at each pyramid level.
