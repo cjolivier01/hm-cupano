@@ -28,12 +28,19 @@ struct CudaBatchLaplacianBlendContextN {
   std::vector<T*> d_blend;
   std::vector<T*> d_reconstruct;
 
+  const T* mask_ptr{nullptr};
+
   bool initialized{false};
 
   // --- NEW: three device‐pointer arrays, length = N_IMAGES ---
   T** d_ptrsA{nullptr}; // downsample IN  / laplacian HIGH  / blend or recon LOW
   T** d_ptrsB{nullptr}; // downsample OUT / laplacian LOW   / blend or recon LAP
   T** d_ptrsC{nullptr}; // laplacian OUT  / (unused elsewhere)
+
+  // Host-side staging arrays for pointer lists (copied into d_ptrs*).
+  std::array<T*, N_IMAGES> h_ptrsA{};
+  std::array<T*, N_IMAGES> h_ptrsB{};
+  std::array<T*, N_IMAGES> h_ptrsC{};
 
   CudaBatchLaplacianBlendContextN(int w, int h, int levels, int batch)
       : numLevels(levels),

@@ -133,61 +133,62 @@ __global__ void BatchedComputeLaplacianKernelN(
   if (x >= highW || y >= highH)
     return;
 
-  F_T gx = static_cast<F_T>(x) / 2, gy = static_cast<F_T>(y) / 2;
-  int gxi = floorf(gx), gyi = floorf(gy);
-  int gxi1 = min(gxi + 1, lowW - 1), gyi1 = min(gyi + 1, lowH - 1);
-  F_T dx = gx - gxi, dy = gy - gyi;
+  // This upsample is always 2x (top-left aligned), so dx/dy are either 0 or 0.5.
+  const int gxi = x >> 1;
+  const int gyi = y >> 1;
+  const int gxi1 = min(gxi + 1, lowW - 1);
+  const int gyi1 = min(gyi + 1, lowH - 1);
 
-  int baseH = b * (highW * highH * CHANNELS) + (y * highW + x) * CHANNELS;
-  int base00 = b * (lowW * lowH * CHANNELS) + (gyi * lowW + gxi) * CHANNELS;
-  int base10 = b * (lowW * lowH * CHANNELS) + (gyi * lowW + gxi1) * CHANNELS;
-  int base01 = b * (lowW * lowH * CHANNELS) + (gyi1 * lowW + gxi) * CHANNELS;
-  int base11 = b * (lowW * lowH * CHANNELS) + (gyi1 * lowW + gxi1) * CHANNELS;
+  const F_T wx1 = (x & 1) ? F_T(0.5) : F_T(0);
+  const F_T wx0 = F_T(1) - wx1;
+  const F_T wy1 = (y & 1) ? F_T(0.5) : F_T(0);
+  const F_T wy0 = F_T(1) - wy1;
+
+  const F_T w00 = wx0 * wy0;
+  const F_T w10 = wx1 * wy0;
+  const F_T w01 = wx0 * wy1;
+  const F_T w11 = wx1 * wy1;
+
+  const int baseH = b * (highW * highH * CHANNELS) + (y * highW + x) * CHANNELS;
+  const int base00 = b * (lowW * lowH * CHANNELS) + (gyi * lowW + gxi) * CHANNELS;
+  const int base10 = b * (lowW * lowH * CHANNELS) + (gyi * lowW + gxi1) * CHANNELS;
+  const int base01 = b * (lowW * lowH * CHANNELS) + (gyi1 * lowW + gxi) * CHANNELS;
+  const int base11 = b * (lowW * lowH * CHANNELS) + (gyi1 * lowW + gxi1) * CHANNELS;
 
   for (int i = 0; i < N_IMAGES; ++i) {
-    const T* H = gaussHigh[i] + baseH;
-    const T* L00 = gaussLow[i] + base00;
-    const T* L10 = gaussLow[i] + base10;
-    const T* L01 = gaussLow[i] + base01;
-    const T* L11 = gaussLow[i] + base11;
+    const T* high = gaussHigh[i] + baseH;
+    const T* low = gaussLow[i];
     T* out = laplacian[i] + baseH;
 
-    for (int c = 0; c < CHANNELS; ++c) {
-      if (CHANNELS == 4 && c == 3) {
-        out[3] = H[3];
-      } else {
-        F_T v00 = static_cast<F_T>(L00[c]);
-        F_T v10 = static_cast<F_T>(L10[c]);
-        F_T v01 = static_cast<F_T>(L01[c]);
-        F_T v11 = static_cast<F_T>(L11[c]);
-        F_T up;
-        if constexpr (CHANNELS == 4) {
-          F_T w00 = (1 - dx) * (1 - dy), w10 = dx * (1 - dy);
-          F_T w01 = (1 - dx) * dy, w11 = dx * dy;
-          F_T sW = 0, sV = 0;
-          if (L00[3] != T(0)) {
-            sW += w00;
-            sV += v00 * w00;
-          }
-          if (L10[3] != T(0)) {
-            sW += w10;
-            sV += v10 * w10;
-          }
-          if (L01[3] != T(0)) {
-            sW += w01;
-            sV += v01 * w01;
-          }
-          if (L11[3] != T(0)) {
-            sW += w11;
-            sV += v11 * w11;
-          }
-          up = (sW > 0 ? sV / sW : F_T(0));
-        } else {
-          F_T v0 = v00 * (1 - dx) + v10 * dx;
-          F_T v1 = v01 * (1 - dx) + v11 * dx;
-          up = v0 * (1 - dy) + v1 * dy;
-        }
-        out[c] = static_cast<T>(static_cast<F_T>(H[c]) - up);
+    if constexpr (CHANNELS == 4) {
+      const bool v00 = static_cast<F_T>(low[base00 + 3]) != F_T(0);
+      const bool v10 = static_cast<F_T>(low[base10 + 3]) != F_T(0);
+      const bool v01 = static_cast<F_T>(low[base01 + 3]) != F_T(0);
+      const bool v11 = static_cast<F_T>(low[base11 + 3]) != F_T(0);
+
+      const F_T w00v = v00 ? w00 : F_T(0);
+      const F_T w10v = v10 ? w10 : F_T(0);
+      const F_T w01v = v01 ? w01 : F_T(0);
+      const F_T w11v = v11 ? w11 : F_T(0);
+
+      const F_T sumW = w00v + w10v + w01v + w11v;
+      const F_T invW = (sumW > F_T(0)) ? (F_T(1) / sumW) : F_T(0);
+
+#pragma unroll
+      for (int c = 0; c < 3; ++c) {
+        const F_T sumV = static_cast<F_T>(low[base00 + c]) * w00v + static_cast<F_T>(low[base10 + c]) * w10v +
+            static_cast<F_T>(low[base01 + c]) * w01v + static_cast<F_T>(low[base11 + c]) * w11v;
+        const F_T up = sumV * invW;
+        out[c] = static_cast<T>(static_cast<F_T>(high[c]) - up);
+      }
+
+      out[3] = high[3];
+    } else {
+#pragma unroll
+      for (int c = 0; c < CHANNELS; ++c) {
+        const F_T up = static_cast<F_T>(low[base00 + c]) * w00 + static_cast<F_T>(low[base10 + c]) * w10 +
+            static_cast<F_T>(low[base01 + c]) * w01 + static_cast<F_T>(low[base11 + c]) * w11;
+        out[c] = static_cast<T>(static_cast<F_T>(high[c]) - up);
       }
     }
   }
@@ -223,11 +224,69 @@ __global__ void BatchedBlendKernelN(
       w[i] /= sumW;
 
   int base = b * (width * height * CHANNELS) + pix * CHANNELS;
-  for (int c = 0; c < CHANNELS; ++c) {
-    if (CHANNELS == 4 && c == 3) {
-      out[base + 3] = static_cast<T>(255);
-    } else {
+  if constexpr (CHANNELS == 4) {
+    F_T alpha[N_IMAGES];
+#pragma unroll
+    for (int i = 0; i < N_IMAGES; ++i) {
+      const T* L = laplacians[i] + base;
+      alpha[i] = static_cast<F_T>(L[3]);
+      if (alpha[i] == F_T(0)) {
+        w[i] = F_T(0);
+      }
+    }
+
+    F_T sumW2 = 0;
+#pragma unroll
+    for (int i = 0; i < N_IMAGES; ++i) {
+      sumW2 += w[i];
+    }
+    if (sumW2 > F_T(0)) {
+      const F_T inv = F_T(1) / sumW2;
+#pragma unroll
+      for (int i = 0; i < N_IMAGES; ++i) {
+        w[i] *= inv;
+      }
+    } else if (sumW > F_T(0)) {
+      // Mask selected only transparent pixels; fall back to the highest-alpha contributor.
+      int best = -1;
+      F_T best_alpha = F_T(0);
+#pragma unroll
+      for (int i = 0; i < N_IMAGES; ++i) {
+        if (alpha[i] > best_alpha) {
+          best_alpha = alpha[i];
+          best = i;
+        }
+      }
+      if (best >= 0 && best_alpha > F_T(0)) {
+#pragma unroll
+        for (int i = 0; i < N_IMAGES; ++i) {
+          w[i] = (i == best) ? F_T(1) : F_T(0);
+        }
+      }
+    }
+
+#pragma unroll
+    for (int c = 0; c < 3; ++c) {
       F_T acc = 0;
+#pragma unroll
+      for (int i = 0; i < N_IMAGES; ++i) {
+        const T* L = laplacians[i] + base;
+        acc += w[i] * static_cast<F_T>(L[c]);
+      }
+      out[base + c] = static_cast<T>(acc);
+    }
+
+    F_T accA = 0;
+#pragma unroll
+    for (int i = 0; i < N_IMAGES; ++i) {
+      accA += w[i] * alpha[i];
+    }
+    out[base + 3] = static_cast<T>(accA);
+  } else {
+#pragma unroll
+    for (int c = 0; c < CHANNELS; ++c) {
+      F_T acc = 0;
+#pragma unroll
       for (int i = 0; i < N_IMAGES; ++i) {
         const T* L = laplacians[i] + base;
         acc += w[i] * static_cast<F_T>(L[c]);
@@ -238,17 +297,17 @@ __global__ void BatchedBlendKernelN(
 }
 
 // -----------------------------------------------------------------------------
-// 5) Reconstruction: upsample low + add Laplacian for N_IMAGES inputs
+// 5) Reconstruction: upsample low + add Laplacian for the blended pyramid
 // -----------------------------------------------------------------------------
-template <typename T, typename F_T, int N_IMAGES, int CHANNELS>
-__global__ void BatchedReconstructKernelN(
-    const T* const* lowerRes,
+template <typename T, typename F_T, int CHANNELS>
+__global__ void BatchedReconstructKernelBlended(
+    const T* __restrict__ lowerRes,
     int lowW,
     int lowH,
-    T* const* laplacians,
+    const T* __restrict__ lap,
     int highW,
     int highH,
-    T* out,
+    T* __restrict__ out,
     int batchSize) {
   int b = blockIdx.z;
   if (b >= batchSize)
@@ -259,59 +318,59 @@ __global__ void BatchedReconstructKernelN(
   if (x >= highW || y >= highH)
     return;
 
-  // Map to lower-res coordinates (no center alignment)
-  F_T gx = static_cast<F_T>(x) / 2;
-  F_T gy = static_cast<F_T>(y) / 2;
-  int gxi = max(0, min(static_cast<int>(floorf(gx)), lowW - 1));
-  int gyi = max(0, min(static_cast<int>(floorf(gy)), lowH - 1));
-  int gxi1 = min(gxi + 1, lowW - 1);
-  int gyi1 = min(gyi + 1, lowH - 1);
-  F_T dx = gx - static_cast<F_T>(gxi);
-  F_T dy = gy - static_cast<F_T>(gyi);
+  // This upsample is always 2x (top-left aligned), so dx/dy are either 0 or 0.5.
+  const int gxi = x >> 1;
+  const int gyi = y >> 1;
+  const int gxi1 = min(gxi + 1, lowW - 1);
+  const int gyi1 = min(gyi + 1, lowH - 1);
 
   // Output pixel location
-  int baseH = b * (highW * highH * CHANNELS) + (y * highW + x) * CHANNELS;
+  const int baseH = b * (highW * highH * CHANNELS) + (y * highW + x) * CHANNELS;
 
   // Lower-res 2x2 base offsets
-  int base00 = b * (lowW * lowH * CHANNELS) + (gyi * lowW + gxi) * CHANNELS;
-  int base10 = b * (lowW * lowH * CHANNELS) + (gyi * lowW + gxi1) * CHANNELS;
-  int base01 = b * (lowW * lowH * CHANNELS) + (gyi1 * lowW + gxi) * CHANNELS;
-  int base11 = b * (lowW * lowH * CHANNELS) + (gyi1 * lowW + gxi1) * CHANNELS;
+  const int base00 = b * (lowW * lowH * CHANNELS) + (gyi * lowW + gxi) * CHANNELS;
+  const int base10 = b * (lowW * lowH * CHANNELS) + (gyi * lowW + gxi1) * CHANNELS;
+  const int base01 = b * (lowW * lowH * CHANNELS) + (gyi1 * lowW + gxi) * CHANNELS;
+  const int base11 = b * (lowW * lowH * CHANNELS) + (gyi1 * lowW + gxi1) * CHANNELS;
 
-  // Loop over N_IMAGES
-  for (int i = 0; i < N_IMAGES; ++i) {
-    const T* L00 = lowerRes[i] + base00;
-    const T* L10 = lowerRes[i] + base10;
-    const T* L01 = lowerRes[i] + base01;
-    const T* L11 = lowerRes[i] + base11;
-    const T* lap = laplacians[i] + baseH;
-    T* outPtr = out + baseH;
+  const F_T wx1 = (x & 1) ? F_T(0.5) : F_T(0);
+  const F_T wx0 = F_T(1) - wx1;
+  const F_T wy1 = (y & 1) ? F_T(0.5) : F_T(0);
+  const F_T wy0 = F_T(1) - wy1;
 
+  const F_T w00 = wx0 * wy0;
+  const F_T w10 = wx1 * wy0;
+  const F_T w01 = wx0 * wy1;
+  const F_T w11 = wx1 * wy1;
+
+  if constexpr (CHANNELS == 4) {
+    const bool v00 = static_cast<F_T>(lowerRes[base00 + 3]) != F_T(0);
+    const bool v10 = static_cast<F_T>(lowerRes[base10 + 3]) != F_T(0);
+    const bool v01 = static_cast<F_T>(lowerRes[base01 + 3]) != F_T(0);
+    const bool v11 = static_cast<F_T>(lowerRes[base11 + 3]) != F_T(0);
+
+    const F_T w00v = v00 ? w00 : F_T(0);
+    const F_T w10v = v10 ? w10 : F_T(0);
+    const F_T w01v = v01 ? w01 : F_T(0);
+    const F_T w11v = v11 ? w11 : F_T(0);
+
+    const F_T sumW = w00v + w10v + w01v + w11v;
+    const F_T invW = (sumW > F_T(0)) ? (F_T(1) / sumW) : F_T(0);
+
+#pragma unroll
+    for (int c = 0; c < 3; ++c) {
+      const F_T sumV = static_cast<F_T>(lowerRes[base00 + c]) * w00v + static_cast<F_T>(lowerRes[base10 + c]) * w10v +
+          static_cast<F_T>(lowerRes[base01 + c]) * w01v + static_cast<F_T>(lowerRes[base11 + c]) * w11v;
+      const F_T upVal = sumV * invW;
+      out[baseH + c] = static_cast<T>(upVal + static_cast<F_T>(lap[baseH + c]));
+    }
+    out[baseH + 3] = lap[baseH + 3];
+  } else {
+#pragma unroll
     for (int c = 0; c < CHANNELS; ++c) {
-      if (CHANNELS == 4 && c == 3) {
-        // Copy alpha directly
-        outPtr[3] = lap[3];
-        continue;
-      }
-
-      F_T sum = 0;
-      F_T weightSum = 0;
-
-      auto try_add = [&](const T* px, F_T wx, F_T wy) {
-        F_T w = wx * wy;
-        if (CHANNELS == 4 && static_cast<F_T>(px[3]) == F_T(0))
-          return;
-        sum += static_cast<F_T>(px[c]) * w;
-        weightSum += w;
-      };
-
-      try_add(L00, F_T(1) - dx, F_T(1) - dy);
-      try_add(L10, dx, F_T(1) - dy);
-      try_add(L01, F_T(1) - dx, dy);
-      try_add(L11, dx, dy);
-
-      F_T interp = (weightSum > F_T(0)) ? (sum / weightSum) : F_T(0);
-      outPtr[c] = static_cast<T>(interp + static_cast<F_T>(lap[c]));
+      const F_T upVal = static_cast<F_T>(lowerRes[base00 + c]) * w00 + static_cast<F_T>(lowerRes[base10 + c]) * w10 +
+          static_cast<F_T>(lowerRes[base01 + c]) * w01 + static_cast<F_T>(lowerRes[base11 + c]) * w11;
+      out[baseH + c] = static_cast<T>(upVal + static_cast<F_T>(lap[baseH + c]));
     }
   }
 }
@@ -465,8 +524,9 @@ cudaError_t cudaBatchedLaplacianBlendN(
     dim3 gridBlend((w + 15) / 16, (h + 15) / 16, batchSize);
 
     std::vector<const T*> h_lap(N_IMAGES);
-    for (int i = 0; i < N_IMAGES; ++i)
-      h_lap[i] = d_lap[i][lvl];
+    for (int i = 0; i < N_IMAGES; ++i) {
+      h_lap[i] = (lvl + 1 == numLevels) ? d_gauss[i][lvl] : d_lap[i][lvl];
+    }
     const T** d_lapArr;
     CUDA_CHECK(cudaMalloc(&d_lapArr, N_IMAGES * sizeof(T*)));
     CUDA_CHECK(cudaMemcpyAsync(d_lapArr, h_lap.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
@@ -482,30 +542,16 @@ cudaError_t cudaBatchedLaplacianBlendN(
     int wH = widths[lvl], hH = heights[lvl];
     int wL = widths[lvl + 1], hL = heights[lvl + 1];
     dim3 gridRecon((wH + 15) / 16, (hH + 15) / 16, batchSize);
-
-    std::vector<const T*> h_low(N_IMAGES), h_lap(N_IMAGES);
-    for (int i = 0; i < N_IMAGES; ++i) {
-      h_low[i] = (lvl + 1 == numLevels - 1 ? d_blend[lvl + 1] : d_reconstruct[lvl + 1]);
-      h_lap[i] = d_blend[lvl];
-    }
-    const T** d_lowArr;
-    T** d_lapArr;
-    CUDA_CHECK(cudaMalloc(&d_lowArr, N_IMAGES * sizeof(T*)));
-    CUDA_CHECK(cudaMalloc(&d_lapArr, N_IMAGES * sizeof(T*)));
-    CUDA_CHECK(cudaMemcpyAsync(d_lowArr, h_low.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
-    CUDA_CHECK(cudaMemcpyAsync(d_lapArr, h_lap.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
-
-    BatchedReconstructKernelN<T, F_T, N_IMAGES, CHANNELS><<<gridRecon, blk, 0, stream>>>(
-        d_lowArr, wL, hL, d_lapArr, wH, hH, (lvl == 0 ? h_output : d_reconstruct[lvl]), batchSize);
+    const T* d_low = (lvl + 1 == numLevels - 1) ? d_blend[lvl + 1] : d_reconstruct[lvl + 1];
+    BatchedReconstructKernelBlended<T, F_T, CHANNELS>
+        <<<gridRecon, blk, 0, stream>>>(d_low, wL, hL, d_blend[lvl], wH, hH, d_reconstruct[lvl], batchSize);
     CUDA_CHECK(cudaGetLastError());
-
-    cudaFree(d_lowArr);
-    cudaFree(d_lapArr);
   }
 
   // 11) Copy top-level to host if not already (it is h_output if lvl==0)
   size_t topBytes = size_t(imageWidth) * imageHeight * CHANNELS * batchSize * sizeof(T);
-  CUDA_CHECK(cudaMemcpyAsync(h_output, h_output /* device ptr */, topBytes, cudaMemcpyDeviceToHost, stream));
+  CUDA_CHECK(cudaMemcpyAsync(
+      h_output, (numLevels == 1) ? d_blend[0] : d_reconstruct[0], topBytes, cudaMemcpyDeviceToHost, stream));
 
   // 12) Free all device memory
   for (int lvl = 0; lvl < numLevels; ++lvl) {
@@ -550,6 +596,45 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
     heights[lvl] = (heights[lvl - 1] + 1) / 2;
   }
 
+  // Level-0 (full-res) pointers are owned externally by the caller.
+  for (int i = 0; i < N_IMAGES; ++i) {
+    context.d_gauss[i][0] = const_cast<T*>(d_imagePtrs[i]);
+  }
+  context.d_maskPyr[0] = const_cast<T*>(d_mask);
+
+  if (!context.initialized) {
+    // Allocate Gaussian + mask pyramids for levels > 0.
+    for (int lvl = 1; lvl < maxLevels; ++lvl) {
+      const size_t imgBytes = size_t(widths[lvl]) * heights[lvl] * CHANNELS * batchSize * sizeof(T);
+      const size_t maskBytes = size_t(widths[lvl]) * heights[lvl] * N_IMAGES * sizeof(T);
+      for (int i = 0; i < N_IMAGES; ++i) {
+        CUDA_CHECK(cudaMalloc(&context.d_gauss[i][lvl], imgBytes));
+      }
+      CUDA_CHECK(cudaMalloc(&context.d_maskPyr[lvl], maskBytes));
+    }
+
+    // Allocate laplacians (all but coarsest), blend (all levels), and reconstruct (all but coarsest, lvl>0).
+    for (int lvl = 0; lvl < maxLevels; ++lvl) {
+      const size_t imgBytes = size_t(widths[lvl]) * heights[lvl] * CHANNELS * batchSize * sizeof(T);
+      CUDA_CHECK(cudaMalloc(&context.d_blend[lvl], imgBytes));
+      if (lvl < maxLevels - 1) {
+        for (int i = 0; i < N_IMAGES; ++i) {
+          CUDA_CHECK(cudaMalloc(&context.d_lap[i][lvl], imgBytes));
+        }
+        if (lvl > 0) {
+          CUDA_CHECK(cudaMalloc(&context.d_reconstruct[lvl], imgBytes));
+        }
+      }
+    }
+
+    context.initialized = true;
+  }
+
+  const bool rebuild_mask_pyramid = (context.mask_ptr != d_mask);
+  if (rebuild_mask_pyramid) {
+    context.mask_ptr = d_mask;
+  }
+
   dim3 block(16, 16);
 
   // 3) Build Gaussian pyramids
@@ -558,29 +643,27 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
     int outW = widths[lvl + 1], outH = heights[lvl + 1];
     dim3 gridImg((outW + 15) / 16, (outH + 15) / 16, batchSize);
 
-    // fill d_ptrsA with pointers to level‐lvl images
-    for (int i = 0; i < N_IMAGES; ++i)
-      context.d_ptrsA[i] = context.d_gauss[i][lvl];
-    // fill d_ptrsB with pointers to level‐(lvl+1) images
-    for (int i = 0; i < N_IMAGES; ++i)
-      context.d_ptrsB[i] = context.d_gauss[i][lvl + 1];
+    for (int i = 0; i < N_IMAGES; ++i) {
+      context.h_ptrsA[i] = context.d_gauss[i][lvl];
+      context.h_ptrsB[i] = context.d_gauss[i][lvl + 1];
+    }
 
-    // copy to device once
-    CUDA_CHECK(
-        cudaMemcpyAsync(context.d_ptrsA, context.d_ptrsA, N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
-    CUDA_CHECK(
-        cudaMemcpyAsync(context.d_ptrsB, context.d_ptrsB, N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
+    CUDA_CHECK(cudaMemcpyAsync(
+        context.d_ptrsA, context.h_ptrsA.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
+    CUDA_CHECK(cudaMemcpyAsync(
+        context.d_ptrsB, context.h_ptrsB.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
 
     // call downsample
     FusedBatchedDownsampleKernelN<T, F_T, N_IMAGES, CHANNELS>
         <<<gridImg, block, 0, stream>>>(context.d_ptrsA, inW, inH, context.d_ptrsB, outW, outH, batchSize);
     CUDA_CHECK(cudaGetLastError());
 
-    // downsample mask
-    dim3 gridMask((outW + 15) / 16, (outH + 15) / 16);
-    FusedBatchedDownsampleMaskN<T, N_IMAGES>
-        <<<gridMask, block, 0, stream>>>(context.d_maskPyr[lvl], inW, inH, context.d_maskPyr[lvl + 1], outW, outH);
-    CUDA_CHECK(cudaGetLastError());
+    if (rebuild_mask_pyramid) {
+      dim3 gridMask((outW + 15) / 16, (outH + 15) / 16);
+      FusedBatchedDownsampleMaskN<T, N_IMAGES>
+          <<<gridMask, block, 0, stream>>>(context.d_maskPyr[lvl], inW, inH, context.d_maskPyr[lvl + 1], outW, outH);
+      CUDA_CHECK(cudaGetLastError());
+    }
   }
 
   // 4) Compute Laplacian pyramids
@@ -589,20 +672,17 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
     int wL = widths[lvl + 1], hL = heights[lvl + 1];
     dim3 gridLap((wH + 15) / 16, (hH + 15) / 16, batchSize);
 
-    // ptrsA = high‐res
-    // ptrsB = low‐res
-    // ptrsC = output lap
     for (int i = 0; i < N_IMAGES; ++i) {
-      context.d_ptrsA[i] = context.d_gauss[i][lvl];
-      context.d_ptrsB[i] = context.d_gauss[i][lvl + 1];
-      context.d_ptrsC[i] = context.d_lap[i][lvl];
+      context.h_ptrsA[i] = context.d_gauss[i][lvl];
+      context.h_ptrsB[i] = context.d_gauss[i][lvl + 1];
+      context.h_ptrsC[i] = context.d_lap[i][lvl];
     }
-    CUDA_CHECK(
-        cudaMemcpyAsync(context.d_ptrsA, context.d_ptrsA, N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
-    CUDA_CHECK(
-        cudaMemcpyAsync(context.d_ptrsB, context.d_ptrsB, N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
-    CUDA_CHECK(
-        cudaMemcpyAsync(context.d_ptrsC, context.d_ptrsC, N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
+    CUDA_CHECK(cudaMemcpyAsync(
+        context.d_ptrsA, context.h_ptrsA.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
+    CUDA_CHECK(cudaMemcpyAsync(
+        context.d_ptrsB, context.h_ptrsB.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
+    CUDA_CHECK(cudaMemcpyAsync(
+        context.d_ptrsC, context.h_ptrsC.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
 
     BatchedComputeLaplacianKernelN<T, F_T, N_IMAGES, CHANNELS>
         <<<gridLap, block, 0, stream>>>(context.d_ptrsA, wH, hH, context.d_ptrsB, wL, hL, context.d_ptrsC, batchSize);
@@ -614,15 +694,21 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
     int w = widths[lvl], h = heights[lvl];
     dim3 gridBlend((w + 15) / 16, (h + 15) / 16, batchSize);
 
-    // ptrsA = lap pointers
-    for (int i = 0; i < N_IMAGES; ++i)
-      context.d_ptrsA[i] = context.d_lap[i][lvl];
-    CUDA_CHECK(
-        cudaMemcpyAsync(context.d_ptrsA, context.d_ptrsA, N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
+    for (int i = 0; i < N_IMAGES; ++i) {
+      context.h_ptrsA[i] = (lvl + 1 == maxLevels) ? context.d_gauss[i][lvl] : context.d_lap[i][lvl];
+    }
+    CUDA_CHECK(cudaMemcpyAsync(
+        context.d_ptrsA, context.h_ptrsA.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
 
     BatchedBlendKernelN<T, F_T, N_IMAGES, CHANNELS><<<gridBlend, block, 0, stream>>>(
         context.d_ptrsA, context.d_maskPyr[lvl], context.d_blend[lvl], w, h, batchSize);
     CUDA_CHECK(cudaGetLastError());
+  }
+
+  if (maxLevels == 1) {
+    const size_t imgBytes = size_t(widths[0]) * heights[0] * CHANNELS * batchSize * sizeof(T);
+    CUDA_CHECK(cudaMemcpyAsync(d_output, context.d_blend[0], imgBytes, cudaMemcpyDeviceToDevice, stream));
+    return cudaSuccess;
   }
 
   // 6) Reconstruct bottom-up
@@ -631,26 +717,11 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
     int wL = widths[lvl + 1], hL = heights[lvl + 1];
     dim3 gridRecon((wH + 15) / 16, (hH + 15) / 16, batchSize);
 
-    // ptrsA = low‐res input
-    // ptrsB = lap pointers
-    for (int i = 0; i < N_IMAGES; ++i) {
-      context.d_ptrsA[i] = (lvl + 1 == maxLevels - 1) ? context.d_blend[lvl + 1] : context.d_reconstruct[lvl + 1];
-      context.d_ptrsB[i] = context.d_blend[lvl];
-    }
-    CUDA_CHECK(
-        cudaMemcpyAsync(context.d_ptrsA, context.d_ptrsA, N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
-    CUDA_CHECK(
-        cudaMemcpyAsync(context.d_ptrsB, context.d_ptrsB, N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
+    const T* d_low = (lvl + 1 == maxLevels - 1) ? context.d_blend[lvl + 1] : context.d_reconstruct[lvl + 1];
+    T* d_out = (lvl == 0) ? d_output : context.d_reconstruct[lvl];
 
-    BatchedReconstructKernelN<T, F_T, N_IMAGES, CHANNELS><<<gridRecon, block, 0, stream>>>(
-        context.d_ptrsA,
-        wL,
-        hL,
-        context.d_ptrsB,
-        wH,
-        hH,
-        (lvl == 0 ? d_output : context.d_reconstruct[lvl]),
-        batchSize);
+    BatchedReconstructKernelBlended<T, F_T, CHANNELS>
+        <<<gridRecon, block, 0, stream>>>(d_low, wL, hL, context.d_blend[lvl], wH, hH, d_out, batchSize);
     CUDA_CHECK(cudaGetLastError());
   }
 

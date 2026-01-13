@@ -288,78 +288,57 @@ __global__ void BatchedComputeLaplacianKernel(
   const T* lowImage = gaussLow + b * lowImageSize;
   T* lapImage = laplacian + b * highImageSize;
 
-  // map (x,y) in high-res to fractional coord in low-res
-  F_T gx = static_cast<F_T>(x) / 2.0f;
-  F_T gy = static_cast<F_T>(y) / 2.0f;
-  int gxi = floorf(gx);
-  int gyi = floorf(gy);
-  F_T dx = gx - static_cast<F_T>(gxi);
-  F_T dy = gy - static_cast<F_T>(gyi);
-  int gxi1 = min(gxi + 1, lowWidth - 1);
-  int gyi1 = min(gyi + 1, lowHeight - 1);
+  // This upsample is always 2x (top-left aligned), so dx/dy are either 0 or 0.5.
+  const int gxi = x >> 1;
+  const int gyi = y >> 1;
+  const int gxi1 = min(gxi + 1, lowWidth - 1);
+  const int gyi1 = min(gyi + 1, lowHeight - 1);
 
   int idxHigh = (y * highWidth + x) * CHANNELS;
 
+  const F_T wx1 = (x & 1) ? F_T(0.5) : F_T(0);
+  const F_T wx0 = F_T(1) - wx1;
+  const F_T wy1 = (y & 1) ? F_T(0.5) : F_T(0);
+  const F_T wy0 = F_T(1) - wy1;
+
+  const F_T w00 = wx0 * wy0;
+  const F_T w10 = wx1 * wy0;
+  const F_T w01 = wx0 * wy1;
+  const F_T w11 = wx1 * wy1;
+
+  const int base00 = (gyi * lowWidth + gxi) * CHANNELS;
+  const int base10 = (gyi * lowWidth + gxi1) * CHANNELS;
+  const int base01 = (gyi1 * lowWidth + gxi) * CHANNELS;
+  const int base11 = (gyi1 * lowWidth + gxi1) * CHANNELS;
+
+  if constexpr (CHANNELS == 4) {
+    const bool v00 = static_cast<F_T>(lowImage[base00 + 3]) != F_T(0);
+    const bool v10 = static_cast<F_T>(lowImage[base10 + 3]) != F_T(0);
+    const bool v01 = static_cast<F_T>(lowImage[base01 + 3]) != F_T(0);
+    const bool v11 = static_cast<F_T>(lowImage[base11 + 3]) != F_T(0);
+
+    const F_T w00v = v00 ? w00 : F_T(0);
+    const F_T w10v = v10 ? w10 : F_T(0);
+    const F_T w01v = v01 ? w01 : F_T(0);
+    const F_T w11v = v11 ? w11 : F_T(0);
+
+    const F_T sumW = w00v + w10v + w01v + w11v;
+    const F_T invW = (sumW > F_T(0)) ? (F_T(1) / sumW) : F_T(0);
+
 #pragma unroll
-  for (int c = 0; c < CHANNELS; ++c) {
-    if (CHANNELS == 4 && c == 3) {
-      // alpha channel: just copy high-res alpha
-      lapImage[idxHigh + c] = highImage[idxHigh + c];
-    } else {
-      // gather neighbor indices
-      int base00 = (gyi * lowWidth + gxi) * CHANNELS;
-      int base10 = (gyi * lowWidth + gxi1) * CHANNELS;
-      int base01 = (gyi1 * lowWidth + gxi) * CHANNELS;
-      int base11 = (gyi1 * lowWidth + gxi1) * CHANNELS;
-      int idx00 = base00 + c;
-      int idx10 = base10 + c;
-      int idx01 = base01 + c;
-      int idx11 = base11 + c;
+    for (int c = 0; c < 3; ++c) {
+      const F_T sumV = static_cast<F_T>(lowImage[base00 + c]) * w00v + static_cast<F_T>(lowImage[base10 + c]) * w10v +
+          static_cast<F_T>(lowImage[base01 + c]) * w01v + static_cast<F_T>(lowImage[base11 + c]) * w11v;
+      const F_T upVal = sumV * invW;
+      lapImage[idxHigh + c] = static_cast<T>(static_cast<F_T>(highImage[idxHigh + c]) - upVal);
+    }
 
-      // sample values
-      F_T v00 = static_cast<F_T>(lowImage[idx00]);
-      F_T v10 = static_cast<F_T>(lowImage[idx10]);
-      F_T v01 = static_cast<F_T>(lowImage[idx01]);
-      F_T v11 = static_cast<F_T>(lowImage[idx11]);
-
-      F_T upVal;
-      if constexpr (CHANNELS == 4) {
-        // compute bilinear weights
-        F_T w00 = (1 - dx) * (1 - dy);
-        F_T w10 = dx * (1 - dy);
-        F_T w01 = (1 - dx) * dy;
-        F_T w11 = dx * dy;
-
-        // accumulate only non-transparent neighbors
-        F_T sumW = 0, sumV = 0;
-        // alpha offsets
-        int aOff = 3;
-        if (lowImage[base00 + aOff] != T(0)) {
-          sumW += w00;
-          sumV += v00 * w00;
-        }
-        if (lowImage[base10 + aOff] != T(0)) {
-          sumW += w10;
-          sumV += v10 * w10;
-        }
-        if (lowImage[base01 + aOff] != T(0)) {
-          sumW += w01;
-          sumV += v01 * w01;
-        }
-        if (lowImage[base11 + aOff] != T(0)) {
-          sumW += w11;
-          sumV += v11 * w11;
-        }
-
-        upVal = (sumW > 0) ? (sumV / sumW) : F_T(0);
-      } else {
-        // standard bilinear
-        F_T v0 = v00 * (1 - dx) + v10 * dx;
-        F_T v1 = v01 * (1 - dx) + v11 * dx;
-        upVal = v0 * (1 - dy) + v1 * dy;
-      }
-
-      // laplacian = high-res - upsampled
+    lapImage[idxHigh + 3] = highImage[idxHigh + 3];
+  } else {
+#pragma unroll
+    for (int c = 0; c < CHANNELS; ++c) {
+      const F_T upVal = static_cast<F_T>(lowImage[base00 + c]) * w00 + static_cast<F_T>(lowImage[base10 + c]) * w10 +
+          static_cast<F_T>(lowImage[base01 + c]) * w01 + static_cast<F_T>(lowImage[base11 + c]) * w11;
       lapImage[idxHigh + c] = static_cast<T>(static_cast<F_T>(highImage[idxHigh + c]) - upVal);
     }
   }
@@ -405,19 +384,25 @@ __global__ void BatchedBlendKernel3(
   // Compute flat index into each image’s pixel (all channels)
   int idx = (y * width + x) * channels;
 
+  F_T alpha1 = F_T(0);
+  F_T alpha2 = F_T(0);
+  F_T alpha3 = F_T(0);
+
   // If we have 4‐channel input, check each lap‐image’s alpha‐channel (c==3).
   // If that alpha is zero, we zero out its mask‐weight. Then renormalize.
   if (channels == 4) {
-    // Read each lap‐image’s alpha at this pixel
-    T alpha1 = lap1Image[idx + 3];
-    T alpha2 = lap2Image[idx + 3];
-    T alpha3 = lap3Image[idx + 3];
+    const F_T mask_sum = m1 + m2 + m3;
 
-    if (alpha1 == static_cast<T>(0))
+    // Read each lap‐image’s alpha at this pixel
+    alpha1 = static_cast<F_T>(lap1Image[idx + 3]);
+    alpha2 = static_cast<F_T>(lap2Image[idx + 3]);
+    alpha3 = static_cast<F_T>(lap3Image[idx + 3]);
+
+    if (alpha1 == F_T(0))
       m1 = static_cast<F_T>(0);
-    if (alpha2 == static_cast<T>(0))
+    if (alpha2 == F_T(0))
       m2 = static_cast<F_T>(0);
-    if (alpha3 == static_cast<T>(0))
+    if (alpha3 == F_T(0))
       m3 = static_cast<F_T>(0);
     assert(m1 >= 0 && m1 <= 1);
     assert(m2 >= 0 && m2 <= 1);
@@ -428,6 +413,24 @@ __global__ void BatchedBlendKernel3(
       m1 /= sum;
       m2 /= sum;
       m3 /= sum;
+    } else if (mask_sum > F_T(0)) {
+      // Mask selected only transparent pixels; fall back to the highest-alpha contributor.
+      const F_T max_alpha = max(alpha1, max(alpha2, alpha3));
+      if (max_alpha > F_T(0)) {
+        if (alpha1 == max_alpha) {
+          m1 = F_T(1);
+          m2 = F_T(0);
+          m3 = F_T(0);
+        } else if (alpha2 == max_alpha) {
+          m1 = F_T(0);
+          m2 = F_T(1);
+          m3 = F_T(0);
+        } else {
+          m1 = F_T(0);
+          m2 = F_T(0);
+          m3 = F_T(1);
+        }
+      }
     }
     // If sum == 0, all three were skipped; leave m1=m2=m3=0 → contribution is zero.
     // printf("d=%p, x=%d, y=%d, b=%d, m1=%f, m2=%f, m3=%f\n", blended, (int)x, (int)y, (int)b, (float)m1, (float)m2,
@@ -447,7 +450,7 @@ __global__ void BatchedBlendKernel3(
     // }
   }
 
-  // We only blend up to min(4,channels). In practice, for channels==4: blend_channels=4.
+  // Blend only RGB here; alpha is handled separately below when channels==4.
   const int blend_channels = min(3, channels);
 
   // Perform weighted sum over (up to) 4 channels; color channels (0..2) use m1/m2/m3.
@@ -483,9 +486,9 @@ __global__ void BatchedBlendKernel3(
     // blendImage[idx + c] = 128;
   }
 
-  // Finally, if we are in 4‐channel mode, force the output alpha to 255:
+  // For RGBA, blend alpha with the same renormalized weights.
   if (channels == 4) {
-    blendImage[idx + 3] = static_cast<T>(255);
+    blendImage[idx + 3] = static_cast<T>(m1 * alpha1 + m2 * alpha2 + m3 * alpha3);
   }
 }
 
@@ -522,66 +525,67 @@ __global__ void BatchedReconstructKernel(
   const T* lapImage = lap + b * highImageSize;
   T* reconImage = reconstruction + b * highImageSize;
 
-  const F_T F_ONE = static_cast<F_T>(1.0);
-
-  // No center alignment — pure top-left pixel mapping
-  F_T gx = static_cast<F_T>(x) / 2.0f;
-  F_T gy = static_cast<F_T>(y) / 2.0f;
-
-  int gxi = max(0, min(static_cast<int>(floorf(gx)), lowWidth - 1));
-  int gyi = max(0, min(static_cast<int>(floorf(gy)), lowHeight - 1));
-  int gxi1 = min(gxi + 1, lowWidth - 1);
-  int gyi1 = min(gyi + 1, lowHeight - 1);
-
-  F_T dx = gx - static_cast<F_T>(gxi);
-  F_T dy = gy - static_cast<F_T>(gyi);
-
   int idxOut = (y * highWidth + x) * channels;
 
-  for (int c = 0; c < channels; ++c) {
-    if (channels == 4 && c == 3) {
-      // Copy alpha channel from Laplacian image
-      F_T alpha = static_cast<F_T>(lapImage[idxOut + c]);
+  // This upsample is always 2x (top-left aligned), so dx/dy are either 0 or 0.5.
+  const int gxi = x >> 1;
+  const int gyi = y >> 1;
+  const int gxi1 = min(gxi + 1, lowWidth - 1);
+  const int gyi1 = min(gyi + 1, lowHeight - 1);
 
-#ifdef PRINT_STRANGE_ALPHAS
-      if (alpha != F_T(0) && alpha != F_T(255)) {
-        printf("BatchedReconstructKernel(): Strange alpha %f\n", static_cast<float>(alpha));
-      }
-#endif
+  const F_T wx1 = (x & 1) ? F_T(0.5) : F_T(0);
+  const F_T wx0 = F_T(1) - wx1;
+  const F_T wy1 = (y & 1) ? F_T(0.5) : F_T(0);
+  const F_T wy0 = F_T(1) - wy1;
 
-      reconImage[idxOut + c] = static_cast<T>(alpha);
-      continue;
+  const F_T w00 = wx0 * wy0;
+  const F_T w10 = wx1 * wy0;
+  const F_T w01 = wx0 * wy1;
+  const F_T w11 = wx1 * wy1;
+
+  const int base00 = (gyi * lowWidth + gxi) * channels;
+  const int base10 = (gyi * lowWidth + gxi1) * channels;
+  const int base01 = (gyi1 * lowWidth + gxi) * channels;
+  const int base11 = (gyi1 * lowWidth + gxi1) * channels;
+
+  if (channels == 4) {
+    const bool v00 = static_cast<F_T>(lowImage[base00 + 3]) != F_T(0);
+    const bool v10 = static_cast<F_T>(lowImage[base10 + 3]) != F_T(0);
+    const bool v01 = static_cast<F_T>(lowImage[base01 + 3]) != F_T(0);
+    const bool v11 = static_cast<F_T>(lowImage[base11 + 3]) != F_T(0);
+
+    const F_T w00v = v00 ? w00 : F_T(0);
+    const F_T w10v = v10 ? w10 : F_T(0);
+    const F_T w01v = v01 ? w01 : F_T(0);
+    const F_T w11v = v11 ? w11 : F_T(0);
+
+    const F_T sumW = w00v + w10v + w01v + w11v;
+    const F_T invW = (sumW > F_T(0)) ? (F_T(1) / sumW) : F_T(0);
+
+#pragma unroll
+    for (int c = 0; c < 3; ++c) {
+      const F_T sumV = static_cast<F_T>(lowImage[base00 + c]) * w00v + static_cast<F_T>(lowImage[base10 + c]) * w10v +
+          static_cast<F_T>(lowImage[base01 + c]) * w01v + static_cast<F_T>(lowImage[base11 + c]) * w11v;
+      const F_T upVal = sumV * invW;
+      reconImage[idxOut + c] = static_cast<T>(upVal + static_cast<F_T>(lapImage[idxOut + c]));
     }
 
-    // Gather RGBA neighbor indices (needed to check alpha)
-    int idx00 = (gyi * lowWidth + gxi) * channels;
-    int idx10 = (gyi * lowWidth + gxi1) * channels;
-    int idx01 = (gyi1 * lowWidth + gxi) * channels;
-    int idx11 = (gyi1 * lowWidth + gxi1) * channels;
+    const F_T alpha = static_cast<F_T>(lapImage[idxOut + 3]);
 
-    // Alpha-aware bilinear interpolation
-    F_T sum = 0;
-    F_T weightSum = 0;
+#ifdef PRINT_STRANGE_ALPHAS
+    if (is_strange_alpha(alpha)) {
+      printf("BatchedReconstructKernel(): Strange alpha %f\n", static_cast<float>(alpha));
+    }
+#endif
 
-    auto try_add = [&](int idx, F_T wx, F_T wy) {
-      F_T w = wx * wy;
-      if (channels == 4 && static_cast<F_T>(lowImage[idx + 3]) == F_T(0))
-        return;
-      sum += static_cast<F_T>(lowImage[idx + c]) * w;
-      weightSum += w;
-    };
+    reconImage[idxOut + 3] = static_cast<T>(alpha);
+    return;
+  }
 
-    try_add(idx00, F_ONE - dx, F_ONE - dy);
-    try_add(idx10, dx, F_ONE - dy);
-    try_add(idx01, F_ONE - dx, dy);
-    try_add(idx11, dx, dy);
-
-    // Normalize or fall back
-    F_T upVal = (weightSum > F_T(0)) ? (sum / weightSum) : F_T(0);
-
-    // Add Laplacian detail
-    F_T computedValue = upVal + static_cast<F_T>(lapImage[idxOut + c]);
-    reconImage[idxOut + c] = static_cast<T>(computedValue);
+  for (int c = 0; c < channels; ++c) {
+    const F_T upVal = static_cast<F_T>(lowImage[base00 + c]) * w00 + static_cast<F_T>(lowImage[base10 + c]) * w10 +
+        static_cast<F_T>(lowImage[base01 + c]) * w01 + static_cast<F_T>(lowImage[base11 + c]) * w11;
+    reconImage[idxOut + c] = static_cast<T>(upVal + static_cast<F_T>(lapImage[idxOut + c]));
   }
 }
 } // namespace
