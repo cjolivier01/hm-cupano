@@ -1,3 +1,5 @@
+#include "pthread_clock_compat.h"
+
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <cassert>

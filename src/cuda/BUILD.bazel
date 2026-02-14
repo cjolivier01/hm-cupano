@@ -23,6 +23,7 @@ cuda_library(
         "cudaUtils.cu",
     ],
     hdrs = [
+        "pthread_clock_compat.h",
         "cudaImageAdjust.cuh",
         "cudaUtils.cuh",
     ],
@@ -32,6 +33,13 @@ cuda_library(
         "-Xcompiler=-fPIC",
         "-Wno-deprecated-gpu-targets",
         "-Xcompiler=-fdiagnostics-color=always",
+        # Work around glibc 2.38+ math.h adding rsqrt/rsqrtf
+        # with noexcept that conflicts with CUDA's math_functions.h.
+        # These flags are only applied to host compilation of CUDA
+        # translation units.
+        "-Xcompiler=-U_GNU_SOURCE",
+        "-Xcompiler=-D_POSIX_C_SOURCE=200809L",
+        "-Xcompiler=-D_XOPEN_SOURCE=700",
     ] + select({
         # only in debug mode:
         ":debug_build": [

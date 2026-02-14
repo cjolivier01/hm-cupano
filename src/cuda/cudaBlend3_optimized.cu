@@ -1,5 +1,7 @@
 // cudaBlend3_optimized.cu - Complete optimized implementation of 3-image Laplacian blending
 
+#include "pthread_clock_compat.h"
+
 #include <cooperative_groups.h>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
