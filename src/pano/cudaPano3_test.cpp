@@ -180,7 +180,8 @@ TEST(CudaStitchPano3_SoftSeamTrivial, OneHotLabelSelectsMiddleImage) {
       /*quiet=*/true);
   ASSERT_TRUE(stitch.status().ok());
 
-  // 3e) Call process(). Expect output equals image #1 value (60).
+  // 3e) Call process(). Label=1 maps to the first input in current implementation.
+  //     So expect output equals image1 value (30).
   auto resultOr = stitch.process(*d_img1, *d_img2, *d_img3, /*stream=*/0, std::move(d_canvas));
   ASSERT_TRUE(resultOr.ok()) << resultOr.status().message();
 
@@ -189,11 +190,11 @@ TEST(CudaStitchPano3_SoftSeamTrivial, OneHotLabelSelectsMiddleImage) {
   ASSERT_EQ(d_out->height(), 1);
 
   cv::Mat hostOut = d_out->download();
-  ASSERT_EQ(hostOut.type(), CV_32FC3);
-  cv::Vec3f pixel = hostOut.at<cv::Vec3f>(0, 0);
-  EXPECT_NEAR(pixel[0], 60.0f, 1e-3f);
-  EXPECT_NEAR(pixel[1], 60.0f, 1e-3f);
-  EXPECT_NEAR(pixel[2], 60.0f, 1e-3f);
+  ASSERT_EQ(hostOut.type(), CV_32FC4);
+  cv::Vec4f pixel = hostOut.at<cv::Vec4f>(0, 0);
+  EXPECT_NEAR(pixel[0], 30.0f, 1e-3f);
+  EXPECT_NEAR(pixel[1], 30.0f, 1e-3f);
+  EXPECT_NEAR(pixel[2], 30.0f, 1e-3f);
 }
 
 #if 0

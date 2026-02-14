@@ -23,9 +23,6 @@ cc_binary(
     linkopts = [
         "-ltiff",
         "-lopencv_imgproc",
-        "-lopencv_cudacodec",
-        "-lopencv_cudaimgproc",
-        "-lopencv_cudawarping",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -43,9 +40,6 @@ cc_binary(
     linkopts = [
         "-ltiff",
         "-lopencv_imgproc",
-        "-lopencv_cudacodec",
-        "-lopencv_cudaimgproc",
-        "-lopencv_cudawarping",
     ],
     visibility = ["//visibility:public"],
     deps = [
