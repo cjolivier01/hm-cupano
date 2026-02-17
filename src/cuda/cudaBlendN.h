@@ -17,29 +17,45 @@ struct CudaBatchLaplacianBlendContextN {
   static_assert(N_IMAGES >= 1 && N_IMAGES <= 256, "N_IMAGES must be in [1..256]");
 
   int numLevels;
-  int imageWidth, imageHeight;
-  int batchSize;
+  const int imageWidth;
+  const int imageHeight;
+  const int batchSize;
   size_t allocation_size{0};
 
-  // --- pyramids etc (unchanged) ---
+  // Pyramid dimensions per level
+  std::vector<int> widths;
+  std::vector<int> heights;
+
+  // Gaussian pyramids for N_IMAGES inputs
   std::array<std::vector<T*>, N_IMAGES> d_gauss;
+  // Mask pyramid: [H x W x N_IMAGES]
   std::vector<T*> d_maskPyr;
+  // Laplacian pyramids for N_IMAGES inputs
   std::array<std::vector<T*>, N_IMAGES> d_lap;
+  // Blended Laplacian pyramid (single output)
   std::vector<T*> d_blend;
+  // Reconstruction scratch buffers (levels > 0); level 0 uses caller output pointer
   std::vector<T*> d_reconstruct;
 
   bool initialized{false};
 
-  // --- NEW: three device‐pointer arrays, length = N_IMAGES ---
-  T** d_ptrsA{nullptr}; // downsample IN  / laplacian HIGH  / blend or recon LOW
-  T** d_ptrsB{nullptr}; // downsample OUT / laplacian LOW   / blend or recon LAP
-  T** d_ptrsC{nullptr}; // laplacian OUT  / (unused elsewhere)
+  // Host-side pointer lists (length = N_IMAGES)
+  std::array<const T*, N_IMAGES> h_ptrsA{};
+  std::array<const T*, N_IMAGES> h_ptrsB{};
+  std::array<T*, N_IMAGES> h_ptrsC{};
+
+  // Device-side pointer lists (length = N_IMAGES)
+  const T** d_ptrsA{nullptr}; // downsample IN / laplacian HIGH / blend / recon LOW
+  const T** d_ptrsB{nullptr}; // laplacian LOW
+  T** d_ptrsC{nullptr}; // downsample OUT / laplacian OUT / recon LAP
 
   CudaBatchLaplacianBlendContextN(int w, int h, int levels, int batch)
       : numLevels(levels),
         imageWidth(w),
         imageHeight(h),
         batchSize(batch),
+        widths(levels),
+        heights(levels),
         d_gauss(),
         d_maskPyr(levels, nullptr),
         d_lap(),
@@ -50,28 +66,35 @@ struct CudaBatchLaplacianBlendContextN {
       d_lap[i].assign(levels, nullptr);
     }
     // allocate the three pointer‐lists **once** (ignore errors here; will surface later on kernel use)
-    (void)cudaMalloc(&d_ptrsA, N_IMAGES * sizeof(T*));
-    (void)cudaMalloc(&d_ptrsB, N_IMAGES * sizeof(T*));
-    (void)cudaMalloc(&d_ptrsC, N_IMAGES * sizeof(T*));
+    (void)cudaMalloc(reinterpret_cast<void**>(&d_ptrsA), N_IMAGES * sizeof(T*));
+    (void)cudaMalloc(reinterpret_cast<void**>(&d_ptrsB), N_IMAGES * sizeof(T*));
+    (void)cudaMalloc(reinterpret_cast<void**>(&d_ptrsC), N_IMAGES * sizeof(T*));
+  }
+
+  static constexpr void maybeCudaFree(void* p) {
+    if (p)
+      cudaFree(p);
   }
 
   ~CudaBatchLaplacianBlendContextN() {
     // free pyramids & masks as before...
     for (int lvl = 0; lvl < numLevels; ++lvl) {
       for (int i = 0; i < N_IMAGES; ++i) {
-        cudaFree(d_lap[i][lvl]);
-        if (lvl > 0)
-          cudaFree(d_gauss[i][lvl]);
+        maybeCudaFree(d_lap[i][lvl]);
       }
-      cudaFree(d_blend[lvl]);
-      cudaFree(d_reconstruct[lvl]);
-      if (lvl > 0)
-        cudaFree(d_maskPyr[lvl]);
+      maybeCudaFree(d_blend[lvl]);
+      if (lvl > 0) {
+        for (int i = 0; i < N_IMAGES; ++i) {
+          maybeCudaFree(d_gauss[i][lvl]);
+        }
+        maybeCudaFree(d_maskPyr[lvl]);
+        maybeCudaFree(d_reconstruct[lvl]);
+      }
     }
     // free our pointer‐lists
-    cudaFree(d_ptrsA);
-    cudaFree(d_ptrsB);
-    cudaFree(d_ptrsC);
+    maybeCudaFree(const_cast<T**>(d_ptrsA));
+    maybeCudaFree(const_cast<T**>(d_ptrsB));
+    maybeCudaFree(d_ptrsC);
   }
 };
 // -----------------------------------------------------------------------------

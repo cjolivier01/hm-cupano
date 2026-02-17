@@ -21,8 +21,12 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
     int num_levels,
     const ControlMasks& control_masks,
     bool match_exposure,
-    bool quiet)
+    bool quiet,
+    bool minimize_blend,
+    int max_output_width)
     : match_exposure_(match_exposure) {
+  (void)minimize_blend;
+  (void)max_output_width;
   if (!control_masks.is_valid()) {
     status_ = CudaStatus(cudaError_t::cudaErrorFileNotFound, "Stitching masks were not able to be loaded");
     return;

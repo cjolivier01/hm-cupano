@@ -116,3 +116,13 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "cudaBlendN_test",
+    srcs = ["cudaBlendN_test.cpp"],
+    deps = [
+        ":cuda_blend_cuda_lib",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
