@@ -28,10 +28,19 @@ TEST(CudaBlendNSmallTest, AlphaZeroSkipsContribution) {
   constexpr int W = 1, H = 1, C = 4, B = 1, L = 1; // single-level, no pyramids
 
   // Three inputs, but one is fully transparent
-  std::vector<float> img1{10, 20, 30, 255};
-  std::vector<float> img2{100, 110, 120, 0};
-  std::vector<float> img3{90, 100, 110, 255};
-  std::vector<const float*> d_imgs{img1.data(), img2.data(), img3.data()};
+  std::vector<float> h_img1{10, 20, 30, 255};
+  std::vector<float> h_img2{100, 110, 120, 0};
+  std::vector<float> h_img3{90, 100, 110, 255};
+  float* d_img1 = nullptr;
+  float* d_img2 = nullptr;
+  float* d_img3 = nullptr;
+  CUDA_CHECK(cudaMalloc(&d_img1, h_img1.size() * sizeof(float)));
+  CUDA_CHECK(cudaMalloc(&d_img2, h_img2.size() * sizeof(float)));
+  CUDA_CHECK(cudaMalloc(&d_img3, h_img3.size() * sizeof(float)));
+  CUDA_CHECK(cudaMemcpy(d_img1, h_img1.data(), h_img1.size() * sizeof(float), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_img2, h_img2.data(), h_img2.size() * sizeof(float), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_img3, h_img3.data(), h_img3.size() * sizeof(float), cudaMemcpyHostToDevice));
+  std::vector<const float*> d_imgs{d_img1, d_img2, d_img3};
 
   // Mask: mostly selects img2, but alpha==0 → should renormalize to imgs 1 and 3 only
   std::vector<float> h_mask{0.1f, 0.8f, 0.1f};
@@ -50,13 +59,13 @@ TEST(CudaBlendNSmallTest, AlphaZeroSkipsContribution) {
   CUDA_CHECK(cudaMemcpy(h_out.data(), d_out, h_out.size() * sizeof(float), cudaMemcpyDeviceToHost));
 
   // Expected: weights -> 0.5, 0.0, 0.5
-  std::vector<float> expected{(10.0f + 90.0f) * 0.5f,
-                              (20.0f + 100.0f) * 0.5f,
-                              (30.0f + 110.0f) * 0.5f,
-                              255.0f};
+  std::vector<float> expected{(10.0f + 90.0f) * 0.5f, (20.0f + 100.0f) * 0.5f, (30.0f + 110.0f) * 0.5f, 255.0f};
   for (int c = 0; c < C; ++c) {
     EXPECT_NEAR(h_out[c], expected[c], kTol) << "Mismatch at channel " << c;
   }
+  cudaFree(d_img1);
+  cudaFree(d_img2);
+  cudaFree(d_img3);
   cudaFree(d_mask);
   cudaFree(d_out);
 }

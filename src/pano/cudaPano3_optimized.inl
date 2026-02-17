@@ -189,10 +189,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
       stream,
       std::move(canvas));
 
-  if (stream) {
-    cudaStreamSynchronize(stream);
-  }
-
   if (!result.ok()) {
     status_.Update(result.status());
   }

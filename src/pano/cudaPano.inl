@@ -1,6 +1,6 @@
 #pragma once
 
-#include <opencv4/opencv2/imgproc.hpp>
+#include <opencv2/imgproc.hpp>
 #include "cupano/cuda/cudaMakeFull.h"
 #include "cupano/cuda/cudaRemap.h"
 #include "cupano/cuda/cudaTypes.h"
@@ -21,8 +21,12 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
     int num_levels,
     const ControlMasks& control_masks,
     bool match_exposure,
-    bool quiet)
+    bool quiet,
+    bool minimize_blend,
+    int max_output_width)
     : match_exposure_(match_exposure) {
+  (void)minimize_blend;
+  (void)max_output_width;
   if (!control_masks.is_valid()) {
     status_ = CudaStatus(cudaError_t::cudaErrorFileNotFound, "Stitching masks were not able to be loaded");
     return;
@@ -421,7 +425,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     // SHOW_SCALED(canvas, 0.15);
 #endif
   }
-  // cudaStreamSynchronize(stream);
   return std::move(canvas);
 }
 
@@ -464,9 +467,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   }
   auto result = process_impl(
       inputImage1, inputImage2, *stitch_context_, *canvas_manager_, image_adjustment_, stream, std::move(canvas));
-  if (stream) {
-    cudaStreamSynchronize(stream);
-  }
   if (!result.ok()) {
     status_.Update(result.status());
   }

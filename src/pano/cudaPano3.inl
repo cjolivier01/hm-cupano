@@ -1,7 +1,7 @@
 #pragma once
 
-#include <opencv4/opencv2/core/hal/interface.h>
-#include <opencv4/opencv2/imgproc.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/imgproc.hpp>
 #include "cupano/cuda/cudaMakeFull.h"
 #include "cupano/cuda/cudaRemap.h"
 #include "cupano/cuda/cudaTypes.h"
@@ -572,9 +572,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
       image_adjustment_,
       stream,
       std::move(canvas));
-  if (stream) {
-    cudaStreamSynchronize(stream);
-  }
   if (!result.ok()) {
     status_.Update(result.status());
   }

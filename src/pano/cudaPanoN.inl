@@ -1,13 +1,17 @@
 #pragma once
 
-#include <opencv4/opencv2/imgproc.hpp>
+#include <opencv2/imgproc.hpp>
+
+#include "cupano/cuda/cudaMakeFull.h"
 
 namespace hm {
 namespace pano {
 namespace cuda {
 
 namespace detailN {
-constexpr inline float3 neg(const float3& f) { return float3{.x = -f.x, .y = -f.y, .z = -f.z}; }
+constexpr inline float3 neg(const float3& f) {
+  return float3{.x = -f.x, .y = -f.y, .z = -f.z};
+}
 
 template <typename T>
 inline constexpr int num_channels_v = sizeof(T) / sizeof(BaseScalar_t<T>);
@@ -28,7 +32,8 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
   }
 
   const int n = static_cast<int>(control_masks.img_col.size());
-  stitch_context_ = std::make_unique<StitchingContextN<T_pipeline, T_compute>>(batch_size, /*is_hard=*/(num_levels == 0));
+  stitch_context_ =
+      std::make_unique<StitchingContextN<T_pipeline, T_compute>>(batch_size, /*is_hard=*/(num_levels == 0));
   stitch_context_->n_images = n;
   stitch_context_->remap_x.resize(n);
   stitch_context_->remap_y.resize(n);
@@ -42,22 +47,84 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
   // Canvas manager with N positions
   std::vector<cv::Point> positions;
   positions.reserve(n);
-  for (int i = 0; i < n; ++i) positions.emplace_back(control_masks.positions[i].xpos, control_masks.positions[i].ypos);
-  canvas_manager_ = std::make_unique<CanvasManagerN>(CanvasInfo{.width = canvas_w, .height = canvas_h, .positions = positions},
-                                                     /*minimize_blend=*/!stitch_context_->is_hard_seam());
-  for (int i = 0; i < n; ++i) canvas_manager_->set_remap_size(i, control_masks.img_col[i].size());
+  for (int i = 0; i < n; ++i)
+    positions.emplace_back(control_masks.positions[i].xpos, control_masks.positions[i].ypos);
+  canvas_manager_ = std::make_unique<CanvasManagerN>(
+      CanvasInfo{.width = canvas_w, .height = canvas_h, .positions = positions},
+      /*minimize_blend=*/!stitch_context_->is_hard_seam());
+  for (int i = 0; i < n; ++i)
+    canvas_manager_->set_remap_size(i, control_masks.img_col[i].size());
 
   // Seam mask setup
   if (!stitch_context_->is_hard_seam()) {
-    cv::Mat seam_color = ControlMasksN::split_to_channels(control_masks.whole_seam_mask_indexed, n);
-    seam_color.convertTo(seam_color, cudaPixelTypeToCvType(CudaTypeToPixelType<T_compute>::value));
-    stitch_context_->cudaBlendSoftSeam = std::make_unique<CudaMat<T_compute>>(seam_color);
+    // Build an N-channel one-hot seam mask as base scalars [H x W x N].
+    cv::Mat seam_color_u8 = ControlMasksN::split_to_channels(control_masks.whole_seam_mask_indexed, n);
+    cv::Mat seam_color_f;
+    seam_color_u8.convertTo(seam_color_f, CV_MAKETYPE(CV_32F, n));
+
+    BaseScalar_t<T_compute>* d_mask = nullptr;
+    const size_t mask_bytes = seam_color_f.total() * seam_color_f.elemSize();
+    auto cuerr = cudaMalloc(reinterpret_cast<void**>(&d_mask), mask_bytes);
+    if (cuerr != cudaSuccess) {
+      status_ = CudaStatus(cuerr);
+      return;
+    }
+    stitch_context_->cudaBlendSoftSeam.reset(d_mask);
+    cuerr = cudaMemcpy(d_mask, seam_color_f.data, mask_bytes, cudaMemcpyHostToDevice);
+    if (cuerr != cudaSuccess) {
+      status_ = CudaStatus(cuerr);
+      return;
+    }
+
     stitch_context_->cudaFull.resize(n);
     for (int i = 0; i < n; ++i) {
-      stitch_context_->cudaFull[i] = std::make_unique<CudaMat<T_compute>>(batch_size, seam_color.cols, seam_color.rows);
+      stitch_context_->cudaFull[i] = std::make_unique<CudaMat<T_compute>>(batch_size, canvas_w, canvas_h);
+    }
+
+    // Create the blending context for this N once; buffers are allocated lazily on first blend.
+    switch (n) {
+      case 2:
+        stitch_context_->laplacian_blend_context
+            .template emplace<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, 2>>(
+                canvas_w, canvas_h, num_levels, batch_size);
+        break;
+      case 3:
+        stitch_context_->laplacian_blend_context
+            .template emplace<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, 3>>(
+                canvas_w, canvas_h, num_levels, batch_size);
+        break;
+      case 4:
+        stitch_context_->laplacian_blend_context
+            .template emplace<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, 4>>(
+                canvas_w, canvas_h, num_levels, batch_size);
+        break;
+      case 5:
+        stitch_context_->laplacian_blend_context
+            .template emplace<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, 5>>(
+                canvas_w, canvas_h, num_levels, batch_size);
+        break;
+      case 6:
+        stitch_context_->laplacian_blend_context
+            .template emplace<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, 6>>(
+                canvas_w, canvas_h, num_levels, batch_size);
+        break;
+      case 7:
+        stitch_context_->laplacian_blend_context
+            .template emplace<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, 7>>(
+                canvas_w, canvas_h, num_levels, batch_size);
+        break;
+      case 8:
+        stitch_context_->laplacian_blend_context
+            .template emplace<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, 8>>(
+                canvas_w, canvas_h, num_levels, batch_size);
+        break;
+      default:
+        status_ = CudaStatus(cudaErrorInvalidValue, "Unsupported N for blend (supported 2..8)");
+        return;
     }
   } else {
-    stitch_context_->cudaBlendHardSeam = std::make_unique<CudaMat<unsigned char>>(control_masks.whole_seam_mask_indexed);
+    stitch_context_->cudaBlendHardSeam =
+        std::make_unique<CudaMat<unsigned char>>(control_masks.whole_seam_mask_indexed);
   }
 
   if (match_exposure_) {
@@ -76,19 +143,26 @@ CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::remap_soft(
     const CudaMat<T_pipeline>& input,
     const CudaMat<uint16_t>& map_x,
     const CudaMat<uint16_t>& map_y,
-    CudaMat<T_pipeline>& dest_canvas,
+    CudaMat<T_compute>& dest_canvas,
     int dest_x,
     int dest_y,
     const std::optional<float3>& image_adjustment,
     int batch_size,
     cudaStream_t stream) {
-  if (image_adjustment.has_value()) {
-    return batched_remap_kernel_ex_offset_adjust(
-        input.surface(), dest_canvas.surface(), map_x.data(), map_y.data(), {0}, batch_size, map_x.width(), map_y.height(), dest_x, dest_y, /*no_unmapped_write=*/false, detailN::neg(*image_adjustment), stream);
-  } else {
-    return batched_remap_kernel_ex_offset(
-        input.surface(), dest_canvas.surface(), map_x.data(), map_y.data(), {0}, batch_size, map_x.width(), map_y.height(), dest_x, dest_y, /*no_unmapped_write=*/false, stream);
-  }
+  (void)image_adjustment;
+  return batched_remap_kernel_ex_offset(
+      input.surface(),
+      dest_canvas.surface(),
+      map_x.data(),
+      map_y.data(),
+      {0},
+      batch_size,
+      map_x.width(),
+      map_y.height(),
+      dest_x,
+      dest_y,
+      /*no_unmapped_write=*/false,
+      stream);
 }
 
 template <typename T_pipeline, typename T_compute>
@@ -104,65 +178,81 @@ CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::remap_hard(
     const std::optional<float3>& image_adjustment,
     int batch_size,
     cudaStream_t stream) {
-  if (image_adjustment.has_value()) {
-    return batched_remap_kernel_ex_offset_with_dest_map_adjust(
-        input.surface(), dest_canvas.surface(), map_x.data(), map_y.data(), {0}, image_index, dest_index_map.data(), batch_size, map_x.width(), map_y.height(), dest_x, dest_y, detailN::neg(*image_adjustment), stream);
-  } else {
-    return batched_remap_kernel_ex_offset_with_dest_map(
-        input.surface(), dest_canvas.surface(), map_x.data(), map_y.data(), {0}, image_index, dest_index_map.data(), batch_size, map_x.width(), map_y.height(), dest_x, dest_y, stream);
-  }
+  (void)image_adjustment;
+  return batched_remap_kernel_ex_offset_with_dest_map(
+      input.surface(),
+      dest_canvas.surface(),
+      map_x.data(),
+      map_y.data(),
+      {0},
+      image_index,
+      dest_index_map.data(),
+      batch_size,
+      map_x.width(),
+      map_y.height(),
+      dest_x,
+      dest_y,
+      stream);
 }
 
 template <typename T_pipeline, typename T_compute>
-CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::blend_soft_dispatch(std::vector<const T_compute*>& d_ptrs, cudaStream_t stream) {
+CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::blend_soft_dispatch(
+    const std::vector<const BaseScalar_t<T_compute>*>& d_ptrs,
+    cudaStream_t stream) {
   const int n = stitch_context_->n_images;
   const int C = detailN::num_channels_v<T_compute>;
-  auto d_mask = stitch_context_->cudaBlendSoftSeam->data_raw();
+  auto d_mask = stitch_context_->cudaBlendSoftSeam.get();
   auto out = stitch_context_->cudaFull[0]->data_raw();
-  int W = stitch_context_->cudaFull[0]->width();
-  int H = stitch_context_->cudaFull[0]->height();
-  int B = stitch_context_->batch_size();
 
-  // Note: we build a temporary context per call (avoids dynamic polymorphism); N is compile-time in each case.
-#define BLEND_N_CASE(NVAL, CH)                                                                                                 \
-  do {                                                                                                                         \
-    CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, NVAL> ctx(W, H, /*levels=*/3, B);                                 \
-    /* Build scalar-pointer list from pixel-pointer list */                                                                     \
-    std::vector<const BaseScalar_t<T_compute>*> scalar_ptrs;                                                                   \
-    scalar_ptrs.reserve(d_ptrs.size());                                                                                        \
-    for (auto* p : d_ptrs) scalar_ptrs.push_back(reinterpret_cast<const BaseScalar_t<T_compute>*>(p));                         \
-    if constexpr (CH == 3) {                                                                                                   \
-      return CudaStatus(cudaBatchedLaplacianBlendWithContextN<BaseScalar_t<T_compute>, float, NVAL, 3>(                        \
-          scalar_ptrs, d_mask, out, ctx, stream));                                                                             \
-    } else {                                                                                                                   \
-      return CudaStatus(cudaBatchedLaplacianBlendWithContextN<BaseScalar_t<T_compute>, float, NVAL, 4>(                        \
-          scalar_ptrs, d_mask, out, ctx, stream));                                                                             \
-    }                                                                                                                          \
+#define BLEND_N_CASE(NVAL, CH)                                                                         \
+  do {                                                                                                 \
+    auto& ctx = std::get<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, NVAL>>(              \
+        stitch_context_->laplacian_blend_context);                                                     \
+    return CudaStatus(cudaBatchedLaplacianBlendWithContextN<BaseScalar_t<T_compute>, float, NVAL, CH>( \
+        d_ptrs, d_mask, out, ctx, stream));                                                            \
   } while (0)
 
   if (C == 3) {
     switch (n) {
-      case 2: BLEND_N_CASE(2, 3);
-      case 3: BLEND_N_CASE(3, 3);
-      case 4: BLEND_N_CASE(4, 3);
-      case 5: BLEND_N_CASE(5, 3);
-      case 6: BLEND_N_CASE(6, 3);
-      case 7: BLEND_N_CASE(7, 3);
-      case 8: BLEND_N_CASE(8, 3);
-      default: return CudaStatus(cudaErrorInvalidValue, "Unsupported N for blend (3ch): supported 2..8");
-    }
-  } else if (C == 4) {
-    switch (n) {
-      case 2: BLEND_N_CASE(2, 4);
-      case 3: BLEND_N_CASE(3, 4);
-      case 4: BLEND_N_CASE(4, 4);
-      case 5: BLEND_N_CASE(5, 4);
-      case 6: BLEND_N_CASE(6, 4);
-      case 7: BLEND_N_CASE(7, 4);
-      case 8: BLEND_N_CASE(8, 4);
-      default: return CudaStatus(cudaErrorInvalidValue, "Unsupported N for blend (4ch): supported 2..8");
+      case 2:
+        BLEND_N_CASE(2, 3);
+      case 3:
+        BLEND_N_CASE(3, 3);
+      case 4:
+        BLEND_N_CASE(4, 3);
+      case 5:
+        BLEND_N_CASE(5, 3);
+      case 6:
+        BLEND_N_CASE(6, 3);
+      case 7:
+        BLEND_N_CASE(7, 3);
+      case 8:
+        BLEND_N_CASE(8, 3);
+      default:
+        return CudaStatus(cudaErrorInvalidValue, "Unsupported N for blend (3ch): supported 2..8");
     }
   }
+  if (C == 4) {
+    switch (n) {
+      case 2:
+        BLEND_N_CASE(2, 4);
+      case 3:
+        BLEND_N_CASE(3, 4);
+      case 4:
+        BLEND_N_CASE(4, 4);
+      case 5:
+        BLEND_N_CASE(5, 4);
+      case 6:
+        BLEND_N_CASE(6, 4);
+      case 7:
+        BLEND_N_CASE(7, 4);
+      case 8:
+        BLEND_N_CASE(8, 4);
+      default:
+        return CudaStatus(cudaErrorInvalidValue, "Unsupported N for blend (4ch): supported 2..8");
+    }
+  }
+
   return CudaStatus(cudaErrorInvalidValue, "Unsupported pixel channels (expect 3 or 4)");
 #undef BLEND_N_CASE
 }
@@ -172,47 +262,95 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T
     const std::vector<const CudaMat<T_pipeline>*>& inputs,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
-  if (!canvas) return CudaStatus(cudaErrorInvalidDevicePointer, "Canvas must be provided");
-  if ((int)inputs.size() != stitch_context_->n_images) return CudaStatus(cudaErrorInvalidValue, "inputs size != N");
+  CUDA_RETURN_IF_ERROR(status_);
+  if (!canvas)
+    return CudaStatus(cudaErrorInvalidDevicePointer, "Canvas must be provided");
+  if ((int)inputs.size() != stitch_context_->n_images)
+    return CudaStatus(cudaErrorInvalidValue, "inputs size != N");
   for (auto* in : inputs) {
-    if (!in || in->batch_size() != stitch_context_->batch_size()) return CudaStatus(cudaErrorInvalidValue, "Mismatched batch sizes");
+    if (!in || in->batch_size() != stitch_context_->batch_size())
+      return CudaStatus(cudaErrorInvalidValue, "Mismatched batch sizes");
   }
-  if (canvas->batch_size() != stitch_context_->batch_size()) return CudaStatus(cudaErrorInvalidValue, "Canvas batch mismatch");
+  if (canvas->batch_size() != stitch_context_->batch_size())
+    return CudaStatus(cudaErrorInvalidValue, "Canvas batch mismatch");
 
-  // Clear alpha if 4-channel
-  if constexpr (detailN::num_channels_v<T_pipeline> == 4) {
+  if (stitch_context_->is_hard_seam()) {
     auto cuerr = cudaMemsetAsync(canvas->data(), 0, canvas->size(), stream);
-    if (cuerr != cudaSuccess) return CudaStatus(cuerr);
+    if (cuerr != cudaSuccess)
+      return CudaStatus(cuerr);
+
+    for (int i = 0; i < stitch_context_->n_images; ++i) {
+      const auto& mx = *stitch_context_->remap_x[i];
+      const auto& my = *stitch_context_->remap_y[i];
+      int dx = canvas_manager_->canvas_positions()[i].x;
+      int dy = canvas_manager_->canvas_positions()[i].y;
+      CudaStatus s = remap_hard(
+          *inputs[i],
+          mx,
+          my,
+          static_cast<uint8_t>(i),
+          *stitch_context_->cudaBlendHardSeam,
+          *canvas,
+          dx,
+          dy,
+          image_adjustment_,
+          stitch_context_->batch_size(),
+          stream);
+      if (!s.ok())
+        return s;
+    }
+    return std::move(canvas);
   }
 
-  // Remap all inputs to canvas
+  // Soft seam: remap each input into its own full canvas buffer, then N-way blend.
+  for (int i = 0; i < stitch_context_->n_images; ++i) {
+    auto cuerr = cudaMemsetAsync(stitch_context_->cudaFull[i]->data(), 0, stitch_context_->cudaFull[i]->size(), stream);
+    if (cuerr != cudaSuccess)
+      return CudaStatus(cuerr);
+  }
   for (int i = 0; i < stitch_context_->n_images; ++i) {
     const auto& mx = *stitch_context_->remap_x[i];
     const auto& my = *stitch_context_->remap_y[i];
     int dx = canvas_manager_->canvas_positions()[i].x;
     int dy = canvas_manager_->canvas_positions()[i].y;
-    CudaStatus s = stitch_context_->is_hard_seam() ?
-        remap_hard(*inputs[i], mx, my, static_cast<uint8_t>(i), *stitch_context_->cudaBlendHardSeam, *canvas, dx, dy, image_adjustment_, stitch_context_->batch_size(), stream)
-                                                   :
-        remap_soft(*inputs[i], mx, my, *canvas, dx, dy, image_adjustment_, stitch_context_->batch_size(), stream);
-    if (!s.ok()) return s;
+    CudaStatus s = remap_soft(
+        *inputs[i],
+        mx,
+        my,
+        *stitch_context_->cudaFull[i],
+        dx,
+        dy,
+        image_adjustment_,
+        stitch_context_->batch_size(),
+        stream);
+    if (!s.ok())
+      return s;
   }
 
-  if (!stitch_context_->is_hard_seam()) {
-    // Copy full canvas into each cudaFull[i] at their positions (simple full copy suffices since mask is N-channel over canvas)
-    for (int i = 0; i < stitch_context_->n_images; ++i) {
-      auto cuerr = cudaMemcpyAsync(
-          stitch_context_->cudaFull[i]->data(), canvas->data(), stitch_context_->cudaFull[i]->size(), cudaMemcpyDeviceToDevice, stream);
-      if (cuerr != cudaSuccess) return CudaStatus(cuerr);
-    }
-    // Build device pointer list
-    std::vector<const T_compute*> ptrs(stitch_context_->n_images);
-    for (int i = 0; i < stitch_context_->n_images; ++i) ptrs[i] = stitch_context_->cudaFull[i]->data();
+  std::vector<const BaseScalar_t<T_compute>*> ptrs(stitch_context_->n_images);
+  for (int i = 0; i < stitch_context_->n_images; ++i) {
+    ptrs[i] = stitch_context_->cudaFull[i]->data_raw();
+  }
+  {
     CudaStatus s = blend_soft_dispatch(ptrs, stream);
-    if (!s.ok()) return s;
-    // Copy blended result back to canvas
-    auto cuerr = cudaMemcpyAsync(canvas->data(), stitch_context_->cudaFull[0]->data(), stitch_context_->cudaFull[0]->size(), cudaMemcpyDeviceToDevice, stream);
-    if (cuerr != cudaSuccess) return CudaStatus(cuerr);
+    if (!s.ok())
+      return s;
+  }
+
+  {
+    auto cuerr = copy_roi_batched<T_compute, T_pipeline>(
+        stitch_context_->cudaFull[0]->surface(),
+        /*regionWidth=*/stitch_context_->cudaFull[0]->width(),
+        /*regionHeight=*/stitch_context_->cudaFull[0]->height(),
+        /*srcROI_x=*/0,
+        /*srcROI_y=*/0,
+        canvas->surface(),
+        /*offsetX=*/0,
+        /*offsetY=*/0,
+        stitch_context_->batch_size(),
+        stream);
+    if (cuerr != cudaSuccess)
+      return CudaStatus(cuerr);
   }
 
   return std::move(canvas);

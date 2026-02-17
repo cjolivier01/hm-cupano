@@ -1,6 +1,6 @@
 #include "controlMasks3.h"
-#include <opencv4/opencv2/highgui.hpp>
-#include <opencv4/opencv2/imgcodecs.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <png.h>
 #include <tiffio.h> // For TIFF metadata
 #include <stdexcept>
