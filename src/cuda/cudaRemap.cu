@@ -124,6 +124,81 @@ __global__ void BatchedRemapKernelExOffset(
   }
 }
 
+//------------------------------------------------------------------------------
+// NEW: Templated Batched Remap Kernel EX with Offset over a ROI in remap coords
+//------------------------------------------------------------------------------
+template <typename T_in, typename T_out>
+__global__ void BatchedRemapKernelExOffsetROI(
+    const CudaSurface<T_in> src,
+    CudaSurface<T_out> dest,
+    const unsigned short* mapX, // mapping arrays of size (remapW x remapH)
+    const unsigned short* mapY,
+    T_in deflt,
+    int batchSize,
+    int remapW,
+    int remapH,
+    int offsetX,
+    int offsetY,
+    int roiX,
+    int roiY,
+    int roiW,
+    int roiH,
+    bool no_unmapped_write) {
+  int b = blockIdx.z;
+  if (b >= batchSize)
+    return;
+
+  // Coordinates within the ROI region.
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x >= roiW || y >= roiH)
+    return;
+
+  const int mapXpos = roiX + x;
+  const int mapYpos = roiY + y;
+  if (mapXpos < 0 || mapXpos >= remapW || mapYpos < 0 || mapYpos >= remapH)
+    return;
+
+  const int destX = offsetX + mapXpos;
+  const int destY = offsetY + mapYpos;
+  if (destX < 0 || destX >= dest.width || destY < 0 || destY >= dest.height)
+    return;
+
+  int destImageSizeBytes = dest.height * dest.pitch;
+
+  T_out* destImage = advance_bytes(dest.d_ptr, b * destImageSizeBytes);
+  T_out* dest_pos = advance_bytes(destImage, destY * dest.pitch) + destX;
+
+  int mapIdx = mapYpos * remapW + mapXpos;
+  int srcX = static_cast<int>(mapX[mapIdx]);
+  int srcY = static_cast<int>(mapY[mapIdx]);
+
+  if constexpr (sizeof(T_out) / sizeof(BaseScalar_t<T_out>) == 4) {
+    if (no_unmapped_write && srcX == kUnmappedPositionValue) {
+      // Don't write anything for alpha 0.
+      return;
+    }
+  }
+
+  if (srcX < src.width && srcY < src.height) {
+    int srcImageSizeBytes = src.height * src.pitch;
+    const T_in* srcImage = advance_bytes(src.d_ptr, b * srcImageSizeBytes);
+    const T_in* src_pos = advance_bytes(srcImage, srcY * src.pitch) + srcX;
+    *dest_pos = perform_cast<T_out>(*src_pos);
+  } else {
+    if (!no_unmapped_write || srcX != kUnmappedPositionValue) {
+      *dest_pos = perform_cast<T_out>(deflt);
+      if constexpr (sizeof(T_out) / sizeof(BaseScalar_t<T_out>) == 4) {
+        if (srcX == kUnmappedPositionValue) {
+          dest_pos->w = 0;
+        } else {
+          dest_pos->w = BaseScalar_t<T_out>(255);
+        }
+      }
+    }
+  }
+}
+
 template <typename T_in, typename T_out>
 __global__ void BatchedRemapKernelExOffsetAdjust(
     const CudaSurface<T_in> src,
@@ -381,6 +456,52 @@ cudaError_t batched_remap_kernel_ex_offset(
 }
 
 template <typename T_in, typename T_out>
+cudaError_t batched_remap_kernel_ex_offset_roi(
+    const CudaSurface<T_in>& src,
+    const CudaSurface<T_out>& dest,
+    const unsigned short* d_mapX,
+    const unsigned short* d_mapY,
+    T_in deflt,
+    int batchSize,
+    int remapW,
+    int remapH,
+    int offsetX,
+    int offsetY,
+    int roiX,
+    int roiY,
+    int roiW,
+    int roiH,
+    bool no_unmapped_write,
+    cudaStream_t stream) {
+  if (roiW <= 0 || roiH <= 0)
+    return cudaSuccess;
+  if (roiX < 0 || roiY < 0 || roiW < 0 || roiH < 0)
+    return cudaErrorInvalidValue;
+  if (roiX + roiW > remapW || roiY + roiH > remapH)
+    return cudaErrorInvalidValue;
+
+  dim3 blockDim(16, 16, 1);
+  dim3 gridDim((roiW + blockDim.x - 1) / blockDim.x, (roiH + blockDim.y - 1) / blockDim.y, batchSize);
+  BatchedRemapKernelExOffsetROI<T_in, T_out><<<gridDim, blockDim, 0, stream>>>(
+      src,
+      dest,
+      d_mapX,
+      d_mapY,
+      deflt,
+      batchSize,
+      remapW,
+      remapH,
+      offsetX,
+      offsetY,
+      roiX,
+      roiY,
+      roiW,
+      roiH,
+      no_unmapped_write);
+  return cudaGetLastError();
+}
+
+template <typename T_in, typename T_out>
 cudaError_t batched_remap_kernel_ex_offset_adjust(
     const CudaSurface<T_in>& src,
     const CudaSurface<T_out>& dest,
@@ -500,6 +621,25 @@ cudaError_t batched_remap_hard_seam_kernel_n(
       bool no_unmapped_write,                                       \
       cudaStream_t stream);
 
+#define INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ROI(T_in, T_out)     \
+  template cudaError_t batched_remap_kernel_ex_offset_roi<T_in, T_out>( \
+      const CudaSurface<T_in>& src,                                     \
+      const CudaSurface<T_out>& dest,                                   \
+      const unsigned short* d_mapX,                                     \
+      const unsigned short* d_mapY,                                     \
+      T_in deflt,                                                       \
+      int batchSize,                                                    \
+      int remapW,                                                       \
+      int remapH,                                                       \
+      int offsetX,                                                      \
+      int offsetY,                                                      \
+      int roiX,                                                         \
+      int roiY,                                                         \
+      int roiW,                                                         \
+      int roiH,                                                         \
+      bool no_unmapped_write,                                           \
+      cudaStream_t stream);
+
 #define INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(T_in, T_out)     \
   template cudaError_t batched_remap_kernel_ex_offset_adjust<T_in, T_out>( \
       const CudaSurface<T_in>& src,                                        \
@@ -589,6 +729,14 @@ INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(float4, float4)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(uchar4, float4)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(uchar4, uchar4)
 // INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(__half, __half)
+
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ROI(float3, float3)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ROI(uchar3, float3)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ROI(uchar3, uchar3)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ROI(float1, float1)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ROI(float4, float4)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ROI(uchar4, float4)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ROI(uchar4, uchar4)
 
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(float3, float3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(uchar3, uchar3)

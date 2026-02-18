@@ -85,7 +85,8 @@ class CudaStitchPanoN {
       int num_levels,
       const ControlMasksN& control_masks,
       bool match_exposure = false,
-      bool quiet = false);
+      bool quiet = false,
+      bool minimize_blend = true);
 
   int canvas_width() const {
     return canvas_manager_->canvas_width();
@@ -136,11 +137,23 @@ class CudaStitchPanoN {
   CudaStatus blend_soft_dispatch(const std::vector<const BaseScalar_t<T_compute>*>& d_ptrs, cudaStream_t stream);
 
  private:
+  struct RemapRoiInfo {
+    // ROI within the remap map (local coordinates).
+    cv::Rect roi;
+    // Destination offsets for the full remap region in the destination surface coordinates.
+    int offset_x{0};
+    int offset_y{0};
+  };
+
   std::unique_ptr<StitchingContextN<T_pipeline, T_compute>> stitch_context_;
   std::unique_ptr<CanvasManagerN> canvas_manager_;
   bool match_exposure_{false};
+  bool minimize_blend_{false};
   std::optional<float3> image_adjustment_;
   std::optional<cv::Mat> whole_seam_mask_image_;
+  cv::Rect blend_roi_canvas_{};
+  cv::Rect write_roi_canvas_{};
+  std::vector<RemapRoiInfo> remap_rois_;
   CudaStatus status_;
 };
 
