@@ -34,6 +34,10 @@ struct StitchingContextN {
 
   // Soft seam: N compute buffers and N-channel mask
   std::vector<std::unique_ptr<CudaMat<T_compute>>> cudaFull; // size N
+  // Cached raw pointers to cudaFull buffers for blending (length N).
+  std::vector<const BaseScalar_t<T_compute>*> cudaFull_raw;
+  // Soft seam blend output (separate from inputs so cudaFull buffers never get "contaminated" by output).
+  std::unique_ptr<CudaMat<T_compute>> cudaBlendOut;
   // Soft seam mask: [H x W x N] base scalars (not batched)
   std::unique_ptr<BaseScalar_t<T_compute>, CudaFreeDeleter<BaseScalar_t<T_compute>>> cudaBlendSoftSeam;
 
@@ -50,6 +54,13 @@ struct StitchingContextN {
 
   // Hard seam: single-channel index map for writing
   std::unique_ptr<CudaMat<unsigned char>> cudaBlendHardSeam; // indices [0..N-1]
+
+  // Hard seam fused-kernel metadata (device-resident, length N).
+  std::unique_ptr<CudaSurface<T_pipeline>, CudaFreeDeleter<CudaSurface<T_pipeline>>> d_input_surfaces;
+  std::unique_ptr<const uint16_t*, CudaFreeDeleter<const uint16_t*>> d_remap_x_ptrs;
+  std::unique_ptr<const uint16_t*, CudaFreeDeleter<const uint16_t*>> d_remap_y_ptrs;
+  std::unique_ptr<int2, CudaFreeDeleter<int2>> d_offsets;
+  std::unique_ptr<int2, CudaFreeDeleter<int2>> d_remap_sizes;
 
   int n_images{0};
 

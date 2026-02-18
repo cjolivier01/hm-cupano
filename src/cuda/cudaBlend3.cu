@@ -370,8 +370,10 @@ __global__ void BatchedComputeLaplacianKernel(
 // -----------------------------------------------------------------------------
 // Batched blend kernel for THREE images.
 // For each channel, the three Laplacian pyramids are blended with a weighted average
-// using a 3-channel mask (m₁, m₂, m₃). If channels==4, the alpha channel is also
-// blended by weighted average of alpha1, alpha2, alpha3.
+// using a 3-channel mask (m₁, m₂, m₃). If channels==4, alpha is treated as a validity
+// channel (alpha==0 => pixel invalid). Invalid pixels are excluded by zeroing their
+// weights and renormalizing; if the mask selects only invalid pixels, we fall back
+// to the valid contributor with the highest alpha (similar to cudaBlend.cu behavior).
 template <typename T, typename F_T>
 __global__ void BatchedBlendKernel3(
     const T* __restrict__ lap1,
@@ -430,6 +432,34 @@ __global__ void BatchedBlendKernel3(
       m1 /= sum;
       m2 /= sum;
       m3 /= sum;
+    } else {
+      // Mask selected only invalid pixels; fall back to any valid contributor.
+      // This matches the 2-image behavior in cudaBlend.cu (transparent pixels lose regardless of mask).
+      const T* src = nullptr;
+      T amax = static_cast<T>(0);
+      if (alpha1 > amax) {
+        amax = alpha1;
+        src = lap1Image + idx;
+      }
+      if (alpha2 > amax) {
+        amax = alpha2;
+        src = lap2Image + idx;
+      }
+      if (alpha3 > amax) {
+        amax = alpha3;
+        src = lap3Image + idx;
+      }
+
+      if (!src) {
+        // All contributors invalid.
+        for (int c = 0; c < channels; ++c)
+          blendImage[idx + c] = static_cast<T>(0);
+      } else {
+        // Copy the whole pixel (RGBA) from the chosen contributor.
+        for (int c = 0; c < channels; ++c)
+          blendImage[idx + c] = src[c];
+      }
+      return;
     }
     // If sum == 0, all three were skipped; leave m1=m2=m3=0 → contribution is zero.
     // printf("d=%p, x=%d, y=%d, b=%d, m1=%f, m2=%f, m3=%f\n", blended, (int)x, (int)y, (int)b, (float)m1, (float)m2,
@@ -485,9 +515,19 @@ __global__ void BatchedBlendKernel3(
     // blendImage[idx + c] = 128;
   }
 
-  // Finally, if we are in 4‐channel mode, force the output alpha to 255:
   if (channels == 4) {
-    blendImage[idx + 3] = static_cast<T>(255);
+    // Alpha is max pooled over contributing (non-zero weight) pixels.
+    const T alpha1 = lap1Image[idx + 3];
+    const T alpha2 = lap2Image[idx + 3];
+    const T alpha3 = lap3Image[idx + 3];
+    T alpha_out = static_cast<T>(0);
+    if (m1 > static_cast<F_T>(0))
+      alpha_out = max(alpha_out, alpha1);
+    if (m2 > static_cast<F_T>(0))
+      alpha_out = max(alpha_out, alpha2);
+    if (m3 > static_cast<F_T>(0))
+      alpha_out = max(alpha_out, alpha3);
+    blendImage[idx + 3] = alpha_out;
   }
 }
 

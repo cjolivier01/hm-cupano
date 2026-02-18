@@ -95,14 +95,7 @@ TEST(CudaBlend3SmallTest, SinglePixelIdentityMasks) {
     CudaBatchLaplacianBlendContext3<float> ctx(width, height, numLevels, batchSize);
     ASSERT_EQ(
         cudaBatchedLaplacianBlendWithContext3<float>(
-            img1.data(),
-            img2.data(),
-            img3.data(),
-            mask.data(),
-            output.data(),
-            ctx,
-            channels,
-            0),
+            img1.data(), img2.data(), img3.data(), mask.data(), output.data(), ctx, channels, 0),
         cudaSuccess);
     CUDA_CHECK(cudaDeviceSynchronize());
   }
@@ -120,14 +113,7 @@ TEST(CudaBlend3SmallTest, SinglePixelIdentityMasks) {
     CudaBatchLaplacianBlendContext3<float> ctx(width, height, numLevels, batchSize);
     ASSERT_EQ(
         cudaBatchedLaplacianBlendWithContext3<float>(
-            img1.data(),
-            img2.data(),
-            img3.data(),
-            mask.data(),
-            output.data(),
-            ctx,
-            channels,
-            0),
+            img1.data(), img2.data(), img3.data(), mask.data(), output.data(), ctx, channels, 0),
         cudaSuccess);
     CUDA_CHECK(cudaDeviceSynchronize());
   }
@@ -197,14 +183,7 @@ TEST(CudaBlend3SmallTest, TwoByTwoUniformMask) {
     CudaBatchLaplacianBlendContext3<float> ctx(width, height, numLevels, batchSize);
     ASSERT_EQ(
         cudaBatchedLaplacianBlendWithContext3<float>(
-            img1.data(),
-            img2.data(),
-            img3.data(),
-            mask.data(),
-            output.data(),
-            ctx,
-            channels,
-            0),
+            img1.data(), img2.data(), img3.data(), mask.data(), output.data(), ctx, channels, 0),
         cudaSuccess);
     CUDA_CHECK(cudaDeviceSynchronize());
   }
@@ -215,7 +194,7 @@ TEST(CudaBlend3SmallTest, TwoByTwoUniformMask) {
 }
 
 // Test 3: Single-Pixel RGBA images (channels=4), varying alpha blending
-// Verify that RGB gets blended by (m₁,m₂,m₃) but alpha is also weighted by same mask.
+// Verify that RGB gets blended by (m₁,m₂,m₃) but alpha is treated as validity (max pooled), not weighted.
 TEST(CudaBlend3SmallTest, SinglePixelRGBAAlphaBlending) {
   const int width = 1;
   const int height = 1;
@@ -250,14 +229,7 @@ TEST(CudaBlend3SmallTest, SinglePixelRGBAAlphaBlending) {
     CudaBatchLaplacianBlendContext3<float> ctx(width, height, numLevels, batchSize);
     ASSERT_EQ(
         cudaBatchedLaplacianBlendWithContext3<float>(
-            img1.data(),
-            img2.data(),
-            img3.data(),
-            mask.data(),
-            output.data(),
-            ctx,
-            channels,
-            0),
+            img1.data(), img2.data(), img3.data(), mask.data(), output.data(), ctx, channels, 0),
         cudaSuccess);
     CUDA_CHECK(cudaDeviceSynchronize());
   }
@@ -266,8 +238,8 @@ TEST(CudaBlend3SmallTest, SinglePixelRGBAAlphaBlending) {
   // R = 0.2*10 + 0.3*50 + 0.5*90 = 2 + 15 + 45 = 62
   // G = 0.2*20 + 0.3*60 + 0.5*100 = 4 + 18 + 50 = 72
   // B = 0.2*30 + 0.3*70 + 0.5*110 = 6 + 21 + 55 = 82
-  // A = 0.2*40 + 0.3*80 + 0.5*120 = 8 + 24 + 60 = 92
-  std::vector<float> expected = {62.0f, 72.0f, 82.0f, 92.0f};
+  // A = max(alpha1, alpha2, alpha3) = 120 (alpha is not weight-blended).
+  std::vector<float> expected = {62.0f, 72.0f, 82.0f, 120.0f};
 
   for (int c = 0; c < channels; c++) {
     EXPECT_NEAR(h_output[c], expected[c], kEpsilon) << "Channel " << c << " mismatch for RGBA blending.";
@@ -303,14 +275,7 @@ TEST(CudaBlend3SmallTest, AlphaZeroSkipsContribution) {
   CudaBatchLaplacianBlendContext3<float> ctx(width, height, numLevels, batchSize);
   ASSERT_EQ(
       cudaBatchedLaplacianBlendWithContext3<float>(
-          img1.data(),
-          img2.data(),
-          img3.data(),
-          mask.data(),
-          output.data(),
-          ctx,
-          channels,
-          0),
+          img1.data(), img2.data(), img3.data(), mask.data(), output.data(), ctx, channels, 0),
       cudaSuccess);
   CUDA_CHECK(cudaDeviceSynchronize());
   // Pull result back to host for verification
@@ -318,10 +283,7 @@ TEST(CudaBlend3SmallTest, AlphaZeroSkipsContribution) {
 
   // Because image2 has alpha==0, its weight is zeroed and remaining weights renormalize:
   // m1' = 0.1/(0.1+0.1) = 0.5, m3' = 0.5. So RGB = (img1+img3)/2, A = (255+255)/2 = 255.
-  std::vector<float> expected{(10.0f + 90.0f) * 0.5f,
-                              (20.0f + 100.0f) * 0.5f,
-                              (30.0f + 110.0f) * 0.5f,
-                              255.0f};
+  std::vector<float> expected{(10.0f + 90.0f) * 0.5f, (20.0f + 100.0f) * 0.5f, (30.0f + 110.0f) * 0.5f, 255.0f};
   for (int c = 0; c < channels; ++c) {
     EXPECT_NEAR(h_output[c], expected[c], kEpsilon) << "Channel " << c << " mismatch with alpha gating.";
   }
@@ -378,9 +340,12 @@ TEST(CudaBlend3SmallTest, MultiLevelOverlapHasNoAlphaHoles) {
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
       int idx = (y * W + x) * C;
-      i1[idx + 0] = 100.0f; i1[idx + 3] = 255.0f; // R, A
-      i2[idx + 1] = 150.0f; i2[idx + 3] = 255.0f; // G, A
-      i3[idx + 2] = 200.0f; i3[idx + 3] = 255.0f; // B, A
+      i1[idx + 0] = 100.0f;
+      i1[idx + 3] = 255.0f; // R, A
+      i2[idx + 1] = 150.0f;
+      i2[idx + 3] = 255.0f; // G, A
+      i3[idx + 2] = 200.0f;
+      i3[idx + 3] = 255.0f; // B, A
     }
   }
   // Mask: channel0=1 for top half (y<2), channel1=1 for bottom (y>=2), channel2=0
@@ -388,7 +353,10 @@ TEST(CudaBlend3SmallTest, MultiLevelOverlapHasNoAlphaHoles) {
   for (int y = 0; y < H; ++y) {
     for (int x = 0; x < W; ++x) {
       int mi = (y * W + x) * 3;
-      if (y < H / 2) m[mi + 0] = 1.0f; else m[mi + 1] = 1.0f;
+      if (y < H / 2)
+        m[mi + 0] = 1.0f;
+      else
+        m[mi + 1] = 1.0f;
     }
   }
   std::vector<float> out(N, 0.0f);
