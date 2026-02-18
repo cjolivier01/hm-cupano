@@ -167,7 +167,8 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
             detailN::align_and_clamp(blend_roi_canvas_, detailN::pyramid_alignment(num_levels), canvas_w, canvas_h);
         seam_index_for_blend = seam_index_padded(blend_roi_canvas_);
       } else {
-        // No seams. We'll only do the hard-seam remap at runtime.
+        // No seam boundaries detected; leave blend/write ROIs empty so downstream processing follows
+        // its standard soft-seam remap+blend behavior rather than a special fast path.
         blend_roi_canvas_ = {};
         write_roi_canvas_ = {};
         remap_rois_.assign(n, {});
