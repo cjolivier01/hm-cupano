@@ -204,18 +204,18 @@ ControlMasks3::ControlMasks3(const std::string& game_dir) {
 }
 
 cv::Mat ControlMasks3::split_to_channels(const cv::Mat& seam_mask) {
+  CV_Assert(seam_mask.type() == CV_8U);
   cv::Mat seam_mask_dest = cv::Mat(cv::Size(seam_mask.cols, seam_mask.rows), CV_8UC3, cv::Scalar(0, 0, 0));
-
-  std::vector<int> unique_values = get_unique_values(seam_mask);
-  assert(unique_values.size() == 3);
 
   std::vector<cv::Mat> channels;
   cv::split(seam_mask_dest, channels);
 
-  for (size_t image_index = 0; image_index < unique_values.size(); ++image_index) {
-    cv::Mat mask = (seam_mask == unique_values[image_index]);
-    channels[image_index].setTo(1, mask);
-  }
+  // `seam_mask` stores image indices. Some masks may not contain all labels, so we
+  // build a fixed 3-channel one-hot encoding for indices {0,1,2} without requiring
+  // all labels to appear.
+  channels[0].setTo(1, seam_mask == 0);
+  channels[1].setTo(1, seam_mask == 1);
+  channels[2].setTo(1, seam_mask == 2);
 
   // Merge channels back
   cv::merge(channels, seam_mask_dest);

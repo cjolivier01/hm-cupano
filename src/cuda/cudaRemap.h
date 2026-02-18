@@ -101,3 +101,26 @@ cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust(
     int offsetY,
     float3 adjustment,
     cudaStream_t stream);
+
+/**
+ * @brief Fused hard-seam remap for N images.
+ *
+ * For each output pixel, selects the contributing image from `dest_image_map`, then applies that image's
+ * remap to sample from the corresponding input surface. Pixels with unmapped/invalid coordinates are
+ * left unchanged, so callers typically `cudaMemsetAsync()` the destination to 0 before invoking.
+ *
+ * All pointer arrays (`d_inputs`, `d_mapX_ptrs`, `d_mapY_ptrs`, `d_offsets`, `d_sizes`) must live in
+ * device memory and have length `n_images`.
+ */
+template <typename T>
+cudaError_t batched_remap_hard_seam_kernel_n(
+    const CudaSurface<T>* d_inputs,
+    const unsigned short* const* d_mapX_ptrs,
+    const unsigned short* const* d_mapY_ptrs,
+    const int2* d_offsets,
+    const int2* d_sizes,
+    int n_images,
+    const unsigned char* dest_image_map,
+    CudaSurface<T> dest,
+    int batchSize,
+    cudaStream_t stream);

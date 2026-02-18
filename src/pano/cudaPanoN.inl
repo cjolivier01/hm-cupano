@@ -78,9 +78,19 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
     }
 
     stitch_context_->cudaFull.resize(n);
+    stitch_context_->cudaFull_raw.resize(n);
     for (int i = 0; i < n; ++i) {
       stitch_context_->cudaFull[i] = std::make_unique<CudaMat<T_compute>>(batch_size, canvas_w, canvas_h);
+      stitch_context_->cudaFull_raw[i] = stitch_context_->cudaFull[i]->data_raw();
+      // `batched_remap_kernel_ex_offset()` overwrites the remap ROI every frame, so we only need to
+      // zero-initialize the full buffers once (outside the ROI must stay 0/alpha=0).
+      auto cuerr = cudaMemset(stitch_context_->cudaFull[i]->data(), 0, stitch_context_->cudaFull[i]->size());
+      if (cuerr != cudaSuccess) {
+        status_ = CudaStatus(cuerr);
+        return;
+      }
     }
+    stitch_context_->cudaBlendOut = std::make_unique<CudaMat<T_compute>>(batch_size, canvas_w, canvas_h);
 
     // Create the blending context for this N once; buffers are allocated lazily on first blend.
     switch (n) {
@@ -136,6 +146,100 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
   for (int i = 0; i < n; ++i) {
     stitch_context_->remap_x[i] = std::make_unique<CudaMat<uint16_t>>(control_masks.img_col[i]);
     stitch_context_->remap_y[i] = std::make_unique<CudaMat<uint16_t>>(control_masks.img_row[i]);
+  }
+
+  // Device-resident metadata for the fused hard-seam kernel (used when num_levels == 0).
+  {
+    std::vector<const uint16_t*> h_remap_x_ptrs(n, nullptr);
+    std::vector<const uint16_t*> h_remap_y_ptrs(n, nullptr);
+    std::vector<int2> h_offsets(n);
+    std::vector<int2> h_sizes(n);
+    for (int i = 0; i < n; ++i) {
+      h_remap_x_ptrs[i] = stitch_context_->remap_x[i]->data();
+      h_remap_y_ptrs[i] = stitch_context_->remap_y[i]->data();
+      const auto& pos = canvas_manager_->canvas_positions()[i];
+      h_offsets[i] = int2{pos.x, pos.y};
+      h_sizes[i] = int2{stitch_context_->remap_x[i]->width(), stitch_context_->remap_x[i]->height()};
+    }
+
+    CudaSurface<T_pipeline>* d_inputs = nullptr;
+    auto cuerr =
+        cudaMalloc(reinterpret_cast<void**>(&d_inputs), static_cast<size_t>(n) * sizeof(CudaSurface<T_pipeline>));
+    if (cuerr != cudaSuccess) {
+      status_ = CudaStatus(cuerr);
+      return;
+    }
+    stitch_context_->d_input_surfaces.reset(d_inputs);
+
+    const uint16_t** d_remap_x = nullptr;
+    cuerr = cudaMalloc(reinterpret_cast<void**>(&d_remap_x), static_cast<size_t>(n) * sizeof(uint16_t*));
+    if (cuerr != cudaSuccess) {
+      status_ = CudaStatus(cuerr);
+      return;
+    }
+    stitch_context_->d_remap_x_ptrs.reset(d_remap_x);
+    cuerr = cudaMemcpy(
+        stitch_context_->d_remap_x_ptrs.get(),
+        h_remap_x_ptrs.data(),
+        static_cast<size_t>(n) * sizeof(uint16_t*),
+        cudaMemcpyHostToDevice);
+    if (cuerr != cudaSuccess) {
+      status_ = CudaStatus(cuerr);
+      return;
+    }
+
+    const uint16_t** d_remap_y = nullptr;
+    cuerr = cudaMalloc(reinterpret_cast<void**>(&d_remap_y), static_cast<size_t>(n) * sizeof(uint16_t*));
+    if (cuerr != cudaSuccess) {
+      status_ = CudaStatus(cuerr);
+      return;
+    }
+    stitch_context_->d_remap_y_ptrs.reset(d_remap_y);
+    cuerr = cudaMemcpy(
+        stitch_context_->d_remap_y_ptrs.get(),
+        h_remap_y_ptrs.data(),
+        static_cast<size_t>(n) * sizeof(uint16_t*),
+        cudaMemcpyHostToDevice);
+    if (cuerr != cudaSuccess) {
+      status_ = CudaStatus(cuerr);
+      return;
+    }
+
+    int2* d_offsets = nullptr;
+    cuerr = cudaMalloc(reinterpret_cast<void**>(&d_offsets), static_cast<size_t>(n) * sizeof(int2));
+    if (cuerr != cudaSuccess) {
+      status_ = CudaStatus(cuerr);
+      return;
+    }
+    stitch_context_->d_offsets.reset(d_offsets);
+    cuerr = cudaMemcpy(
+        stitch_context_->d_offsets.get(),
+        h_offsets.data(),
+        static_cast<size_t>(n) * sizeof(int2),
+        cudaMemcpyHostToDevice);
+    if (cuerr != cudaSuccess) {
+      status_ = CudaStatus(cuerr);
+      return;
+    }
+
+    if (stitch_context_->is_hard_seam()) {
+      int2* d_sizes = nullptr;
+      cuerr = cudaMalloc(reinterpret_cast<void**>(&d_sizes), static_cast<size_t>(n) * sizeof(int2));
+      if (cuerr != cudaSuccess) {
+        status_ = CudaStatus(cuerr);
+        return;
+      }
+      stitch_context_->d_remap_sizes.reset(d_sizes);
+      cuerr = cudaMemcpy(
+          stitch_context_->d_remap_sizes.get(),
+          h_sizes.data(),
+          static_cast<size_t>(n) * sizeof(int2),
+          cudaMemcpyHostToDevice);
+      if (cuerr != cudaSuccess) {
+        status_ = CudaStatus(cuerr);
+        return;
+      }
+    }
   }
 }
 
@@ -203,7 +307,7 @@ CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::blend_soft_dispatch(
   const int n = stitch_context_->n_images;
   const int C = detailN::num_channels_v<T_compute>;
   auto d_mask = stitch_context_->cudaBlendSoftSeam.get();
-  auto out = stitch_context_->cudaFull[0]->data_raw();
+  auto out = stitch_context_->cudaBlendOut->data_raw();
 
 #define BLEND_N_CASE(NVAL, CH)                                                                         \
   do {                                                                                                 \
@@ -280,35 +384,37 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T
     if (cuerr != cudaSuccess)
       return CudaStatus(cuerr);
 
+    std::vector<CudaSurface<T_pipeline>> h_inputs(stitch_context_->n_images);
     for (int i = 0; i < stitch_context_->n_images; ++i) {
-      const auto& mx = *stitch_context_->remap_x[i];
-      const auto& my = *stitch_context_->remap_y[i];
-      int dx = canvas_manager_->canvas_positions()[i].x;
-      int dy = canvas_manager_->canvas_positions()[i].y;
-      CudaStatus s = remap_hard(
-          *inputs[i],
-          mx,
-          my,
-          static_cast<uint8_t>(i),
-          *stitch_context_->cudaBlendHardSeam,
-          *canvas,
-          dx,
-          dy,
-          image_adjustment_,
-          stitch_context_->batch_size(),
-          stream);
-      if (!s.ok())
-        return s;
+      h_inputs[i] = inputs[i]->surface();
     }
+    cuerr = cudaMemcpyAsync(
+        stitch_context_->d_input_surfaces.get(),
+        h_inputs.data(),
+        static_cast<size_t>(stitch_context_->n_images) * sizeof(CudaSurface<T_pipeline>),
+        cudaMemcpyHostToDevice,
+        stream);
+    if (cuerr != cudaSuccess)
+      return CudaStatus(cuerr);
+
+    cuerr = batched_remap_hard_seam_kernel_n<T_pipeline>(
+        stitch_context_->d_input_surfaces.get(),
+        stitch_context_->d_remap_x_ptrs.get(),
+        stitch_context_->d_remap_y_ptrs.get(),
+        stitch_context_->d_offsets.get(),
+        stitch_context_->d_remap_sizes.get(),
+        stitch_context_->n_images,
+        stitch_context_->cudaBlendHardSeam->data(),
+        canvas->surface(),
+        stitch_context_->batch_size(),
+        stream);
+    if (cuerr != cudaSuccess)
+      return CudaStatus(cuerr);
+
     return std::move(canvas);
   }
 
   // Soft seam: remap each input into its own full canvas buffer, then N-way blend.
-  for (int i = 0; i < stitch_context_->n_images; ++i) {
-    auto cuerr = cudaMemsetAsync(stitch_context_->cudaFull[i]->data(), 0, stitch_context_->cudaFull[i]->size(), stream);
-    if (cuerr != cudaSuccess)
-      return CudaStatus(cuerr);
-  }
   for (int i = 0; i < stitch_context_->n_images; ++i) {
     const auto& mx = *stitch_context_->remap_x[i];
     const auto& my = *stitch_context_->remap_y[i];
@@ -328,21 +434,17 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T
       return s;
   }
 
-  std::vector<const BaseScalar_t<T_compute>*> ptrs(stitch_context_->n_images);
-  for (int i = 0; i < stitch_context_->n_images; ++i) {
-    ptrs[i] = stitch_context_->cudaFull[i]->data_raw();
-  }
   {
-    CudaStatus s = blend_soft_dispatch(ptrs, stream);
+    CudaStatus s = blend_soft_dispatch(stitch_context_->cudaFull_raw, stream);
     if (!s.ok())
       return s;
   }
 
   {
     auto cuerr = copy_roi_batched<T_compute, T_pipeline>(
-        stitch_context_->cudaFull[0]->surface(),
-        /*regionWidth=*/stitch_context_->cudaFull[0]->width(),
-        /*regionHeight=*/stitch_context_->cudaFull[0]->height(),
+        stitch_context_->cudaBlendOut->surface(),
+        /*regionWidth=*/stitch_context_->cudaBlendOut->width(),
+        /*regionHeight=*/stitch_context_->cudaBlendOut->height(),
         /*srcROI_x=*/0,
         /*srcROI_y=*/0,
         canvas->surface(),
