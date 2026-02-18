@@ -222,21 +222,23 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
       return;
     }
 
-    int2* d_sizes = nullptr;
-    cuerr = cudaMalloc(reinterpret_cast<void**>(&d_sizes), static_cast<size_t>(n) * sizeof(int2));
-    if (cuerr != cudaSuccess) {
-      status_ = CudaStatus(cuerr);
-      return;
-    }
-    stitch_context_->d_remap_sizes.reset(d_sizes);
-    cuerr = cudaMemcpy(
-        stitch_context_->d_remap_sizes.get(),
-        h_sizes.data(),
-        static_cast<size_t>(n) * sizeof(int2),
-        cudaMemcpyHostToDevice);
-    if (cuerr != cudaSuccess) {
-      status_ = CudaStatus(cuerr);
-      return;
+    if (stitch_context_->is_hard_seam()) {
+      int2* d_sizes = nullptr;
+      cuerr = cudaMalloc(reinterpret_cast<void**>(&d_sizes), static_cast<size_t>(n) * sizeof(int2));
+      if (cuerr != cudaSuccess) {
+        status_ = CudaStatus(cuerr);
+        return;
+      }
+      stitch_context_->d_remap_sizes.reset(d_sizes);
+      cuerr = cudaMemcpy(
+          stitch_context_->d_remap_sizes.get(),
+          h_sizes.data(),
+          static_cast<size_t>(n) * sizeof(int2),
+          cudaMemcpyHostToDevice);
+      if (cuerr != cudaSuccess) {
+        status_ = CudaStatus(cuerr);
+        return;
+      }
     }
   }
 }
