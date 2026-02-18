@@ -4,6 +4,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <png.h>
 #include <tiffio.h>
+#include <array>
 #include <set>
 #include <stdexcept>
 
@@ -123,7 +124,8 @@ static cv::Mat imreadPalettedAsIndex(const std::string& filename) {
 
 bool ControlMasksN::load(const std::string& dirIn, int n_images) {
   std::string dir = dirIn;
-  if (!dir.empty() && dir.back() != '/') dir += '/';
+  if (!dir.empty() && dir.back() != '/')
+    dir += '/';
 
   img_col.resize(n_images);
   img_row.resize(n_images);
@@ -154,24 +156,49 @@ bool ControlMasksN::load(const std::string& dirIn, int n_images) {
   try {
     whole_seam_mask_indexed = imreadPalettedAsIndex(seam_filename);
   } catch (const std::exception& e) {
-    std::cerr << "Unable to load seam mask: " << seam_filename << " (" << e.what() << ")" << std::endl;
+    // Many 2-view seam masks are plain grayscale (e.g. {0,255}), not paletted PNGs.
+    // Fall back to OpenCV's grayscale loader in that case.
+    whole_seam_mask_indexed = cv::imread(seam_filename, cv::IMREAD_GRAYSCALE);
+    if (whole_seam_mask_indexed.empty()) {
+      std::cerr << "Unable to load seam mask: " << seam_filename << " (" << e.what() << ")" << std::endl;
+      return false;
+    }
+  }
+
+  auto uniq = get_unique_values(whole_seam_mask_indexed);
+  if (uniq.empty() || static_cast<int>(uniq.size()) != n_images) {
+    std::cerr << "Seam mask classes (" << uniq.size() << ") != n_images (" << n_images << "): " << seam_filename
+              << std::endl;
     return false;
   }
 
-  // Basic sanity: indexed values should be 0..K and K+1==n_images
-  auto uniq = get_unique_values(whole_seam_mask_indexed);
-  if (uniq.empty() || uniq.front() != 0 || (int)uniq.size() != n_images) {
-    std::cerr << "Seam mask classes (" << uniq.size() << ") != n_images (" << n_images << ")" << std::endl;
-    return false;
+  // Remap seam labels to contiguous indices [0..n_images-1] so downstream kernels
+  // (and hard-seam dest-map logic) can assume canonical values.
+  //
+  // Example: a 2-view grayscale seam may be {0,255}. We remap to {0,1}.
+  if (uniq.front() != 0 || uniq.back() != n_images - 1) {
+    std::array<uint8_t, 256> lut{};
+    for (int i = 0; i < n_images; ++i) {
+      lut[static_cast<uint8_t>(uniq[i])] = static_cast<uint8_t>(i);
+    }
+    for (int y = 0; y < whole_seam_mask_indexed.rows; ++y) {
+      uint8_t* rowPtr = whole_seam_mask_indexed.ptr<uint8_t>(y);
+      for (int x = 0; x < whole_seam_mask_indexed.cols; ++x) {
+        rowPtr[x] = lut[rowPtr[x]];
+      }
+    }
   }
 
   return true;
 }
 
 bool ControlMasksN::is_valid() const {
-  if (img_col.empty() || img_row.empty() || img_col.size() != img_row.size()) return false;
-  if (positions.size() != img_col.size()) return false;
-  if (whole_seam_mask_indexed.empty()) return false;
+  if (img_col.empty() || img_row.empty() || img_col.size() != img_row.size())
+    return false;
+  if (positions.size() != img_col.size())
+    return false;
+  if (whole_seam_mask_indexed.empty())
+    return false;
   return true;
 }
 

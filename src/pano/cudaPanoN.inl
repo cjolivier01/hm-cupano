@@ -58,7 +58,8 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
   // Seam mask setup
   if (!stitch_context_->is_hard_seam()) {
     // Build an N-channel one-hot seam mask as base scalars [H x W x N].
-    cv::Mat seam_color_u8 = ControlMasksN::split_to_channels(control_masks.whole_seam_mask_indexed, n);
+    cv::Mat seam_index = canvas_manager_->convertMaskMat(control_masks.whole_seam_mask_indexed);
+    cv::Mat seam_color_u8 = ControlMasksN::split_to_channels(seam_index, n);
     cv::Mat seam_color_f;
     seam_color_u8.convertTo(seam_color_f, CV_MAKETYPE(CV_32F, n));
 
