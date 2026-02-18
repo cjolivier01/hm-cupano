@@ -53,6 +53,41 @@ cudaError_t batched_remap_kernel_ex_offset(
     bool no_unmapped_write,
     cudaStream_t stream);
 
+/**
+ * @brief Batched remap for a rectangular ROI inside the remap map.
+ *
+ * This is equivalent to `batched_remap_kernel_ex_offset()`, but only processes a
+ * sub-rectangle `[roiX, roiY, roiW, roiH]` in the remap map (and thus only writes
+ * the corresponding region in `dest`).
+ *
+ * ROI coordinates are expressed in the remap-map coordinate system (i.e. local
+ * to the remapped image). The `offsetX/offsetY` apply to the full remap map, and
+ * destination coordinates are computed as:
+ *   `destX = offsetX + (roiX + x)`
+ *   `destY = offsetY + (roiY + y)`
+ *
+ * @tparam T_in  Input pixel type (source surface).
+ * @tparam T_out Output pixel type (destination surface).
+ */
+template <typename T_in, typename T_out>
+cudaError_t batched_remap_kernel_ex_offset_roi(
+    const CudaSurface<T_in>& src,
+    const CudaSurface<T_out>& dest,
+    const unsigned short* d_mapX,
+    const unsigned short* d_mapY,
+    T_in deflt,
+    int batchSize,
+    int remapW,
+    int remapH,
+    int offsetX,
+    int offsetY,
+    int roiX,
+    int roiY,
+    int roiW,
+    int roiH,
+    bool no_unmapped_write,
+    cudaStream_t stream);
+
 template <typename T_in, typename T_out>
 cudaError_t batched_remap_kernel_ex_offset_adjust(
     const CudaSurface<T_in>& src,

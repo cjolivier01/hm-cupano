@@ -143,6 +143,16 @@ cc_test(
   ]
 )
 
+cc_test(
+  name = "cudaPanoN_test",
+  srcs = ["cudaPanoN_test.cpp"],
+  deps = [
+    ":cuda_pano_n",
+    "@googletest//:gtest",
+    "@googletest//:gtest_main",
+  ]
+)
+
 # Header-only variant for N-image pano (no CUDA link), for compilation tests
 cc_library(
     name = "cuda_pano_n_headers",
