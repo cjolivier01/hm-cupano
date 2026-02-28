@@ -84,10 +84,9 @@ class CudaStitchPanoN {
       int batch_size,
       int num_levels,
       const ControlMasksN& control_masks,
-      bool match_exposure = false,
-      bool quiet = false,
-      bool minimize_blend = true);
-
+      bool match_exposure,
+      bool minimize_blend,
+      bool quiet);
   int canvas_width() const {
     return canvas_manager_->canvas_width();
   }
