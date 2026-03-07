@@ -197,3 +197,38 @@ Notes:
 - `--control` must point to a folder containing the Hugin-generated remaps and seam: `mapping_000{i}_{x,y}.tif`, `mapping_000{i}.tif`, and `seam_file.png` (2 files for two-video, 3 files for three-video).
 - The apps attempt GPU decode/encode via OpenCV cudacodec if available; otherwise they fall back to CPU.
 - Output codec defaults to `mp4v` for broad compatibility; override with `--fourcc=avc1` or `--fourcc=hevc` if supported.
+
+## Python/PyTorch Port
+
+A Python port of the two-image and generic N-image stitchers now lives under `cupano/`.
+It mirrors the C++ control-mask loaders and the `cudaPano` / `cudaPanoN` orchestration, but runs on PyTorch tensors in `BHWC` layout.
+
+Key points:
+- `cupano.CudaStitchPano`: two-image path with hard seam or Laplacian blend.
+- `cupano.CudaStitchPanoN`: generic 2..8 image path, including the minimized soft-seam ROI path.
+- `cupano.ControlMasks` / `cupano.ControlMasksN`: Python loaders for the same Hugin/enblend mapping outputs used by the C++ code.
+- The implementation targets portability across CUDA and ROCm through PyTorch tensor ops.
+
+Example:
+```python
+import cv2
+import torch
+
+from cupano import ControlMasks, CudaStitchPano
+
+masks = ControlMasks("assets")
+left = torch.from_numpy(cv2.cvtColor(cv2.imread("assets/image0.png"), cv2.COLOR_BGR2BGRA)).float().cuda().unsqueeze(0)
+right = torch.from_numpy(cv2.cvtColor(cv2.imread("assets/image1.png"), cv2.COLOR_BGR2BGRA)).float().cuda().unsqueeze(0)
+
+stitcher = CudaStitchPano(batch_size=1, num_levels=6, control_masks=masks)
+out = stitcher.process(left, right)
+```
+
+Tests:
+```bash
+pytest -q tests/python/test_pytorch_pano.py
+```
+
+Note on CuTe DSL:
+- NVIDIA CuTe DSL is CUDA-only, so it cannot satisfy a single-source CUDA+ROCm requirement.
+- The Python port therefore prioritizes a portable PyTorch implementation rather than introducing a CUDA-only CuTe dependency.
