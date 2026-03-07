@@ -249,6 +249,16 @@ This compares the Python stitcher against the existing C++ binary on the same co
 - a diff heatmap
 - JSON metrics (`max_abs`, `mean_abs`, `rmse`, `psnr`)
 
+Synthetic performance benchmark:
+```bash
+python scripts/benchmark_pano.py \
+  --sizes 768x384 1024x512 1536x768 \
+  --levels 0 1 6 \
+  --output-json /tmp/cupano_bench.json
+```
+
+This benchmarks the existing two-image C++ binary and the Python `torch` / `triton` backends on the same synthetic control directories and prints a summary table plus JSON.
+
 Note on CuTe DSL:
 - NVIDIA CuTe DSL is CUDA-only, so it cannot satisfy a single-source CUDA+ROCm requirement.
 - The Python port therefore prioritizes a portable PyTorch implementation rather than introducing a CUDA-only CuTe dependency.
