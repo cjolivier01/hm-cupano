@@ -6,6 +6,15 @@ import torch
 
 from cupano import ControlMasks, ControlMasksN, CudaStitchPano, CudaStitchPanoN, SpatialTiff
 
+_MIN_TEST_FREE_BYTES = 1 << 30
+
+
+def _has_enough_cuda_memory(min_free_bytes: int = _MIN_TEST_FREE_BYTES) -> bool:
+    if not torch.cuda.is_available():
+        return False
+    free_bytes, _ = torch.cuda.mem_get_info()
+    return free_bytes >= min_free_bytes
+
 
 def identity_map_x(width: int, height: int) -> np.ndarray:
     return np.tile(np.arange(width, dtype=np.uint16), (height, 1))
@@ -67,7 +76,7 @@ def assert_tensor_equal(a: torch.Tensor, b: torch.Tensor, tol: float = 0.0) -> N
 
 @pytest.fixture(scope="module")
 def device() -> torch.device:
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return torch.device("cuda" if _has_enough_cuda_memory() else "cpu")
 
 
 def test_cuda_pano_hard_seam_matches_expected_selection(device: torch.device) -> None:

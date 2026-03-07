@@ -207,8 +207,8 @@ Key points:
 - `cupano.CudaStitchPano`: two-image path with hard seam or Laplacian blend.
 - `cupano.CudaStitchPanoN`: generic 2..8 image path, including the minimized soft-seam ROI path.
 - `cupano.ControlMasks` / `cupano.ControlMasksN`: Python loaders for the same Hugin/enblend mapping outputs used by the C++ code.
-- Backend selection is exposed as `backend="auto" | "torch" | "triton"`.
-- `backend="auto"` selects Triton for supported GPU tensors and otherwise falls back to pure PyTorch.
+- Backend selection is exposed as `backend="auto" | "triton"`.
+- There is no separate public `python-torch` mode anymore; `auto` selects Triton for supported GPU tensors and otherwise falls back internally.
 - The implementation targets portability across CUDA and ROCm through PyTorch, with Triton kernels for the ROI copy and remap hot paths when Triton is installed.
 
 Example:
@@ -257,7 +257,7 @@ python scripts/benchmark_pano.py \
   --output-json /tmp/cupano_bench.json
 ```
 
-This benchmarks the existing two-image C++ binary and the Python `torch` / `triton` backends on the same synthetic control directories and prints a summary table plus JSON.
+This benchmarks the existing two-image C++ binary and the Python Triton backend on the same synthetic control directories and prints a summary table plus JSON.
 
 Note on CuTe DSL:
 - NVIDIA CuTe DSL is CUDA-only, so it cannot satisfy a single-source CUDA+ROCm requirement.

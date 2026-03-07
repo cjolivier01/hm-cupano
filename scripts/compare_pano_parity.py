@@ -296,7 +296,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--levels", type=int, default=0, help="Number of Laplacian levels to compare")
     parser.add_argument("--adjust", action="store_true", help="Enable exposure adjustment when supported")
     parser.add_argument("--device", default=("cuda" if torch.cuda.is_available() else "cpu"), help="Torch device to use for the Python path")
-    parser.add_argument("--backend", choices=("auto", "torch", "triton"), default="auto", help="Python backend to use for the cupano path")
+    parser.add_argument("--backend", choices=("auto", "triton"), default="auto", help="Python backend to use for the cupano path")
     parser.add_argument("--build-if-needed", action="store_true", help="Build the C++ parity binary with bazelisk if missing")
     parser.add_argument("--binary", default=None, help="Path to the C++ parity binary to run")
     parser.add_argument("--work-dir", default=None, help="Working directory for generated inputs and outputs")

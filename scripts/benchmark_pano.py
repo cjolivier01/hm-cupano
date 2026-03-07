@@ -152,7 +152,6 @@ def load_python_inputs(directory: Path, device: torch.device) -> tuple[torch.Ten
 def benchmark_python(
     directory: Path,
     levels: int,
-    backend: str,
     device: torch.device,
     iterations: int,
     warmup: int,
@@ -163,8 +162,8 @@ def benchmark_python(
     width = image.shape[1]
     height = image.shape[0]
     try:
-        if backend == "triton" and not triton_available():
-            return BenchmarkResult(width, height, levels, "python-triton", None, None, False, "Triton not installed")
+        if not triton_available():
+            return BenchmarkResult(width, height, levels, "python", None, None, False, "Triton not installed")
         left, right = load_python_inputs(directory, device)
         masks = ControlMasks(str(directory))
         if not masks.is_valid():
@@ -175,7 +174,7 @@ def benchmark_python(
             control_masks=masks,
             match_exposure=False,
             quiet=True,
-            backend=backend,
+            backend="triton",
         )
 
         with torch.inference_mode():
@@ -190,9 +189,9 @@ def benchmark_python(
                 torch.cuda.synchronize(device)
         elapsed = time.perf_counter() - start
         fps = iterations / elapsed
-        return BenchmarkResult(width, height, levels, f"python-{backend}", fps, 1000.0 / fps, True)
+        return BenchmarkResult(width, height, levels, "python", fps, 1000.0 / fps, True)
     except Exception as exc:  # pragma: no cover - exercised through command execution
-        return BenchmarkResult(width, height, levels, f"python-{backend}", None, None, False, str(exc))
+        return BenchmarkResult(width, height, levels, "python", None, None, False, str(exc))
     finally:
         if device.type == "cuda":
             torch.cuda.empty_cache()
@@ -244,10 +243,8 @@ def summarize_rows(results: Iterable[BenchmarkResult]) -> list[dict[str, object]
             row[f"{result.engine}_note"] = result.note
     for row in grouped.values():
         cpp_fps = row.get("cpp_fps")
-        for engine in ("python-torch", "python-triton"):
-            py_fps = row.get(f"{engine}_fps")
-            key = f"cpp_over_{engine.replace('-', '_')}"
-            row[key] = (cpp_fps / py_fps) if isinstance(cpp_fps, float) and isinstance(py_fps, float) and py_fps > 0 else None
+        py_fps = row.get("python_fps")
+        row["cpp_over_python"] = (cpp_fps / py_fps) if isinstance(cpp_fps, float) and isinstance(py_fps, float) and py_fps > 0 else None
     return sorted(grouped.values(), key=lambda item: (int(item["width"]), int(item["height"]), int(item["levels"])))
 
 
@@ -264,10 +261,8 @@ def print_table(rows: list[dict[str, object]]) -> None:
         ("size", lambda row: f"{row['width']}x{row['height']}"),
         ("levels", lambda row: row["levels"]),
         ("cpp_fps", lambda row: row.get("cpp_fps")),
-        ("py_torch_fps", lambda row: row.get("python-torch_fps")),
-        ("py_triton_fps", lambda row: row.get("python-triton_fps")),
-        ("cpp/py_torch", lambda row: row.get("cpp_over_python_torch")),
-        ("cpp/py_triton", lambda row: row.get("cpp_over_python_triton")),
+        ("python_fps", lambda row: row.get("python_fps")),
+        ("cpp/python", lambda row: row.get("cpp_over_python")),
     ]
     widths = []
     for name, getter in columns:
@@ -286,10 +281,9 @@ def print_table(rows: list[dict[str, object]]) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Benchmark the two-image C++ pano binary against Python torch/Triton backends")
+    parser = argparse.ArgumentParser(description="Benchmark the two-image C++ pano binary against the Python Triton backend")
     parser.add_argument("--sizes", nargs="+", type=parse_size, default=[(512, 256), (1024, 512), (2048, 1024)], help="Image sizes as WIDTHxHEIGHT")
     parser.add_argument("--levels", nargs="+", type=int, default=[0, 1, 6], help="Blend levels to benchmark")
-    parser.add_argument("--python-backends", nargs="+", choices=("torch", "triton"), default=["torch", "triton"], help="Python backends to benchmark")
     parser.add_argument("--iterations", type=int, default=100, help="Python iterations per benchmark point")
     parser.add_argument("--warmup", type=int, default=10, help="Python warmup iterations per benchmark point")
     parser.add_argument("--device", default=("cuda" if torch.cuda.is_available() else "cpu"), help="Torch device for the Python benchmark")
@@ -316,8 +310,7 @@ def main() -> int:
         directory = prepare_benchmark_directory(work_dir, width, height, overlap)
         for levels in args.levels:
             results.append(benchmark_cpp(binary, directory, levels))
-            for backend in args.python_backends:
-                results.append(benchmark_python(directory, levels, backend, device, args.iterations, args.warmup))
+            results.append(benchmark_python(directory, levels, device, args.iterations, args.warmup))
 
     rows = summarize_rows(results)
     print_table(rows)

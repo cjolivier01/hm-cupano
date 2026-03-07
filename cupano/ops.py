@@ -14,7 +14,8 @@ from .triton_ops import (
     triton_available,
 )
 
-Backend = Literal["auto", "torch", "triton"]
+Backend = Literal["auto", "triton"]
+ResolvedBackend = Literal["torch_impl", "triton"]
 
 
 def ensure_batched(image: torch.Tensor) -> torch.Tensor:
@@ -37,16 +38,16 @@ def cast_like(value: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
     return value.round().clamp(0, 255).to(dtype)
 
 
-def resolve_backend(backend: Backend, *tensors: torch.Tensor) -> Literal["torch", "triton"]:
-    if backend == "torch":
-        return "torch"
+def resolve_backend(backend: Backend, *tensors: torch.Tensor) -> ResolvedBackend:
     if backend == "triton":
         if not can_use_triton_backend(*tensors):
             raise ValueError("Triton backend requested for unsupported tensors")
         return "triton"
-    if backend == "auto" and can_use_triton_backend(*tensors):
-        return "triton"
-    return "torch"
+    if backend == "auto":
+        if can_use_triton_backend(*tensors):
+            return "triton"
+        return "torch_impl"
+    raise ValueError(f"Unsupported backend: {backend}")
 
 
 def _region_intersection(offset_x: int, offset_y: int, roi: Rect, dest_w: int, dest_h: int) -> tuple[int, int, int, int, int, int] | None:
