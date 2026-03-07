@@ -10,6 +10,7 @@ from .canvas import CanvasManager, CanvasManagerN
 from .geometry import CanvasInfo, Rect
 from .masks import ControlMasks, ControlMasksN
 from .ops import (
+    Backend,
     cast_like,
     copy_roi,
     ensure_batched,
@@ -78,11 +79,13 @@ class CudaStitchPano:
         quiet: bool = False,
         minimize_blend: bool = True,
         max_output_width: int = 0,
+        backend: Backend = "auto",
     ) -> None:
         del max_output_width
         self._status = CudaStatus()
         self._num_levels = num_levels
         self._match_exposure = match_exposure
+        self._backend = backend
         self._image_adjustment: torch.Tensor | None = None
         self._whole_seam_mask_image: np.ndarray | None = None
         self._cache = _DeviceCache()
@@ -183,24 +186,26 @@ class CudaStitchPano:
             remap_to_canvas_with_dest_map(
                 input_image_1,
                 canvas,
-                self._tensor(self._context.remap_1_x, device, torch.int64),
-                self._tensor(self._context.remap_1_y, device, torch.int64),
+                self._tensor(self._context.remap_1_x, device, torch.int32),
+                self._tensor(self._context.remap_1_y, device, torch.int32),
                 1,
                 seam,
                 self._canvas_manager._x1,
                 self._canvas_manager._y1,
                 adjustment=adjustment.neg() if adjustment is not None else None,
+                backend=self._backend,
             )
             remap_to_canvas_with_dest_map(
                 input_image_2,
                 canvas,
-                self._tensor(self._context.remap_2_x, device, torch.int64),
-                self._tensor(self._context.remap_2_y, device, torch.int64),
+                self._tensor(self._context.remap_2_x, device, torch.int32),
+                self._tensor(self._context.remap_2_y, device, torch.int32),
                 0,
                 seam,
                 self._canvas_manager._x2,
                 self._canvas_manager._y2,
                 adjustment=adjustment,
+                backend=self._backend,
             )
             return canvas
 
@@ -214,12 +219,13 @@ class CudaStitchPano:
         remap_to_canvas(
             input_image_1,
             canvas,
-            self._tensor(self._context.remap_1_x, device, torch.int64),
-            self._tensor(self._context.remap_1_y, device, torch.int64),
+            self._tensor(self._context.remap_1_x, device, torch.int32),
+            self._tensor(self._context.remap_1_y, device, torch.int32),
             self._canvas_manager._x1,
             self._canvas_manager._y1,
             adjustment=adjustment.neg() if adjustment is not None else None,
             fill_invalid_alpha=True,
+            backend=self._backend,
         )
         simple_make_full(
             canvas.to(compute_dtype),
@@ -230,16 +236,18 @@ class CudaStitchPano:
             0,
             self._canvas_manager._remapper_1.xpos,
             0,
+            backend=self._backend,
         )
         remap_to_canvas(
             input_image_2,
             canvas,
-            self._tensor(self._context.remap_2_x, device, torch.int64),
-            self._tensor(self._context.remap_2_y, device, torch.int64),
+            self._tensor(self._context.remap_2_x, device, torch.int32),
+            self._tensor(self._context.remap_2_y, device, torch.int32),
             self._canvas_manager._x2,
             self._canvas_manager._y2,
             adjustment=adjustment,
             fill_invalid_alpha=True,
+            backend=self._backend,
         )
         simple_make_full(
             canvas.to(compute_dtype),
@@ -250,6 +258,7 @@ class CudaStitchPano:
             0,
             self._canvas_manager._remapper_2.xpos,
             0,
+            backend=self._backend,
         )
         seam = self._tensor(self._context.blend_seam, device, torch.float32)
         mask = torch.stack((seam, 1.0 - seam), dim=-1)
@@ -262,6 +271,7 @@ class CudaStitchPano:
             0,
             self._canvas_manager._x2 - self._canvas_manager.overlap_padding(),
             0,
+            backend=self._backend,
         )
         return cast_like(canvas, input_image_1.dtype)
 
@@ -275,11 +285,13 @@ class CudaStitchPanoN:
         match_exposure: bool = False,
         quiet: bool = False,
         minimize_blend: bool = True,
+        backend: Backend = "auto",
     ) -> None:
         self._status = CudaStatus()
         self._num_levels = num_levels
         self._match_exposure = match_exposure
         self._minimize_blend = bool(minimize_blend and num_levels > 0)
+        self._backend = backend
         self._cache = _DeviceCache()
         self._blend_roi_canvas = Rect()
         self._write_roi_canvas = Rect()
@@ -374,18 +386,19 @@ class CudaStitchPanoN:
             canvas = ensure_batched(canvas)
             canvas.zero_()
 
-        seam_index = self._tensor(self._context.seam_index, device, torch.int64)
+        seam_index = self._tensor(self._context.seam_index, device, torch.uint8)
         if self._context.is_hard_seam:
             for i in range(self._context.n_images):
                 remap_to_canvas_with_dest_map(
                     batched_inputs[i],
                     canvas,
-                    self._tensor(self._context.remap_x[i], device, torch.int64),
-                    self._tensor(self._context.remap_y[i], device, torch.int64),
+                    self._tensor(self._context.remap_x[i], device, torch.int32),
+                    self._tensor(self._context.remap_y[i], device, torch.int32),
                     i,
                     seam_index,
                     self._canvas_manager.canvas_positions()[i][0],
                     self._canvas_manager.canvas_positions()[i][1],
+                    backend=self._backend,
                 )
             return canvas
 
@@ -394,12 +407,13 @@ class CudaStitchPanoN:
                 remap_to_canvas_with_dest_map(
                     batched_inputs[i],
                     canvas,
-                    self._tensor(self._context.remap_x[i], device, torch.int64),
-                    self._tensor(self._context.remap_y[i], device, torch.int64),
+                    self._tensor(self._context.remap_x[i], device, torch.int32),
+                    self._tensor(self._context.remap_y[i], device, torch.int32),
                     i,
                     seam_index,
                     self._canvas_manager.canvas_positions()[i][0],
                     self._canvas_manager.canvas_positions()[i][1],
+                    backend=self._backend,
                 )
             compute_buffers: list[torch.Tensor] = []
             blend_h = self._blend_roi_canvas.height
@@ -410,12 +424,13 @@ class CudaStitchPanoN:
                 remap_to_canvas(
                     batched_inputs[i],
                     buf,
-                    self._tensor(self._context.remap_x[i], device, torch.int64),
-                    self._tensor(self._context.remap_y[i], device, torch.int64),
+                    self._tensor(self._context.remap_x[i], device, torch.int32),
+                    self._tensor(self._context.remap_y[i], device, torch.int32),
                     ri.offset_x,
                     ri.offset_y,
                     roi=ri.roi,
                     fill_invalid_alpha=True,
+                    backend=self._backend,
                 )
                 compute_buffers.append(buf)
             mask = self._tensor(self._context.blend_mask, device, torch.float32)
@@ -428,6 +443,7 @@ class CudaStitchPanoN:
                 self._write_roi_canvas.y - self._blend_roi_canvas.y,
                 self._write_roi_canvas.x,
                 self._write_roi_canvas.y,
+                backend=self._backend,
             )
             return cast_like(canvas, batched_inputs[0].dtype)
 
@@ -437,16 +453,17 @@ class CudaStitchPanoN:
             remap_to_canvas(
                 batched_inputs[i],
                 buf,
-                self._tensor(self._context.remap_x[i], device, torch.int64),
-                self._tensor(self._context.remap_y[i], device, torch.int64),
+                self._tensor(self._context.remap_x[i], device, torch.int32),
+                self._tensor(self._context.remap_y[i], device, torch.int32),
                 self._canvas_manager.canvas_positions()[i][0],
                 self._canvas_manager.canvas_positions()[i][1],
                 fill_invalid_alpha=True,
+                backend=self._backend,
             )
             compute_buffers.append(buf)
         mask = self._tensor(self._context.blend_mask, device, torch.float32)
         blended = laplacian_blend_n(compute_buffers, mask, max(1, self._num_levels))
-        copy_roi(blended, canvas, Rect(0, 0, blended.shape[2], blended.shape[1]), 0, 0, 0, 0)
+        copy_roi(blended, canvas, Rect(0, 0, blended.shape[2], blended.shape[1]), 0, 0, 0, 0, backend=self._backend)
         return cast_like(canvas, batched_inputs[0].dtype)
 
 

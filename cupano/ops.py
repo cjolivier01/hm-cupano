@@ -1,11 +1,20 @@
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Iterable, Literal
 
 import torch
 
 from .geometry import Rect
 from .masks import UNMAPPED_POSITION_VALUE
+from .triton_ops import (
+    can_use_triton_backend,
+    copy_roi_triton,
+    remap_to_canvas_triton,
+    remap_to_canvas_with_dest_map_triton,
+    triton_available,
+)
+
+Backend = Literal["auto", "torch", "triton"]
 
 
 def ensure_batched(image: torch.Tensor) -> torch.Tensor:
@@ -26,6 +35,18 @@ def cast_like(value: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
     if dtype.is_floating_point:
         return value.to(dtype)
     return value.round().clamp(0, 255).to(dtype)
+
+
+def resolve_backend(backend: Backend, *tensors: torch.Tensor) -> Literal["torch", "triton"]:
+    if backend == "torch":
+        return "torch"
+    if backend == "triton":
+        if not can_use_triton_backend(*tensors):
+            raise ValueError("Triton backend requested for unsupported tensors")
+        return "triton"
+    if backend == "auto" and can_use_triton_backend(*tensors):
+        return "triton"
+    return "torch"
 
 
 def _region_intersection(offset_x: int, offset_y: int, roi: Rect, dest_w: int, dest_h: int) -> tuple[int, int, int, int, int, int] | None:
@@ -52,26 +73,71 @@ def _gather_pixels(src: torch.Tensor, mx: torch.Tensor, my: torch.Tensor) -> tor
     return gathered.reshape(batch, mx.shape[0], mx.shape[1], channels)
 
 
-def copy_roi(src: torch.Tensor, dest: torch.Tensor, region: Rect, src_roi_x: int, src_roi_y: int, offset_x: int, offset_y: int) -> torch.Tensor:
+def _copy_roi_torch(src: torch.Tensor, dest: torch.Tensor, region: Rect, src_roi_x: int, src_roi_y: int, offset_x: int, offset_y: int) -> torch.Tensor:
     if region.width <= 0 or region.height <= 0:
         return dest
-    inter = _region_intersection(offset_x, offset_y, Rect(0, 0, region.width, region.height), dest.shape[2], dest.shape[1])
-    if inter is None:
+    x_start = max(0, -src_roi_x, -offset_x)
+    y_start = max(0, -src_roi_y, -offset_y)
+    x_end = min(region.width, src.shape[2] - src_roi_x, dest.shape[2] - offset_x)
+    y_end = min(region.height, src.shape[1] - src_roi_y, dest.shape[1] - offset_y)
+    if x_start >= x_end or y_start >= y_end:
         return dest
-    x0, y0, x1, y1, sx0, sy0 = inter
-    h = y1 - y0
-    w = x1 - x0
-    src_patch = src[:, src_roi_y + sy0 : src_roi_y + sy0 + h, src_roi_x + sx0 : src_roi_x + sx0 + w, :]
-    dest[:, y0:y1, x0:x1, :] = cast_like(src_patch, dest.dtype)
+    src_x0 = src_roi_x + x_start
+    src_y0 = src_roi_y + y_start
+    src_x1 = src_roi_x + x_end
+    src_y1 = src_roi_y + y_end
+    dest_x0 = offset_x + x_start
+    dest_y0 = offset_y + y_start
+    dest_x1 = offset_x + x_end
+    dest_y1 = offset_y + y_end
+    src_patch = src[:, src_y0:src_y1, src_x0:src_x1, :]
+    dest[:, dest_y0:dest_y1, dest_x0:dest_x1, :] = cast_like(src_patch, dest.dtype)
     return dest
 
 
-def simple_make_full(src: torch.Tensor, dest: torch.Tensor, region_width: int, region_height: int, src_roi_x: int, src_roi_y: int, dest_offset_x: int, dest_offset_y: int) -> torch.Tensor:
+def copy_roi(
+    src: torch.Tensor,
+    dest: torch.Tensor,
+    region: Rect,
+    src_roi_x: int,
+    src_roi_y: int,
+    offset_x: int,
+    offset_y: int,
+    *,
+    backend: Backend = "auto",
+) -> torch.Tensor:
+    chosen_backend = resolve_backend(backend, src, dest)
+    if chosen_backend == "triton":
+        return copy_roi_triton(src, dest, region, src_roi_x, src_roi_y, offset_x, offset_y)
+    return _copy_roi_torch(src, dest, region, src_roi_x, src_roi_y, offset_x, offset_y)
+
+
+def simple_make_full(
+    src: torch.Tensor,
+    dest: torch.Tensor,
+    region_width: int,
+    region_height: int,
+    src_roi_x: int,
+    src_roi_y: int,
+    dest_offset_x: int,
+    dest_offset_y: int,
+    *,
+    backend: Backend = "auto",
+) -> torch.Tensor:
     dest.zero_()
-    return copy_roi(src, dest, Rect(0, 0, region_width, region_height), src_roi_x, src_roi_y, dest_offset_x, dest_offset_y)
+    return copy_roi(
+        src,
+        dest,
+        Rect(0, 0, region_width, region_height),
+        src_roi_x,
+        src_roi_y,
+        dest_offset_x,
+        dest_offset_y,
+        backend=backend,
+    )
 
 
-def remap_to_canvas(
+def _remap_to_canvas_torch(
     src: torch.Tensor,
     dest: torch.Tensor,
     map_x: torch.Tensor,
@@ -95,14 +161,14 @@ def remap_to_canvas(
     x0, y0, x1, y1, sx0, sy0 = inter
     h = y1 - y0
     w = x1 - x0
-    mx = map_x[roi.y + sy0 : roi.y + sy0 + h, roi.x + sx0 : roi.x + sx0 + w].long()
-    my = map_y[roi.y + sy0 : roi.y + sy0 + h, roi.x + sx0 : roi.x + sx0 + w].long()
+    mx = map_x[roi.y + sy0 : roi.y + sy0 + h, roi.x + sx0 : roi.x + sx0 + w]
+    my = map_y[roi.y + sy0 : roi.y + sy0 + h, roi.x + sx0 : roi.x + sx0 + w]
     src_h = src.shape[1]
     src_w = src.shape[2]
     unmapped = (mx == int(UNMAPPED_POSITION_VALUE)) | (my == int(UNMAPPED_POSITION_VALUE))
     valid = (mx >= 0) & (my >= 0) & (mx < src_w) & (my < src_h) & ~unmapped
-    mx_clamped = mx.clamp(0, max(src_w - 1, 0))
-    my_clamped = my.clamp(0, max(src_h - 1, 0))
+    mx_clamped = mx.clamp(0, max(src_w - 1, 0)).long()
+    my_clamped = my.clamp(0, max(src_h - 1, 0)).long()
     sampled = cast_like(_gather_pixels(src, mx_clamped, my_clamped), dest.dtype)
     if adjustment is not None:
         sampled = sampled.clone()
@@ -126,7 +192,53 @@ def remap_to_canvas(
     return dest
 
 
-def remap_to_canvas_with_dest_map(
+def remap_to_canvas(
+    src: torch.Tensor,
+    dest: torch.Tensor,
+    map_x: torch.Tensor,
+    map_y: torch.Tensor,
+    offset_x: int,
+    offset_y: int,
+    *,
+    adjustment: torch.Tensor | None = None,
+    no_unmapped_write: bool = False,
+    roi: Rect | None = None,
+    fill_invalid_alpha: bool = True,
+    backend: Backend = "auto",
+) -> torch.Tensor:
+    chosen_backend = resolve_backend(backend, src, dest)
+    if chosen_backend == "triton":
+        try:
+            return remap_to_canvas_triton(
+                src,
+                dest,
+                map_x,
+                map_y,
+                offset_x,
+                offset_y,
+                adjustment=adjustment,
+                no_unmapped_write=no_unmapped_write,
+                roi=roi,
+                fill_invalid_alpha=fill_invalid_alpha,
+            )
+        except ValueError:
+            if backend == "triton":
+                raise
+    return _remap_to_canvas_torch(
+        src,
+        dest,
+        map_x,
+        map_y,
+        offset_x,
+        offset_y,
+        adjustment=adjustment,
+        no_unmapped_write=no_unmapped_write,
+        roi=roi,
+        fill_invalid_alpha=fill_invalid_alpha,
+    )
+
+
+def _remap_to_canvas_with_dest_map_torch(
     src: torch.Tensor,
     dest: torch.Tensor,
     map_x: torch.Tensor,
@@ -153,13 +265,13 @@ def remap_to_canvas_with_dest_map(
     class_mask = dest_image_map[y0:y1, x0:x1] == image_index
     if not torch.any(class_mask):
         return dest
-    mx = map_x[roi.y + sy0 : roi.y + sy0 + h, roi.x + sx0 : roi.x + sx0 + w].long()
-    my = map_y[roi.y + sy0 : roi.y + sy0 + h, roi.x + sx0 : roi.x + sx0 + w].long()
+    mx = map_x[roi.y + sy0 : roi.y + sy0 + h, roi.x + sx0 : roi.x + sx0 + w]
+    my = map_y[roi.y + sy0 : roi.y + sy0 + h, roi.x + sx0 : roi.x + sx0 + w]
     src_h = src.shape[1]
     src_w = src.shape[2]
     valid = (mx >= 0) & (my >= 0) & (mx < src_w) & (my < src_h)
-    mx_clamped = mx.clamp(0, max(src_w - 1, 0))
-    my_clamped = my.clamp(0, max(src_h - 1, 0))
+    mx_clamped = mx.clamp(0, max(src_w - 1, 0)).long()
+    my_clamped = my.clamp(0, max(src_h - 1, 0)).long()
     sampled = cast_like(_gather_pixels(src, mx_clamped, my_clamped), dest.dtype)
     if adjustment is not None:
         sampled = sampled.clone()
@@ -170,6 +282,52 @@ def remap_to_canvas_with_dest_map(
     dest_patch = dest[:, y0:y1, x0:x1, :]
     dest[:, y0:y1, x0:x1, :] = torch.where(write_mask, out, dest_patch)
     return dest
+
+
+def remap_to_canvas_with_dest_map(
+    src: torch.Tensor,
+    dest: torch.Tensor,
+    map_x: torch.Tensor,
+    map_y: torch.Tensor,
+    image_index: int,
+    dest_image_map: torch.Tensor,
+    offset_x: int,
+    offset_y: int,
+    *,
+    adjustment: torch.Tensor | None = None,
+    roi: Rect | None = None,
+    backend: Backend = "auto",
+) -> torch.Tensor:
+    chosen_backend = resolve_backend(backend, src, dest)
+    if chosen_backend == "triton":
+        try:
+            return remap_to_canvas_with_dest_map_triton(
+                src,
+                dest,
+                map_x,
+                map_y,
+                image_index,
+                dest_image_map,
+                offset_x,
+                offset_y,
+                adjustment=adjustment,
+                roi=roi,
+            )
+        except ValueError:
+            if backend == "triton":
+                raise
+    return _remap_to_canvas_with_dest_map_torch(
+        src,
+        dest,
+        map_x,
+        map_y,
+        image_index,
+        dest_image_map,
+        offset_x,
+        offset_y,
+        adjustment=adjustment,
+        roi=roi,
+    )
 
 
 def downsample_mask(mask: torch.Tensor) -> torch.Tensor:

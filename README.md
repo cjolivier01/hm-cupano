@@ -207,7 +207,9 @@ Key points:
 - `cupano.CudaStitchPano`: two-image path with hard seam or Laplacian blend.
 - `cupano.CudaStitchPanoN`: generic 2..8 image path, including the minimized soft-seam ROI path.
 - `cupano.ControlMasks` / `cupano.ControlMasksN`: Python loaders for the same Hugin/enblend mapping outputs used by the C++ code.
-- The implementation targets portability across CUDA and ROCm through PyTorch tensor ops.
+- Backend selection is exposed as `backend="auto" | "torch" | "triton"`.
+- `backend="auto"` selects Triton for supported GPU tensors and otherwise falls back to pure PyTorch.
+- The implementation targets portability across CUDA and ROCm through PyTorch, with Triton kernels for the ROI copy and remap hot paths when Triton is installed.
 
 Example:
 ```python
@@ -220,13 +222,14 @@ masks = ControlMasks("assets")
 left = torch.from_numpy(cv2.cvtColor(cv2.imread("assets/image0.png"), cv2.COLOR_BGR2BGRA)).float().cuda().unsqueeze(0)
 right = torch.from_numpy(cv2.cvtColor(cv2.imread("assets/image1.png"), cv2.COLOR_BGR2BGRA)).float().cuda().unsqueeze(0)
 
-stitcher = CudaStitchPano(batch_size=1, num_levels=6, control_masks=masks)
+stitcher = CudaStitchPano(batch_size=1, num_levels=6, control_masks=masks, backend="auto")
 out = stitcher.process(left, right)
 ```
 
 Tests:
 ```bash
 pytest -q tests/python/test_pytorch_pano.py
+pytest -q tests/python/test_triton_backend.py
 ```
 
 Real-image parity harness:
@@ -235,6 +238,7 @@ python scripts/compare_pano_parity.py \
   --left assets/left.png \
   --right assets/right.png \
   --levels 0 \
+  --backend triton \
   --work-dir /tmp/cupano_parity \
   --build-if-needed
 ```
@@ -248,3 +252,4 @@ This compares the Python stitcher against the existing C++ binary on the same co
 Note on CuTe DSL:
 - NVIDIA CuTe DSL is CUDA-only, so it cannot satisfy a single-source CUDA+ROCm requirement.
 - The Python port therefore prioritizes a portable PyTorch implementation rather than introducing a CUDA-only CuTe dependency.
+- Triton is the cross-vendor kernel path in this repo; on ROCm it depends on a ROCm-capable Triton/PyTorch installation, and on CUDA it uses the regular Triton GPU backend.
