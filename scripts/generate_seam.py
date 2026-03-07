@@ -14,11 +14,14 @@ import glob
 import os
 import shutil
 import subprocess
+from pathlib import Path
 from typing import List
 
 from PIL import Image
 import numpy as np
 import cv2
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def prefer_bazel_tool(name: str) -> List[str]:
@@ -33,7 +36,8 @@ def prefer_bazel_tool(name: str) -> List[str]:
 
 def run(cmd: List[str], cwd: str) -> None:
     print("EXEC:", " ".join(cmd))
-    subprocess.run(cmd, cwd=cwd, check=True)
+    run_cwd = str(REPO_ROOT if cmd[0] in ("bazelisk", "bazel") else cwd)
+    subprocess.run(cmd, cwd=run_cwd, check=True)
 
 
 def main() -> None:

@@ -32,6 +32,13 @@ def _tag_to_float(value: object) -> float:
     return float(value)
 
 
+def _snap_near_integer(value: float, eps: float = 1e-3) -> float:
+    rounded = round(value)
+    if abs(value - rounded) < eps:
+        return float(rounded)
+    return float(value)
+
+
 def _get_geo_tiff(path: str | Path) -> SpatialTiff:
     with tifffile.TiffFile(str(path)) as tif:
         page = tif.pages[0]
@@ -40,7 +47,7 @@ def _get_geo_tiff(path: str | Path) -> SpatialTiff:
         yres = _tag_to_float(tags["YResolution"].value) if "YResolution" in tags else 0.0
         xpos = _tag_to_float(tags["XPosition"].value) if "XPosition" in tags else 0.0
         ypos = _tag_to_float(tags["YPosition"].value) if "YPosition" in tags else 0.0
-    return SpatialTiff(xpos=xpos * xres, ypos=ypos * yres)
+    return SpatialTiff(xpos=_snap_near_integer(xpos * xres), ypos=_snap_near_integer(ypos * yres))
 
 
 def _read_indexed_png_or_grayscale(path: str | Path) -> np.ndarray:

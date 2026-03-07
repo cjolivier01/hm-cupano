@@ -229,6 +229,22 @@ Tests:
 pytest -q tests/python/test_pytorch_pano.py
 ```
 
+Real-image parity harness:
+```bash
+python scripts/compare_pano_parity.py \
+  --left assets/left.png \
+  --right assets/right.png \
+  --levels 0 \
+  --work-dir /tmp/cupano_parity \
+  --build-if-needed
+```
+
+This compares the Python stitcher against the existing C++ binary on the same control-mask directory and writes:
+- C++ output
+- Python output
+- a diff heatmap
+- JSON metrics (`max_abs`, `mean_abs`, `rmse`, `psnr`)
+
 Note on CuTe DSL:
 - NVIDIA CuTe DSL is CUDA-only, so it cannot satisfy a single-source CUDA+ROCm requirement.
 - The Python port therefore prioritizes a portable PyTorch implementation rather than introducing a CUDA-only CuTe dependency.

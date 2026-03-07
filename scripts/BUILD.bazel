@@ -1,7 +1,9 @@
 filegroup(
     name = "all_scripts",
     srcs = [
+        "compare_pano_parity.py",
         "create_control_points.py",
+        "generate_seam.py",
     ],
     visibility = ["//visibility:public"],
 )
