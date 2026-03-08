@@ -133,7 +133,7 @@ if _HAS_TRITON:
             out = vals.to(tl.float32)
         else:
             out = tl.minimum(tl.maximum(vals.to(tl.float32), 0.0), 255.0)
-            out = (out + 0.5).to(tl.uint8)
+            out = out.to(tl.uint8)
 
         dest_ptrs = (
             dest_ptr
@@ -249,7 +249,7 @@ if _HAS_TRITON:
             out = vals_f
         else:
             out = tl.minimum(tl.maximum(vals_f, 0.0), 255.0)
-            out = (out + 0.5).to(tl.uint8)
+            out = out.to(tl.uint8)
 
         dest_ptrs = (
             dest_ptr
@@ -362,7 +362,7 @@ if _HAS_TRITON:
             out = vals_f
         else:
             out = tl.minimum(tl.maximum(vals_f, 0.0), 255.0)
-            out = (out + 0.5).to(tl.uint8)
+            out = out.to(tl.uint8)
 
         dest_ptrs = (
             dest_ptr

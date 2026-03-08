@@ -52,7 +52,7 @@ def cast_like(value: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
         return value
     if dtype.is_floating_point:
         return value.to(dtype)
-    return value.round().clamp(0, 255).to(dtype)
+    return value.clamp(0, 255).to(dtype)
 
 
 def resolve_backend(backend: Backend, *tensors: torch.Tensor) -> ResolvedBackend:
@@ -588,6 +588,125 @@ def _blend_laplacians_n_torch(
     return result
 
 
+def _blend_laplacians_two_cpp_torch(
+    lap1: torch.Tensor,
+    lap2: torch.Tensor,
+    mask: torch.Tensor,
+    out: torch.Tensor | None = None,
+) -> torch.Tensor:
+    a = ensure_batched(lap1).to(torch.float32)
+    b = ensure_batched(lap2).to(torch.float32)
+    weights = mask.to(device=a.device, dtype=torch.float32)
+    if weights.ndim == 2:
+        weights = weights.unsqueeze(-1)
+    if weights.ndim != 3 or weights.shape[-1] != 1:
+        raise ValueError(f"Expected HWC single-channel mask, got {tuple(weights.shape)}")
+    if a.shape != b.shape:
+        raise ValueError("Two-image blend inputs must have the same shape")
+
+    if a.shape[-1] != 4:
+        result = weights.unsqueeze(0) * a + (1.0 - weights).unsqueeze(0) * b
+        if out is not None:
+            out.copy_(result)
+            return out
+        return result
+
+    result = torch.empty_like(a) if out is None else out
+    alpha1 = a[..., 3]
+    alpha2 = b[..., 3]
+    cond_copy_b = alpha1 == 0
+    cond_copy_a = (~cond_copy_b) & (alpha2 == 0)
+    cond_blend = (~cond_copy_b) & (~cond_copy_a)
+
+    result.copy_(b)
+    result[cond_copy_a] = a[cond_copy_a]
+
+    m = weights[..., 0].unsqueeze(0)
+    rgb = m.unsqueeze(-1) * a[..., :3] + (1.0 - m).unsqueeze(-1) * b[..., :3]
+    result[..., :3] = torch.where(cond_blend.unsqueeze(-1), rgb, result[..., :3])
+    result[..., 3] = torch.where(cond_blend, alpha2, result[..., 3])
+    return result
+
+
+def _laplacian_blend_two_cpp(
+    input1: torch.Tensor,
+    input2: torch.Tensor,
+    mask: torch.Tensor,
+    levels: int,
+    *,
+    backend: Backend = "auto",
+    workspace: LaplacianBlendWorkspace | None = None,
+) -> torch.Tensor:
+    base1 = ensure_batched(input1).to(torch.float32)
+    base2 = ensure_batched(input2).to(torch.float32)
+    mask_f32 = mask.to(device=base1.device, dtype=torch.float32)
+    if mask_f32.ndim == 3 and mask_f32.shape[-1] == 2:
+        mask_f32 = mask_f32[..., :1]
+    if mask_f32.ndim == 2:
+        mask_f32 = mask_f32.unsqueeze(-1)
+    if mask_f32.ndim != 3 or mask_f32.shape[-1] != 1:
+        raise ValueError(f"Expected HWC single-channel mask, got {tuple(mask_f32.shape)}")
+
+    use_backend: Backend = backend
+    if backend == "auto":
+        use_backend = "triton" if can_use_triton_blend_backend([base1, base2], mask_f32) else "auto"
+
+    inputs = [base1, base2]
+    if workspace is not None:
+        workspace = _ensure_laplacian_workspace(workspace, inputs, mask_f32, levels)
+        gauss = workspace.gauss
+        laps = workspace.laps
+        blended = workspace.blended
+        recon_levels = workspace.recon
+        mask_pyr = workspace.mask_pyr
+        gauss[0][0].copy_(base1)
+        gauss[1][0].copy_(base2)
+        mask_pyr[0].copy_(mask_f32)
+    else:
+        gauss = [[base1.clone()], [base2.clone()]]
+        laps = [[], []]
+        blended = []
+        recon_levels = []
+        mask_pyr = [mask_f32.clone()]
+
+    for lvl in range(1, levels):
+        if workspace is not None:
+            downsample_image(gauss[0][lvl - 1], out=gauss[0][lvl], backend=use_backend)
+            downsample_image(gauss[1][lvl - 1], out=gauss[1][lvl], backend=use_backend)
+            downsample_mask(mask_pyr[lvl - 1], out=mask_pyr[lvl], backend=use_backend)
+        else:
+            gauss[0].append(downsample_image(gauss[0][-1], backend=use_backend))
+            gauss[1].append(downsample_image(gauss[1][-1], backend=use_backend))
+            mask_pyr.append(downsample_mask(mask_pyr[-1], backend=use_backend))
+
+    for lvl in range(levels - 1):
+        if workspace is not None:
+            compute_laplacian(gauss[0][lvl], gauss[0][lvl + 1], out=laps[0][lvl], backend=use_backend)
+            compute_laplacian(gauss[1][lvl], gauss[1][lvl + 1], out=laps[1][lvl], backend=use_backend)
+            _blend_laplacians_two_cpp_torch(laps[0][lvl], laps[1][lvl], mask_pyr[lvl], out=blended[lvl])
+        else:
+            lap1 = compute_laplacian(gauss[0][lvl], gauss[0][lvl + 1], backend=use_backend)
+            lap2 = compute_laplacian(gauss[1][lvl], gauss[1][lvl + 1], backend=use_backend)
+            laps[0].append(lap1)
+            laps[1].append(lap2)
+            blended.append(_blend_laplacians_two_cpp_torch(lap1, lap2, mask_pyr[lvl]))
+
+    coarse1 = gauss[0][-1]
+    coarse2 = gauss[1][-1]
+    if workspace is not None:
+        _blend_laplacians_two_cpp_torch(coarse1, coarse2, mask_pyr[-1], out=blended[-1])
+        recon_levels[-1].copy_(blended[-1])
+        for lvl in range(levels - 2, -1, -1):
+            reconstruct_level(recon_levels[lvl + 1], blended[lvl], out=recon_levels[lvl], backend=use_backend)
+        return recon_levels[0]
+
+    blended.append(_blend_laplacians_two_cpp_torch(coarse1, coarse2, mask_pyr[-1]))
+    recon = blended[-1]
+    for lvl in range(levels - 2, -1, -1):
+        recon = reconstruct_level(recon, blended[lvl], backend=use_backend)
+    return recon
+
+
 def blend_laplacians_n(
     laplacians: Iterable[torch.Tensor],
     mask: torch.Tensor,
@@ -720,6 +839,9 @@ def laplacian_blend_n(
         raise ValueError("inputs must not be empty")
     batch = ensure_batched(inputs[0]).shape[0]
     levels = compute_num_levels(inputs[0].shape[2], inputs[0].shape[1], num_levels)
+
+    if len(inputs) == 2 and mask.ndim == 3 and mask.shape[-1] == 2:
+        return _laplacian_blend_two_cpp(inputs[0], inputs[1], mask, levels, backend=backend, workspace=workspace)
 
     base_inputs = [ensure_batched(inp).to(torch.float32) for inp in inputs]
     mask_f32 = mask.to(device=base_inputs[0].device, dtype=torch.float32)
