@@ -497,7 +497,8 @@ def _upsample_alpha_aware(low: torch.Tensor, out_h: int, out_w: int) -> torch.Te
             valid = (patch[..., 3:4] != 0).to(torch.float32)
             sum_rgb += patch[..., :3].to(torch.float32) * weight * valid
             sum_w += weight * valid
-        out[..., :3] = cast_like(sum_rgb / sum_w.clamp_min(1.0), low.dtype)
+        denom = torch.where(sum_w > 0, sum_w, torch.ones_like(sum_w))
+        out[..., :3] = cast_like(torch.where(sum_w > 0, sum_rgb / denom, torch.zeros_like(sum_rgb)), low.dtype)
         return out
 
     w00 = (1.0 - dx) * (1.0 - dy)

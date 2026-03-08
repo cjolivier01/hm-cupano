@@ -5,6 +5,7 @@ import pytest
 import torch
 
 from cupano import ControlMasks, ControlMasksN, CudaStitchPano, CudaStitchPanoN, SpatialTiff
+from cupano.ops import compute_laplacian
 
 _MIN_TEST_FREE_BYTES = 1 << 30
 
@@ -118,6 +119,16 @@ def test_cuda_pano_soft_seam_single_level_matches_binary_mask(device: torch.devi
     expected[:, :, :192, :] = image1[:, :, :192, :]
     expected[:, :, 192:, :] = image2[:, :, 64:, :]
     assert_tensor_equal(out, expected, tol=1e-5)
+
+
+def test_compute_laplacian_renormalizes_fractional_alpha_weights_cpu() -> None:
+    high = torch.zeros((1, 4, 4, 4), dtype=torch.float32)
+    low = torch.zeros((1, 2, 2, 4), dtype=torch.float32)
+    low[:, 1, 1, :] = torch.tensor([100.0, 110.0, 120.0, 255.0])
+
+    lap = compute_laplacian(high, low, backend="auto")
+    assert_tensor_equal(lap[0, 1, 1, :3], torch.tensor([-100.0, -110.0, -120.0]), tol=1e-5)
+    assert lap[0, 1, 1, 3].item() == 0.0
 
 
 

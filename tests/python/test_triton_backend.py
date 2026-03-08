@@ -10,6 +10,7 @@ from cupano.ops import (
     _copy_roi_torch,
     _remap_to_canvas_torch,
     _remap_to_canvas_with_dest_map_torch,
+    compute_laplacian,
     copy_roi,
     remap_to_canvas,
     remap_to_canvas_with_dest_map,
@@ -124,6 +125,24 @@ def test_remap_with_dest_map_triton_matches_reference(gpu_device: torch.device) 
     _remap_to_canvas_with_dest_map_torch(src, dest_ref, map_x, map_y, 0, seam, 0, 0)
     remap_to_canvas_with_dest_map(src, dest_triton, map_x, map_y, 0, seam, 0, 0, backend="triton")
     assert_equal(dest_ref, dest_triton)
+
+
+def test_compute_laplacian_renormalizes_fractional_alpha_weights(gpu_device: torch.device) -> None:
+    high = torch.zeros((1, 4, 4, 4), dtype=torch.float32, device=gpu_device)
+    low = torch.zeros((1, 2, 2, 4), dtype=torch.float32, device=gpu_device)
+    low[:, 1, 1, :] = torch.tensor([100.0, 110.0, 120.0, 255.0], device=gpu_device)
+
+    lap_triton = compute_laplacian(high, low, backend="triton")
+    lap_ref = compute_laplacian(high.cpu(), low.cpu(), backend="auto").to(gpu_device)
+
+    assert torch.allclose(lap_triton, lap_ref, atol=1e-5, rtol=0.0)
+    assert torch.allclose(
+        lap_triton[0, 1, 1, :3],
+        torch.tensor([-100.0, -110.0, -120.0], device=gpu_device),
+        atol=1e-5,
+        rtol=0.0,
+    )
+    assert lap_triton[0, 1, 1, 3].item() == 0.0
 
 
 def test_cuda_pano_triton_matches_reference(gpu_device: torch.device) -> None:

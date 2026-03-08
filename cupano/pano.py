@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Iterable
 
+import cv2
 import numpy as np
 import torch
 
@@ -95,6 +97,20 @@ class _DeviceCache:
 
 def _cuda_graphs_supported(device: torch.device) -> bool:
     return device.type == "cuda" and torch.cuda.is_available() and torch.version.hip is None and hasattr(torch.cuda, "CUDAGraph")
+
+
+def _write_batched_tiffs(tensor: torch.Tensor, out_dir: Path, stem: str) -> None:
+    array = tensor.detach().cpu().numpy()
+    if array.ndim == 3:
+        if not cv2.imwrite(str(out_dir / f"{stem}.tiff"), array.astype(np.float32, copy=False)):
+            raise RuntimeError(f"Unable to write {(out_dir / f'{stem}.tiff')}")
+        return
+    if array.ndim != 4:
+        raise ValueError(f"Expected HWC or BHWC tensor, got shape {tuple(array.shape)}")
+    for batch_item in range(array.shape[0]):
+        path = out_dir / f"{stem}_batch_{batch_item}.tiff"
+        if not cv2.imwrite(str(path), array[batch_item].astype(np.float32, copy=False)):
+            raise RuntimeError(f"Unable to write {path}")
 
 
 class CudaStitchPano:
@@ -418,6 +434,62 @@ class CudaStitchPano:
                 dtype=input_image_1.dtype,
             )
         return self._process_impl(input_image_1, input_image_2, canvas)
+
+    def dump_soft_blend_pyramid(
+        self,
+        directory: str | Path,
+        *,
+        device: torch.device | None = None,
+        channels: int | None = None,
+    ) -> None:
+        if self._context.is_hard_seam:
+            raise ValueError("Soft-blend pyramid is only available when num_levels > 0")
+        if device is None or channels is None:
+            if len(self._soft_scratch) != 1:
+                raise ValueError("device and channels must be provided when multiple scratch buffers exist")
+            (device_key, channels_key), scratch = next(iter(self._soft_scratch.items()))
+            device = torch.device(device_key)
+            channels = channels_key
+        else:
+            scratch = self._soft_scratch.get((str(device), channels))
+            if scratch is None:
+                raise ValueError(f"No soft scratch buffers available for device={device} channels={channels}")
+
+        out_dir = Path(directory)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        workspace = scratch.blend_workspace
+        levels = len(workspace.mask_pyr)
+        if levels == 0:
+            raise ValueError("No Laplacian workspace is populated yet")
+
+        (out_dir / "metadata.txt").write_text(
+            "\n".join(
+                [
+                    f"num_levels={levels}",
+                    f"batch_size={self._context.batch_size}",
+                    f"channels={channels}",
+                    *[
+                        f"level_{level}={workspace.mask_pyr[level].shape[1]}x{workspace.mask_pyr[level].shape[0]}"
+                        for level in range(levels)
+                    ],
+                ]
+            )
+            + "\n"
+        )
+
+        for subdir in ("gauss1", "gauss2", "mask", "lap1", "lap2", "blend", "reconstruct"):
+            (out_dir / subdir).mkdir(parents=True, exist_ok=True)
+
+        for level in range(levels):
+            _write_batched_tiffs(workspace.gauss[0][level], out_dir / "gauss1", f"level_{level}")
+            _write_batched_tiffs(workspace.gauss[1][level], out_dir / "gauss2", f"level_{level}")
+            _write_batched_tiffs(workspace.mask_pyr[level], out_dir / "mask", f"level_{level}")
+            lap1 = workspace.gauss[0][level] if level == levels - 1 else workspace.laps[0][level]
+            lap2 = workspace.gauss[1][level] if level == levels - 1 else workspace.laps[1][level]
+            _write_batched_tiffs(lap1, out_dir / "lap1", f"level_{level}")
+            _write_batched_tiffs(lap2, out_dir / "lap2", f"level_{level}")
+            _write_batched_tiffs(workspace.blended[level], out_dir / "blend", f"level_{level}")
+            _write_batched_tiffs(workspace.recon[level], out_dir / "reconstruct", f"level_{level}")
 
 
 class CudaStitchPanoN:

@@ -652,7 +652,7 @@ if _HAS_TRITON:
             sum_rgb += tl.where(rgb_mask, p11 * p11_weight[:, :, None], 0.0)
             sum_w += p11_weight
 
-            up_rgb = sum_rgb / tl.maximum(sum_w[:, :, None], 1.0)
+            up_rgb = tl.where(sum_w[:, :, None] > 0.0, sum_rgb / sum_w[:, :, None], 0.0)
             out_vals = tl.where(rgb_mask, high_vals - up_rgb, 0.0)
             out_vals = tl.where(offs_rgba[None, None, :] == 3, high_alpha[:, :, None], out_vals)
             out_ptrs = (
@@ -849,7 +849,8 @@ if _HAS_TRITON:
             lap_vals = tl.load(lap_ptrs, mask=out_mask[:, :, None], other=0.0)
             lap_alpha_ptrs = lap_ptr + pid_b * lap_stride_b + out_y * lap_stride_h + out_x * lap_stride_w + 3 * lap_stride_c
             lap_alpha = tl.load(lap_alpha_ptrs, mask=out_mask, other=0.0)
-            out_vals = tl.where(rgb_mask, sum_rgb / tl.maximum(sum_w[:, :, None], 1.0) + lap_vals, 0.0)
+            up_rgb = tl.where(sum_w[:, :, None] > 0.0, sum_rgb / sum_w[:, :, None], 0.0)
+            out_vals = tl.where(rgb_mask, up_rgb + lap_vals, 0.0)
             out_vals = tl.where(offs_rgba[None, None, :] == 3, lap_alpha[:, :, None], out_vals)
             out_ptrs = (
                 out_ptr
