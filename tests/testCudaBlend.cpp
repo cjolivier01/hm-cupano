@@ -48,6 +48,7 @@ int main(int argc, char** argv) {
   std::string game_id;
   std::string directory;
   std::string output;
+  std::string dump_pyramid_dir;
   int device_id = 0;
   int batch_size = 1;
 
@@ -67,6 +68,7 @@ int main(int argc, char** argv) {
       {"adjust", required_argument, 0, 'a'}, // --directory <value>
       {"directory", required_argument, 0, 'd'}, // --directory <value>
       {"output", required_argument, 0, 'o'}, // --output <value>
+      {"dump-pyramid-dir", required_argument, 0, 'u'}, // --dump-pyramid-dir <value>
       {"cuda-device", required_argument, 0, 'c'}, // --cuda-device <value>
       {"batch-size", required_argument, 0, 'b'}, // --batch-size <value>
       {0, 0, 0, 0} // End-of-array marker
@@ -76,7 +78,7 @@ int main(int argc, char** argv) {
   // 's' for --show (no argument),
   // 'g:' means option 'g' requires an argument,
   // 'd:' means option 'd' requires an argument.
-  const char* short_opts = "spg:d:o:c:a:l:";
+  const char* short_opts = "spg:d:o:u:c:a:l:b:";
   int option_index = 0;
   int opt;
   // Loop through and parse each option.
@@ -109,10 +111,13 @@ int main(int argc, char** argv) {
       case 'o': // --directory
         output = optarg;
         break;
+      case 'u': // --dump-pyramid-dir
+        dump_pyramid_dir = optarg;
+        break;
       case '?': // Unknown option or missing required argument.
         std::cerr
             << "Usage: " << argv[0]
-            << " [--show] [--perf] [--game-id <id>] [--directory <dir>] [--cuda-device <value>] [--output <value>] [--adjust <0|1>] [--levels <value>]"
+            << " [--show] [--perf] [--game-id <id>] [--directory <dir>] [--cuda-device <value>] [--output <value>] [--dump-pyramid-dir <dir>] [--adjust <0|1>] [--levels <value>]"
             << std::endl;
         exit(EXIT_FAILURE);
       default:
@@ -209,6 +214,14 @@ int main(int argc, char** argv) {
   canvas = blendedCanvasResult.ConsumeValueOrDie();
 
   cudaStreamSynchronize(stream);
+
+  if (!dump_pyramid_dir.empty()) {
+    auto dump_status = pano.dump_soft_blend_pyramid(dump_pyramid_dir, stream);
+    if (!dump_status.ok()) {
+      std::cerr << dump_status.message() << std::endl;
+      return dump_status.code();
+    }
+  }
 
   if (!output.empty()) {
     cv::imwrite(output, canvas->download());

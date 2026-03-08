@@ -8,6 +8,7 @@ PTO file with the newly computed control points.
 import argparse
 import os
 import re
+import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -22,6 +23,8 @@ import yaml
 from lightglue import LightGlue, SuperPoint, viz2d
 from lightglue.utils import load_image, rbd
 from scipy.signal import correlate
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Ensure that the lightglue package is available.
 try:
@@ -587,23 +590,32 @@ def configure_stitching(
                     return ["bazelisk", "run", "@enblend//:enblend", "--"]
             return [name]
 
+        output_dir = Path.cwd()
+        mapping_layers = sorted(str(path) for path in output_dir.glob("mapping_????.tif"))
         cmd = prefer_bazel_tool("enblend") + [
-            "--save-masks=seam_file.png",
+            f"--save-masks={output_dir / 'seam_file.png'}",
             "-o",
-            "panorama.tif",
-            "mapping_????.tif",
-        ]
-        rc = os.system(" ".join(cmd))
+            str(output_dir / "panorama.tif"),
+        ] + mapping_layers
+        rc = subprocess.run(
+            cmd,
+            cwd=str(REPO_ROOT if cmd[0] in ("bazelisk", "bazel") else Path.cwd()),
+            check=False,
+        ).returncode
         if rc != 0:
             # Fallback to system enblend
             cmd = [
                 "enblend",
-                "--save-masks=seam_file.png",
+                f"--save-masks={output_dir / 'seam_file.png'}",
                 "-o",
-                "panorama.tif",
-                "mapping_????.tif",
-            ]
-            os.system(" ".join(cmd))
+                str(output_dir / "panorama.tif"),
+            ] + mapping_layers
+            try:
+                rc = subprocess.run(cmd, cwd=str(output_dir), check=False).returncode
+            except FileNotFoundError:
+                rc = 127
+        if rc != 0:
+            print("Warning: unable to generate seam_file.png with enblend; continuing without a seam mask")
     finally:
         os.chdir(curr_dir)
     return True

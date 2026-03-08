@@ -9,7 +9,10 @@
 #include "cupano/utils/showImage.h" /*NOLINT*/
 
 #include <csignal>
+#include <filesystem>
+#include <fstream>
 #include <optional>
+#include <sstream>
 
 namespace hm {
 namespace pano {
@@ -115,6 +118,70 @@ inline constexpr size_t num_channels() {
 
 } // namespace tmp
 
+namespace {
+
+template <typename T_compute, typename T_scalar>
+CudaStatus write_image_pyramid_level(
+    const CudaBatchLaplacianBlendContext<T_scalar>& context,
+    const std::vector<T_scalar*>& vec_d_ptrs,
+    int level,
+    const std::string& directory,
+    const std::string& label) {
+  if (!vec_d_ptrs.at(level)) {
+    return CudaStatus::OkStatus();
+  }
+  const std::filesystem::path subdir = std::filesystem::path(directory) / label;
+  std::error_code ec;
+  std::filesystem::create_directories(subdir, ec);
+  if (ec) {
+    return CudaStatus(cudaErrorUnknown, "Unable to create directory " + subdir.string() + ": " + ec.message());
+  }
+
+  hm::CudaMat<T_compute> mat(
+      reinterpret_cast<T_compute*>(vec_d_ptrs.at(level)),
+      context.batchSize,
+      context.widths.at(level),
+      context.heights.at(level));
+  for (int batch_item = 0; batch_item < context.batchSize; ++batch_item) {
+    std::ostringstream filename;
+    filename << "level_" << level << "_batch_" << batch_item << ".tiff";
+    if (!cv::imwrite((subdir / filename.str()).string(), mat.download(batch_item))) {
+      return CudaStatus(
+          cudaErrorUnknown,
+          "Unable to write " + (subdir / filename.str()).string());
+    }
+  }
+  return CudaStatus::OkStatus();
+}
+
+template <typename T_scalar>
+CudaStatus write_mask_pyramid_level(
+    const CudaBatchLaplacianBlendContext<T_scalar>& context,
+    const std::vector<T_scalar*>& vec_d_ptrs,
+    int level,
+    const std::string& directory,
+    const std::string& label) {
+  if (!vec_d_ptrs.at(level)) {
+    return CudaStatus::OkStatus();
+  }
+  const std::filesystem::path subdir = std::filesystem::path(directory) / label;
+  std::error_code ec;
+  std::filesystem::create_directories(subdir, ec);
+  if (ec) {
+    return CudaStatus(cudaErrorUnknown, "Unable to create directory " + subdir.string() + ": " + ec.message());
+  }
+
+  hm::CudaMat<T_scalar> mat(vec_d_ptrs.at(level), 1, context.widths.at(level), context.heights.at(level));
+  std::ostringstream filename;
+  filename << "level_" << level << ".tiff";
+  if (!cv::imwrite((subdir / filename.str()).string(), mat.download())) {
+    return CudaStatus(cudaErrorUnknown, "Unable to write " + (subdir / filename.str()).string());
+  }
+  return CudaStatus::OkStatus();
+}
+
+} // namespace
+
 template <typename T_pipeline, typename T_compute>
 CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_compute>::process_impl(
     const CudaMat<T_pipeline>& inputImage1,
@@ -136,11 +203,19 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   CUDA_RETURN_IF_ERROR(
       cudaMemsetAsync(canvas->data_raw(), 0, canvas->pitch() * canvas->height() * stitch_context.batch_size(), stream));
 
-  // TODO: remove me
-  // CUDA_RETURN_IF_ERROR(cudaMemsetAsync(stitch_context.cudaFull1->data_raw(), 0, stitch_context.cudaFull1->pitch() *
-  // stitch_context.cudaFull1->height(), stream));
-  // CUDA_RETURN_IF_ERROR(cudaMemsetAsync(stitch_context.cudaFull2->data_raw(), 0, stitch_context.cudaFull2->pitch() *
-  // stitch_context.cudaFull2->height(), stream));
+  if (!stitch_context.is_hard_seam()) {
+    // The soft-seam remap/copy path only fills sub-ROIs of these reusable buffers.
+    CUDA_RETURN_IF_ERROR(cudaMemsetAsync(
+        stitch_context.cudaFull1->data_raw(),
+        0,
+        stitch_context.cudaFull1->pitch() * stitch_context.cudaFull1->height() * stitch_context.batch_size(),
+        stream));
+    CUDA_RETURN_IF_ERROR(cudaMemsetAsync(
+        stitch_context.cudaFull2->data_raw(),
+        0,
+        stitch_context.cudaFull2->pitch() * stitch_context.cudaFull2->height() * stitch_context.batch_size(),
+        stream));
+  }
 
   // bool cross_pollenate_images = true;
   auto roi_width = [](const cv::Rect2i& roi) { return roi.width; };
@@ -426,6 +501,48 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
 #endif
   }
   return std::move(canvas);
+}
+
+template <typename T_pipeline, typename T_compute>
+CudaStatus CudaStitchPano<T_pipeline, T_compute>::dump_soft_blend_pyramid(
+    const std::string& directory,
+    cudaStream_t stream) const {
+  CUDA_RETURN_IF_ERROR(status_);
+  if (!stitch_context_ || stitch_context_->is_hard_seam() || !stitch_context_->laplacian_blend_context) {
+    return CudaStatus(cudaErrorInvalidValue, "Soft-blend pyramid is only available when num_levels > 0");
+  }
+  CUDA_RETURN_IF_ERROR(cudaStreamSynchronize(stream));
+
+  std::error_code ec;
+  std::filesystem::create_directories(directory, ec);
+  if (ec) {
+    return CudaStatus(cudaErrorUnknown, "Unable to create directory " + directory + ": " + ec.message());
+  }
+
+  const auto& context = *stitch_context_->laplacian_blend_context;
+  {
+    std::ofstream metadata(std::filesystem::path(directory) / "metadata.txt");
+    metadata << "num_levels=" << context.numLevels << "\n";
+    metadata << "batch_size=" << context.batchSize << "\n";
+    metadata << "channels=" << tmp::num_channels<T_compute>() << "\n";
+    for (int level = 0; level < context.numLevels; ++level) {
+      metadata << "level_" << level << "=" << context.widths.at(level) << "x" << context.heights.at(level) << "\n";
+    }
+  }
+
+  for (int level = 0; level < context.numLevels; ++level) {
+    CUDA_RETURN_IF_ERROR(
+        write_image_pyramid_level<T_compute>(context, context.d_gauss1, level, directory, "gauss1"));
+    CUDA_RETURN_IF_ERROR(
+        write_image_pyramid_level<T_compute>(context, context.d_gauss2, level, directory, "gauss2"));
+    CUDA_RETURN_IF_ERROR(write_mask_pyramid_level(context, context.d_maskPyr, level, directory, "mask"));
+    CUDA_RETURN_IF_ERROR(write_image_pyramid_level<T_compute>(context, context.d_lap1, level, directory, "lap1"));
+    CUDA_RETURN_IF_ERROR(write_image_pyramid_level<T_compute>(context, context.d_lap2, level, directory, "lap2"));
+    CUDA_RETURN_IF_ERROR(write_image_pyramid_level<T_compute>(context, context.d_blend, level, directory, "blend"));
+    CUDA_RETURN_IF_ERROR(
+        write_image_pyramid_level<T_compute>(context, context.d_resonstruct, level, directory, "reconstruct"));
+  }
+  return CudaStatus::OkStatus();
 }
 
 template <typename T_pipeline, typename T_compute>

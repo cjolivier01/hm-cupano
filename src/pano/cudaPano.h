@@ -8,6 +8,7 @@
 
 #include <memory>
 #include <optional>
+#include <string>
 
 namespace hm {
 namespace pano {
@@ -97,6 +98,8 @@ class CudaStitchPano {
       const CudaMat<T_pipeline>& inputImage2,
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
+
+  CudaStatus dump_soft_blend_pyramid(const std::string& directory, cudaStream_t stream) const;
 
  protected:
   static CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process_impl(
