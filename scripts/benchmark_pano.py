@@ -155,6 +155,7 @@ def benchmark_python(
     device: torch.device,
     iterations: int,
     warmup: int,
+    enable_cuda_graphs: bool,
 ) -> BenchmarkResult:
     image = cv2.imread(str(directory / "left.png"), cv2.IMREAD_COLOR)
     if image is None:
@@ -175,6 +176,7 @@ def benchmark_python(
             match_exposure=False,
             quiet=True,
             backend="triton",
+            enable_cuda_graphs=enable_cuda_graphs,
         )
 
         with torch.inference_mode():
@@ -189,7 +191,8 @@ def benchmark_python(
                 torch.cuda.synchronize(device)
         elapsed = time.perf_counter() - start
         fps = iterations / elapsed
-        return BenchmarkResult(width, height, levels, "python", fps, 1000.0 / fps, True)
+        note = "cuda_graphs=on" if enable_cuda_graphs and device.type == "cuda" and torch.version.hip is None else "cuda_graphs=off"
+        return BenchmarkResult(width, height, levels, "python", fps, 1000.0 / fps, True, note)
     except Exception as exc:  # pragma: no cover - exercised through command execution
         return BenchmarkResult(width, height, levels, "python", None, None, False, str(exc))
     finally:
@@ -292,6 +295,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-json", default=None, help="Optional JSON file for the benchmark summary")
     parser.add_argument("--work-dir", default=None, help="Directory for generated synthetic benchmark inputs")
     parser.add_argument("--overlap-fraction", type=float, default=0.5, help="Fractional overlap between the two inputs")
+    parser.add_argument("--disable-cuda-graphs", action="store_true", help="Disable CUDA graph capture in the Python stitcher benchmark")
     return parser.parse_args()
 
 
@@ -310,7 +314,16 @@ def main() -> int:
         directory = prepare_benchmark_directory(work_dir, width, height, overlap)
         for levels in args.levels:
             results.append(benchmark_cpp(binary, directory, levels))
-            results.append(benchmark_python(directory, levels, device, args.iterations, args.warmup))
+            results.append(
+                benchmark_python(
+                    directory,
+                    levels,
+                    device,
+                    args.iterations,
+                    args.warmup,
+                    enable_cuda_graphs=not args.disable_cuda_graphs,
+                )
+            )
 
     rows = summarize_rows(results)
     print_table(rows)

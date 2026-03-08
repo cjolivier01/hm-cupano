@@ -209,7 +209,8 @@ Key points:
 - `cupano.ControlMasks` / `cupano.ControlMasksN`: Python loaders for the same Hugin/enblend mapping outputs used by the C++ code.
 - Backend selection is exposed as `backend="auto" | "triton"`.
 - There is no separate public `python-torch` mode anymore; `auto` selects Triton for supported GPU tensors and otherwise falls back internally.
-- The implementation targets portability across CUDA and ROCm through PyTorch, with Triton kernels for the ROI copy and remap hot paths when Triton is installed.
+- The implementation targets portability across CUDA and ROCm through PyTorch, with Triton kernels for ROI copy, remap, mask/image pyramid construction, Laplacian generation, reconstruction, and N-way blend when Triton is installed.
+- The Python stitchers reuse persistent blend scratch buffers, and on CUDA they can optionally capture steady-state execution with CUDA graphs.
 
 Example:
 ```python
@@ -222,7 +223,7 @@ masks = ControlMasks("assets")
 left = torch.from_numpy(cv2.cvtColor(cv2.imread("assets/image0.png"), cv2.COLOR_BGR2BGRA)).float().cuda().unsqueeze(0)
 right = torch.from_numpy(cv2.cvtColor(cv2.imread("assets/image1.png"), cv2.COLOR_BGR2BGRA)).float().cuda().unsqueeze(0)
 
-stitcher = CudaStitchPano(batch_size=1, num_levels=6, control_masks=masks, backend="auto")
+stitcher = CudaStitchPano(batch_size=1, num_levels=6, control_masks=masks, backend="auto", enable_cuda_graphs=True)
 out = stitcher.process(left, right)
 ```
 
@@ -258,6 +259,7 @@ python scripts/benchmark_pano.py \
 ```
 
 This benchmarks the existing two-image C++ binary and the Python Triton backend on the same synthetic control directories and prints a summary table plus JSON.
+Pass `--disable-cuda-graphs` to benchmark the eager Python path instead of the CUDA-graph replay path.
 
 Note on CuTe DSL:
 - NVIDIA CuTe DSL is CUDA-only, so it cannot satisfy a single-source CUDA+ROCm requirement.
