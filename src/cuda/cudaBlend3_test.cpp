@@ -259,7 +259,6 @@ TEST(CudaBlend3SmallTest, AlphaZeroSkipsContribution) {
   const int batchSize = 1;
   const int numLevels = 1;
   const int pixelCount = width * height * channels * batchSize;
-  const int maskCount = width * height * 3;
 
   // Three RGBA pixels with distinct colors; image2 alpha=0 (fully transparent)
   std::vector<float> h_image1{10.0f, 20.0f, 30.0f, 255.0f};

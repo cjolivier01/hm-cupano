@@ -132,7 +132,12 @@ int main(int argc, char** argv) {
   using T_compute = float4;
 
   hm::pano::cuda::CudaStitchPanoN<T_pipeline, T_compute> pano(
-      batch_size, num_levels, control_masks, /*match_exposure=*/adjust_images);
+      batch_size,
+      num_levels,
+      control_masks,
+      /*match_exposure=*/adjust_images,
+      /*quiet=*/false,
+      /*minimize_blend=*/true);
   std::cout << "Canvas size: " << pano.canvas_width() << " x " << pano.canvas_height() << std::endl;
 
   const int cvPipelineType = cudaPixelTypeToCvType(hm::CudaTypeToPixelType<T_pipeline>::value);
