@@ -136,11 +136,19 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   CUDA_RETURN_IF_ERROR(
       cudaMemsetAsync(canvas->data_raw(), 0, canvas->pitch() * canvas->height() * stitch_context.batch_size(), stream));
 
-  // TODO: remove me
-  // CUDA_RETURN_IF_ERROR(cudaMemsetAsync(stitch_context.cudaFull1->data_raw(), 0, stitch_context.cudaFull1->pitch() *
-  // stitch_context.cudaFull1->height(), stream));
-  // CUDA_RETURN_IF_ERROR(cudaMemsetAsync(stitch_context.cudaFull2->data_raw(), 0, stitch_context.cudaFull2->pitch() *
-  // stitch_context.cudaFull2->height(), stream));
+  if (!stitch_context.is_hard_seam()) {
+    // The soft-seam remap/copy path only fills sub-ROIs of these reusable buffers.
+    CUDA_RETURN_IF_ERROR(cudaMemsetAsync(
+        stitch_context.cudaFull1->data_raw(),
+        0,
+        stitch_context.cudaFull1->pitch() * stitch_context.cudaFull1->height() * stitch_context.batch_size(),
+        stream));
+    CUDA_RETURN_IF_ERROR(cudaMemsetAsync(
+        stitch_context.cudaFull2->data_raw(),
+        0,
+        stitch_context.cudaFull2->pitch() * stitch_context.cudaFull2->height() * stitch_context.batch_size(),
+        stream));
+  }
 
   // bool cross_pollenate_images = true;
   auto roi_width = [](const cv::Rect2i& roi) { return roi.width; };

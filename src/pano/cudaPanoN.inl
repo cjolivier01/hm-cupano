@@ -555,6 +555,12 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T
     auto cuerr = cudaMemsetAsync(canvas->data(), 0, canvas->size(), stream);
     if (cuerr != cudaSuccess)
       return CudaStatus(cuerr);
+    // The minimized soft-seam path remaps only intersections into these reusable buffers.
+    for (int i = 0; i < stitch_context_->n_images; ++i) {
+      cuerr = cudaMemsetAsync(stitch_context_->cudaFull[i]->data(), 0, stitch_context_->cudaFull[i]->size(), stream);
+      if (cuerr != cudaSuccess)
+        return CudaStatus(cuerr);
+    }
 
     // First fill the entire canvas using a fused hard-seam remap. This gives a correct baseline outside the
     // soft seam ROI at much lower cost than remapping N full-frame buffers.
@@ -641,6 +647,12 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T
   }
 
   // Soft seam: remap each input into its own full canvas buffer, then N-way blend.
+  // Remap only touches each input's projected footprint, so clear the reusable buffers first.
+  for (int i = 0; i < stitch_context_->n_images; ++i) {
+    auto cuerr = cudaMemsetAsync(stitch_context_->cudaFull[i]->data(), 0, stitch_context_->cudaFull[i]->size(), stream);
+    if (cuerr != cudaSuccess)
+      return CudaStatus(cuerr);
+  }
   for (int i = 0; i < stitch_context_->n_images; ++i) {
     const auto& mx = *stitch_context_->remap_x[i];
     const auto& my = *stitch_context_->remap_y[i];
