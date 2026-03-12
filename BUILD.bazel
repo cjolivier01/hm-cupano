@@ -29,3 +29,12 @@ config_setting(
     name = "with_cuda",
     values = {"define": "enblend_cuda=true"},
 )
+
+filegroup(
+    name = "fpga_stitch_assets",
+    srcs = [
+        "assets/left.png",
+        "assets/right.png",
+    ],
+    visibility = ["//visibility:public"],
+)

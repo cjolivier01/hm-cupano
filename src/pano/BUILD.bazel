@@ -59,6 +59,21 @@ cc_library(
 )
 
 cc_library(
+    name = "control_masks_headers",
+    hdrs = [
+        "controlMasks.h",
+    ],
+    copts = [
+      "--std=c++17",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    visibility = ["//visibility:public"],
+    deps = [
+        "@opencv_linux//:opencv",
+    ],
+)
+
+cc_library(
     name = "canvas_manager",
     srcs = [
         "canvasManager.cpp",
