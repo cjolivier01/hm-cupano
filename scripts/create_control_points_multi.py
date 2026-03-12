@@ -382,11 +382,17 @@ def configure_stitching_multi(
     def prefer_bazel_tool(name: str) -> List[str]:
         import shutil
         if name == "multiblend":
-            if shutil.which("bazelisk") or shutil.which("bazel"):
-                return ["bazelisk", "run", "@multiblend//:multiblend", "--"]
+            if shutil.which("bazelisk"):
+                return ["bazelisk", "run", "--noenable_bzlmod", "@multiblend//:multiblend", "--"]
+            if shutil.which("bazel"):
+                return ["bazel", "run", "--noenable_bzlmod", "@multiblend//:multiblend", "--"]
         if name == "enblend":
-            if shutil.which("bazelisk") or shutil.which("bazel"):
-                return ["bazelisk", "run", "@enblend//:enblend", "--"]
+            if shutil.which("bazelisk"):
+                return ["bazelisk", "run", "--noenable_bzlmod", "@enblend//:enblend", "--"]
+            if shutil.which("bazel"):
+                return ["bazel", "run", "--noenable_bzlmod", "@enblend//:enblend", "--"]
+        if shutil.which(name):
+            return [name]
         return [name]
 
     n_imgs = len(frames)

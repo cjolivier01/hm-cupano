@@ -90,6 +90,111 @@ cc_library(
 )
 
 new_local_repository(
+    name = "lcms2",
+    path = "/usr",
+    build_file_content = """
+cc_library(
+    name = "lcms2",
+    hdrs = glob(["include/lcms2*.h", "include/x86_64-linux-gnu/lcms2*.h"], allow_empty = True),
+    includes = ["include", "include/x86_64-linux-gnu"],
+    linkopts = [
+        "-L/usr/lib/x86_64-linux-gnu",
+        "-L/usr/lib",
+        "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
+        "-llcms2",
+    ],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+new_local_repository(
+    name = "boost",
+    path = "/usr",
+    build_file_content = """
+cc_library(
+    name = "filesystem",
+    hdrs = glob(["include/boost/**/*.hpp"], allow_empty = True),
+    includes = ["include"],
+    linkopts = [
+        "-L/usr/lib/x86_64-linux-gnu",
+        "-L/usr/lib",
+        "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
+        "-lboost_filesystem",
+        "-lboost_system",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "system",
+    hdrs = glob(["include/boost/**/*.hpp"], allow_empty = True),
+    includes = ["include"],
+    linkopts = [
+        "-L/usr/lib/x86_64-linux-gnu",
+        "-L/usr/lib",
+        "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
+        "-lboost_system",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "algorithm",
+    hdrs = glob(["include/boost/**/*.hpp"], allow_empty = True),
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "math",
+    hdrs = glob(["include/boost/**/*.hpp"], allow_empty = True),
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+new_local_repository(
+    name = "gsl",
+    path = "/usr",
+    build_file_content = """
+cc_library(
+    name = "gsl",
+    hdrs = glob(["include/gsl/*.h"], allow_empty = True),
+    includes = ["include"],
+    linkopts = [
+        "-L/usr/lib/x86_64-linux-gnu",
+        "-L/usr/lib",
+        "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
+        "-lgsl",
+        "-lgslcblas",
+    ],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+new_local_repository(
+    name = "vigra",
+    path = "/usr",
+    build_file_content = """
+cc_library(
+    name = "vigra",
+    hdrs = glob(["include/vigra/**/*.hxx", "include/vigra/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    linkopts = [
+        "-L/usr/lib/x86_64-linux-gnu",
+        "-L/usr/lib",
+        "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
+        "-lvigraimpex",
+    ],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+new_local_repository(
     name = "opencv_linux",
     build_file = "@//buildfiles:third_party/opencv_linux.BUILD",
     path = "/usr",

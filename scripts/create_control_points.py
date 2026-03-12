@@ -582,12 +582,17 @@ def configure_stitching(
         ]
         os.system(" ".join(cmd))
 
-        # Blend the mappings into a panorama using enblend (prefer Bazel tool if available).
+        # Blend the mappings into a panorama using the repo's Bazel-managed
+        # enblend first, then fall back to a system tool if needed.
         import shutil
         def prefer_bazel_tool(name: str) -> list:
             if name == "enblend":
-                if shutil.which("bazelisk") or shutil.which("bazel"):
-                    return ["bazelisk", "run", "@enblend//:enblend", "--"]
+                if shutil.which("bazelisk"):
+                    return ["bazelisk", "run", "--noenable_bzlmod", "@enblend//:enblend", "--"]
+                if shutil.which("bazel"):
+                    return ["bazel", "run", "--noenable_bzlmod", "@enblend//:enblend", "--"]
+            if shutil.which(name):
+                return [name]
             return [name]
 
         output_dir = Path.cwd()

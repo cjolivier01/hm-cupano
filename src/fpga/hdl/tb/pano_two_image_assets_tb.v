@@ -30,6 +30,11 @@ module pano_two_image_assets_tb;
 
     $readmemh("left.hex", uut.left_in_mem);
     $readmemh("right.hex", uut.right_in_mem);
+    $readmemh("map1_x.hex", uut.map1_x_mem);
+    $readmemh("map1_y.hex", uut.map1_y_mem);
+    $readmemh("map2_x.hex", uut.map2_x_mem);
+    $readmemh("map2_y.hex", uut.map2_y_mem);
+    $readmemh("mask_high.hex", uut.mask_high_mem);
 
     repeat (4) @(posedge clk);
     rstn = 1'b1;
