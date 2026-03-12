@@ -1,0 +1,144 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+INCLUDE_PREFIX = "cupano/fpga"
+
+cc_library(
+    name = "pano_fpga_base",
+    hdrs = [
+        "panoFpgaFixedPoint.h",
+        "panoFpgaRegs.h",
+        "panoFpgaRuntime.h",
+        "panoFpgaStatus.h",
+        "panoFpgaTypes.h",
+    ],
+    copts = [
+        "--std=c++17",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    deps = [
+        "//src/pano:control_masks_headers",
+    ],
+)
+
+cc_library(
+    name = "pano_fpga_controller",
+    srcs = [
+        "panoFpgaController.cpp",
+    ],
+    hdrs = [
+        "panoFpgaController.h",
+    ],
+    copts = [
+        "--std=c++17",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    deps = [
+        ":pano_fpga_base",
+    ],
+)
+
+cc_library(
+    name = "pano_fpga_plan",
+    srcs = [
+        "panoFpgaPlan.cpp",
+    ],
+    hdrs = [
+        "panoFpgaPlan.h",
+    ],
+    copts = [
+        "--std=c++17",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    deps = [
+        ":pano_fpga_base",
+        "//src/pano:control_masks_headers",
+        "//src/pano:canvas_manager",
+        "@opencv_linux//:opencv",
+    ],
+)
+
+cc_library(
+    name = "fpga_stitch_pano",
+    srcs = [
+        "fpgaStitchPano.cpp",
+    ],
+    hdrs = [
+        "fpgaStitchPano.h",
+    ],
+    copts = [
+        "--std=c++17",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    deps = [
+        ":pano_fpga_base",
+        ":pano_fpga_plan",
+        "//src/pano:control_masks_headers",
+        "//src/pano:canvas_manager",
+        "@opencv_linux//:opencv",
+    ],
+)
+
+cc_library(
+    name = "pano_fpga",
+    deps = [
+        ":fpga_stitch_pano",
+        ":pano_fpga_controller",
+        ":pano_fpga_plan",
+    ],
+)
+
+cc_test(
+    name = "panoFpgaController_test",
+    srcs = ["panoFpgaController_test.cpp"],
+    deps = [
+        ":pano_fpga_controller",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "panoFpgaPlan_test",
+    srcs = ["panoFpgaPlan_test.cpp"],
+    deps = [
+        ":pano_fpga_plan",
+        "@opencv_linux//:opencv",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "fpgaStitchPano_test",
+    srcs = ["fpgaStitchPano_test.cpp"],
+    deps = [
+        ":fpga_stitch_pano",
+        "@opencv_linux//:opencv",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+filegroup(
+    name = "hdl",
+    srcs = glob(["hdl/*.v"]),
+)
+
+filegroup(
+    name = "hdl_testdata",
+    srcs = glob([
+        "hdl/*.v",
+        "hdl/tb/*",
+    ]),
+)
+
+sh_test(
+    name = "hdl_iverilog_test",
+    srcs = ["hdl/run_iverilog_tests.sh"],
+    data = [
+        ":hdl_testdata",
+        "//:fpga_stitch_assets",
+    ],
+)
