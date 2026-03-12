@@ -4,6 +4,12 @@ build --nokeep_going --color=yes
 # build --crosstool_top=@toolchain//crosstool:toolchain
 build --copt=-fPIC
 build --copt=--std=c++17
+build --repo_env=AR=/usr/bin/ar
+build --repo_env=CC=/usr/bin/gcc
+build --repo_env=CXX=/usr/bin/g++
+build --repo_env=LD=/usr/bin/ld
+build --repo_env=NM=/usr/bin/nm
+build --repo_env=RANLIB=/usr/bin/ranlib
 
 #build -c opt
 build:opt -c opt
@@ -35,4 +41,3 @@ build --action_env=target_platform="jetson"
 build:jetson --cpu=aarch64
 build:jetson --define=target_platform=jetson
 build:jetson --action_env=target_platform="jetson"
-

@@ -66,6 +66,7 @@ cc_library(
       ":gl_window",
       "//src/pano:cuda_matrix",
       "@local_cuda//:cuda_runtime",
+      "@opencv_linux//:opencv",
     ],
 )
 
@@ -90,5 +91,6 @@ cc_library(
       ":gl_window",
       "//src/pano:cuda_matrix",
       "@local_cuda//:cuda_runtime",
+      "@opencv_linux//:opencv",
     ],
 )

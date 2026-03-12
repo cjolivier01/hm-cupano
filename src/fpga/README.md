@@ -73,3 +73,142 @@ The HDL now includes a first-pass Zybo wrapper around the compute blocks, but it
 - Set `FPGA_DUMP_VCD=1` when running `src/fpga/hdl/run_iverilog_tests.sh` or `bazelisk test //src/fpga:hdl_iverilog_test` to emit `left_right.vcd` and `s1_s2.vcd` for GTKWave inspection. With Bazel, the runner copies them into `TEST_UNDECLARED_OUTPUTS_DIR` when that environment variable is available.
 - Set `FPGA_ARTIFACT_DIR=<path>` to preserve the per-case generated control files, hex inputs, and simulation outputs outside the temp directory.
 - In environments without those tools, the test exits cleanly with a skip message.
+
+## Running Tests
+
+### Full optimized workspace build
+
+Use this first if you want to verify the repo still builds before touching the FPGA path:
+
+```sh
+make perf
+```
+
+### Default HDL regression
+
+Run the current unit benches plus the two reduced end-to-end stitch cases:
+
+```sh
+src/fpga/hdl/run_iverilog_tests.sh
+```
+
+Or through Bazel:
+
+```sh
+bazelisk test //src/fpga:hdl_iverilog_test
+```
+
+### Single case with artifacts
+
+`run_two_image_case.sh` is the easiest manual entrypoint. It generates a self-contained case directory with:
+
+- staged control assets under `control/`
+- `left.hex`, `right.hex`, `map*.hex`, `mask_high.hex`
+- `expected_canvas.hex`
+- `canvas_out.hex`
+- `pano_two_image_assets.vcd`
+
+Example:
+
+```sh
+src/fpga/hdl/run_two_image_case.sh \
+  --left assets/left.png \
+  --right assets/right.png \
+  --mode iverilog
+```
+
+The script prints the artifact directory at the end.
+
+### Parameterized case sizes
+
+The single-case runner can build arbitrary extracted RTL cases instead of the fixed `16x8` default:
+
+```sh
+src/fpga/hdl/run_two_image_case.sh \
+  --left assets/left.png \
+  --right assets/right.png \
+  --width 64 \
+  --height 32 \
+  --overlap 16 \
+  --pad 2 \
+  --mode iverilog
+```
+
+Constraints:
+
+- `height` must be even.
+- `overlap + 2 * pad` must be even.
+- `0 < overlap < width`.
+
+### Extracting a seam-crossing control window
+
+If you already have a real two-image Hugin/enblend control directory, extract a seam-crossing window that matches the RTL test geometry:
+
+```sh
+python3 src/fpga/hdl/tb/gen_two_image_assets_case.py extract-control \
+  --left path/to/left.png \
+  --right path/to/right.png \
+  --control-dir path/to/full_control_dir \
+  --outdir /tmp/extracted_control \
+  --width 64 \
+  --height 32 \
+  --overlap 16 \
+  --pad 2
+```
+
+Then run the case against that extracted control directory:
+
+```sh
+src/fpga/hdl/run_two_image_case.sh \
+  --left path/to/left.png \
+  --right path/to/right.png \
+  --control-dir /tmp/extracted_control \
+  --mode iverilog
+```
+
+### GEM flow
+
+The repo now has an experimental GEM-oriented runner:
+
+```sh
+src/fpga/hdl/run_two_image_case.sh \
+  --left assets/left.png \
+  --right assets/right.png \
+  --mode gem \
+  --gem-root /tmp/GEM
+```
+
+Requirements:
+
+- `cargo`
+- `yosys`
+- `nvcc`
+- a local GEM checkout, for example:
+
+```sh
+git clone --depth 1 --branch staged-aig-release https://github.com/NVlabs/GEM.git /tmp/GEM
+cd /tmp/GEM
+git submodule update --init --recursive
+```
+
+On this machine, GEM also needed:
+
+- a current Rust toolchain from `rustup` rather than Ubuntu's older `cargo`
+- `UCC_CUDA_GENCODE=75`
+- `UCC_CUDA_PTX=75`
+- a local patch in `/tmp/GEM/eda-infra-rs/ucc/src/compile.rs` changing `-std=c++14` to `-std=c++17` so CUDA 13's libcu++ would compile
+
+After that, these both worked:
+
+```sh
+. "$HOME/.cargo/env"
+cd /tmp/GEM
+UCC_CUDA_GENCODE=75 UCC_CUDA_PTX=75 cargo run -r --features cuda --bin cut_map_interactive -- --help
+UCC_CUDA_GENCODE=75 UCC_CUDA_PTX=75 cargo run -r --features cuda --bin cuda_test -- --help
+```
+
+Notes:
+
+- The `gem` mode still runs the `iverilog` driver first, because that driver produces the `input.vcd` GEM consumes.
+- The GEM path is currently experimental for the full stitch pipeline. Yosys is flattening the pipeline memories into registers rather than preserving them as mapped RAMs, which makes synthesis substantially heavier than the plain `iverilog` flow.
+- The artifact directory keeps `yosys_memory.log`, `yosys_logic.log`, `gem_build.log`, `gem_map.log`, `gem_sim.log`, and `output.vcd` for debugging.

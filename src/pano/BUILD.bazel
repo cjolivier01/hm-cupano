@@ -132,6 +132,7 @@ cc_library(
         ":canvas",
         ":cuda_matrix",
         "//src/utils",
+        "@opencv_linux//:opencv",
     ],
     data = [
       # "//scripts:create_control_points.py",

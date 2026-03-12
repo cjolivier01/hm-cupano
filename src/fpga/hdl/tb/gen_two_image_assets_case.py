@@ -2,34 +2,121 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
 import numpy as np
 import tifffile
 
-INPUT_W = 16
-INPUT_H = 8
-OVERLAP = 4
-PAD = 2
-X2 = INPUT_W - OVERLAP
-CANVAS_W = INPUT_W + X2
-CANVAS_H = INPUT_H
-BLEND_W = OVERLAP + (2 * PAD)
-BLEND_H = INPUT_H
-LOW_W = BLEND_W // 2
-LOW_H = BLEND_H // 2
 MASK_ONE = 0xFFFF
 UNMAPPED = 0xFFFF
 Q_MIN = -(1 << 17)
 Q_MAX = (1 << 17) - 1
 
 
+@dataclass(frozen=True)
+class CaseShape:
+    input_w: int
+    input_h: int
+    overlap: int
+    pad: int
+
+    @property
+    def x2(self) -> int:
+        return self.input_w - self.overlap
+
+    @property
+    def canvas_w(self) -> int:
+        return self.input_w + self.x2
+
+    @property
+    def canvas_h(self) -> int:
+        return self.input_h
+
+    @property
+    def blend_w(self) -> int:
+        return self.overlap + (2 * self.pad)
+
+    @property
+    def blend_h(self) -> int:
+        return self.input_h
+
+    @property
+    def low_w(self) -> int:
+        return self.blend_w // 2
+
+    @property
+    def low_h(self) -> int:
+        return self.blend_h // 2
+
+    def validate(self) -> None:
+        if self.input_w <= 0 or self.input_h <= 0:
+            raise ValueError("input width and height must be positive")
+        if self.pad < 0:
+            raise ValueError("pad must be non-negative")
+        if self.overlap <= 0 or self.overlap >= self.input_w:
+            raise ValueError(f"overlap={self.overlap} must satisfy 0 < overlap < input_w={self.input_w}")
+        if self.input_h % 2 != 0:
+            raise ValueError(f"input_h={self.input_h} must be even for the 2x2 downsample path")
+        if self.blend_w % 2 != 0:
+            raise ValueError(
+                f"blend_w={self.blend_w} must be even; choose overlap/pad so overlap + 2*pad is even"
+            )
+
+    def to_dict(self) -> dict[str, int]:
+        return {
+            "input_w": self.input_w,
+            "input_h": self.input_h,
+            "overlap": self.overlap,
+            "pad": self.pad,
+            "x2": self.x2,
+            "canvas_w": self.canvas_w,
+            "canvas_h": self.canvas_h,
+            "blend_w": self.blend_w,
+            "blend_h": self.blend_h,
+            "low_w": self.low_w,
+            "low_h": self.low_h,
+        }
+
+
+@dataclass(frozen=True)
+class ControlData:
+    left_img: np.ndarray
+    right_img: np.ndarray
+    map1_x: np.ndarray
+    map1_y: np.ndarray
+    map2_x: np.ndarray
+    map2_y: np.ndarray
+    seam_mask: np.ndarray
+    pos0: tuple[int, int]
+    pos1: tuple[int, int]
+
+
+@dataclass(frozen=True)
+class WindowRange:
+    start: int
+    stop: int
+
+    def clamp(self, value: int) -> int:
+        return max(self.start, min(self.stop, value))
+
+
+def default_overlap(width: int) -> int:
+    overlap = max(4, min(width // 4, 64))
+    if overlap >= width:
+        overlap = width - 1
+    if overlap % 2 != 0:
+        overlap -= 1
+    return max(2, overlap)
+
+
 def center_crop(image: np.ndarray, width: int, height: int) -> np.ndarray:
     y0 = max((image.shape[0] - height) // 2, 0)
     x0 = max((image.shape[1] - width) // 2, 0)
-    return image[y0:y0 + height, x0:x0 + width].copy()
+    return image[y0 : y0 + height, x0 : x0 + width].copy()
 
 
 def pack_rgba_word(bgr: np.ndarray) -> int:
@@ -110,6 +197,12 @@ def read_tiff_position(path: Path) -> tuple[int, int]:
     return int(round(xpos * xres)), int(round(ypos * yres))
 
 
+def normalize_positions(pos0: tuple[int, int], pos1: tuple[int, int]) -> tuple[tuple[int, int], tuple[int, int]]:
+    min_x = min(pos0[0], pos1[0])
+    min_y = min(pos0[1], pos1[1])
+    return (pos0[0] - min_x, pos0[1] - min_y), (pos1[0] - min_x, pos1[1] - min_y)
+
+
 def normalize_binary_seam(mask: np.ndarray) -> np.ndarray:
     mask = np.asarray(mask, dtype=np.uint8)
     min_val = int(mask.min())
@@ -120,11 +213,11 @@ def normalize_binary_seam(mask: np.ndarray) -> np.ndarray:
     return out
 
 
-def pad_mask_to_canvas(mask: np.ndarray) -> np.ndarray:
-    if mask.shape[0] > CANVAS_H or mask.shape[1] > CANVAS_W:
-        raise ValueError(f"Seam mask is larger than reduced canvas: {mask.shape} vs {(CANVAS_H, CANVAS_W)}")
-    pad_bottom = CANVAS_H - mask.shape[0]
-    pad_right = CANVAS_W - mask.shape[1]
+def pad_mask(mask: np.ndarray, height: int, width: int) -> np.ndarray:
+    if mask.shape[0] > height or mask.shape[1] > width:
+        raise ValueError(f"Seam mask is larger than target canvas: {mask.shape} vs {(height, width)}")
+    pad_bottom = height - mask.shape[0]
+    pad_right = width - mask.shape[1]
     if pad_bottom == 0 and pad_right == 0:
         return mask
     return cv2.copyMakeBorder(mask, 0, pad_bottom, 0, pad_right, cv2.BORDER_REPLICATE)
@@ -132,10 +225,10 @@ def pad_mask_to_canvas(mask: np.ndarray) -> np.ndarray:
 
 def downsample_pixel(image: np.ndarray, x: int, y: int) -> list[int]:
     pixels = [
-        image[2 * y + 0, 2 * x + 0],
-        image[2 * y + 0, 2 * x + 1],
-        image[2 * y + 1, 2 * x + 0],
-        image[2 * y + 1, 2 * x + 1],
+        image[(2 * y) + 0, (2 * x) + 0],
+        image[(2 * y) + 0, (2 * x) + 1],
+        image[(2 * y) + 1, (2 * x) + 0],
+        image[(2 * y) + 1, (2 * x) + 1],
     ]
     out = [0, 0, 0, 0]
     for channel in range(3):
@@ -148,10 +241,10 @@ def downsample_pixel(image: np.ndarray, x: int, y: int) -> list[int]:
 def downsample_mask(mask: np.ndarray, x: int, y: int) -> int:
     return int(
         (
-            int(mask[2 * y + 0, 2 * x + 0])
-            + int(mask[2 * y + 0, 2 * x + 1])
-            + int(mask[2 * y + 1, 2 * x + 0])
-            + int(mask[2 * y + 1, 2 * x + 1])
+            int(mask[(2 * y) + 0, (2 * x) + 0])
+            + int(mask[(2 * y) + 0, (2 * x) + 1])
+            + int(mask[(2 * y) + 1, (2 * x) + 0])
+            + int(mask[(2 * y) + 1, (2 * x) + 1])
         )
         >> 2
     )
@@ -238,44 +331,150 @@ def read_words(path: Path) -> list[str]:
     return words
 
 
-def write_reduced_control_dir(left_path: Path, right_path: Path, control_dir: Path) -> None:
-    left = cv2.imread(str(left_path), cv2.IMREAD_COLOR)
-    right = cv2.imread(str(right_path), cv2.IMREAD_COLOR)
-    if left is None:
-        raise FileNotFoundError(left_path)
-    if right is None:
-        raise FileNotFoundError(right_path)
+def load_image(path: Path) -> np.ndarray:
+    image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+    if image is None:
+        raise FileNotFoundError(path)
+    return image
 
-    left_crop = center_crop(left, INPUT_W, INPUT_H)
-    right_crop = center_crop(right, INPUT_W, INPUT_H)
 
+def load_u16_tiff(path: Path) -> np.ndarray:
+    image = cv2.imread(str(path), cv2.IMREAD_ANYDEPTH)
+    if image is None:
+        raise FileNotFoundError(path)
+    if image.dtype != np.uint16:
+        raise ValueError(f"Expected CV_16U TIFF at {path}, got {image.dtype}")
+    return image
+
+
+def load_control_data(control_dir: Path, left_path: Path | None = None, right_path: Path | None = None) -> ControlData:
+    left_candidate = control_dir / "left.png"
+    right_candidate = control_dir / "right.png"
+    if left_candidate.exists():
+        left_img = load_image(left_candidate)
+    elif left_path is not None:
+        left_img = load_image(left_path)
+    else:
+        raise FileNotFoundError(left_candidate)
+    if right_candidate.exists():
+        right_img = load_image(right_candidate)
+    elif right_path is not None:
+        right_img = load_image(right_path)
+    else:
+        raise FileNotFoundError(right_candidate)
+
+    map1_x = load_u16_tiff(control_dir / "mapping_0000_x.tif")
+    map1_y = load_u16_tiff(control_dir / "mapping_0000_y.tif")
+    map2_x = load_u16_tiff(control_dir / "mapping_0001_x.tif")
+    map2_y = load_u16_tiff(control_dir / "mapping_0001_y.tif")
+    if map1_x.shape != map1_y.shape or map2_x.shape != map2_y.shape:
+        raise ValueError("map x/y TIFF shapes do not match")
+
+    pos0 = read_tiff_position(control_dir / "mapping_0000.tif")
+    pos1 = read_tiff_position(control_dir / "mapping_0001.tif")
+    norm0, norm1 = normalize_positions(pos0, pos1)
+    full_canvas_w = max(norm0[0] + map1_x.shape[1], norm1[0] + map2_x.shape[1])
+    full_canvas_h = max(norm0[1] + map1_x.shape[0], norm1[1] + map2_x.shape[0])
+
+    seam_raw = cv2.imread(str(control_dir / "seam_file.png"), cv2.IMREAD_GRAYSCALE)
+    if seam_raw is None:
+        raise FileNotFoundError(control_dir / "seam_file.png")
+    seam_mask = pad_mask(normalize_binary_seam(seam_raw), full_canvas_h, full_canvas_w)
+
+    return ControlData(
+        left_img=left_img,
+        right_img=right_img,
+        map1_x=map1_x,
+        map1_y=map1_y,
+        map2_x=map2_x,
+        map2_y=map2_y,
+        seam_mask=seam_mask,
+        pos0=norm0,
+        pos1=norm1,
+    )
+
+
+def infer_shape_from_control(control_dir: Path, pad: int) -> CaseShape:
+    data = load_control_data(control_dir)
+    width = int(data.map1_x.shape[1])
+    height = int(data.map1_x.shape[0])
+    if data.pos0 != (0, 0) or data.pos1[1] != 0:
+        raise ValueError(f"Control dir {control_dir} is not a normalized two-image horizontal layout: {data.pos0}, {data.pos1}")
+    overlap = width - int(data.pos1[0])
+    shape = CaseShape(width, height, overlap, pad)
+    shape.validate()
+    return shape
+
+
+def write_case_manifest(outdir: Path, shape: CaseShape) -> None:
+    (outdir / "case_manifest.json").write_text(json.dumps(shape.to_dict(), indent=2) + "\n", encoding="ascii")
+
+
+def load_case_manifest(outdir: Path) -> CaseShape:
+    raw = json.loads((outdir / "case_manifest.json").read_text(encoding="ascii"))
+    shape = CaseShape(raw["input_w"], raw["input_h"], raw["overlap"], raw["pad"])
+    shape.validate()
+    return shape
+
+
+def write_control_dir(
+    control_dir: Path,
+    left_img: np.ndarray,
+    right_img: np.ndarray,
+    map1_x: np.ndarray,
+    map1_y: np.ndarray,
+    map2_x: np.ndarray,
+    map2_y: np.ndarray,
+    seam_mask: np.ndarray,
+    shape: CaseShape,
+) -> None:
     control_dir.mkdir(parents=True, exist_ok=True)
-    if not cv2.imwrite(str(control_dir / "left.png"), left_crop):
+    if not cv2.imwrite(str(control_dir / "left.png"), left_img):
         raise RuntimeError(f"Failed to write {control_dir / 'left.png'}")
-    if not cv2.imwrite(str(control_dir / "right.png"), right_crop):
+    if not cv2.imwrite(str(control_dir / "right.png"), right_img):
         raise RuntimeError(f"Failed to write {control_dir / 'right.png'}")
-
-    map_x = identity_map_x(INPUT_W, INPUT_H)
-    map_y = identity_map_y(INPUT_W, INPUT_H)
-    if not cv2.imwrite(str(control_dir / "mapping_0000_x.tif"), map_x):
+    if not cv2.imwrite(str(control_dir / "mapping_0000_x.tif"), map1_x):
         raise RuntimeError(f"Failed to write {control_dir / 'mapping_0000_x.tif'}")
-    if not cv2.imwrite(str(control_dir / "mapping_0000_y.tif"), map_y):
+    if not cv2.imwrite(str(control_dir / "mapping_0000_y.tif"), map1_y):
         raise RuntimeError(f"Failed to write {control_dir / 'mapping_0000_y.tif'}")
-    if not cv2.imwrite(str(control_dir / "mapping_0001_x.tif"), map_x):
+    if not cv2.imwrite(str(control_dir / "mapping_0001_x.tif"), map2_x):
         raise RuntimeError(f"Failed to write {control_dir / 'mapping_0001_x.tif'}")
-    if not cv2.imwrite(str(control_dir / "mapping_0001_y.tif"), map_y):
+    if not cv2.imwrite(str(control_dir / "mapping_0001_y.tif"), map2_y):
         raise RuntimeError(f"Failed to write {control_dir / 'mapping_0001_y.tif'}")
 
-    write_position_tiff(control_dir / "mapping_0000.tif", INPUT_W, INPUT_H, 0, 0)
-    write_position_tiff(control_dir / "mapping_0001.tif", INPUT_W, INPUT_H, X2, 0)
+    write_position_tiff(control_dir / "mapping_0000.tif", shape.input_w, shape.input_h, 0, 0)
+    write_position_tiff(control_dir / "mapping_0001.tif", shape.input_w, shape.input_h, shape.x2, 0)
 
-    seam = np.full((CANVAS_H, CANVAS_W), 255, dtype=np.uint8)
-    seam[:, : X2 + (OVERLAP // 2)] = 0
-    if not cv2.imwrite(str(control_dir / "seam_file.png"), seam):
+    seam_file = np.where(seam_mask != 0, 0, 255).astype(np.uint8)
+    if not cv2.imwrite(str(control_dir / "seam_file.png"), seam_file):
         raise RuntimeError(f"Failed to write {control_dir / 'seam_file.png'}")
 
+    (control_dir / "case_shape.json").write_text(json.dumps(shape.to_dict(), indent=2) + "\n", encoding="ascii")
 
-def stage_external_control_dir(left_path: Path, right_path: Path, source_control_dir: Path, staged_control_dir: Path) -> None:
+
+def write_generated_control_dir(left_path: Path, right_path: Path, control_dir: Path, shape: CaseShape) -> None:
+    left = load_image(left_path)
+    right = load_image(right_path)
+    left_crop = center_crop(left, shape.input_w, shape.input_h)
+    right_crop = center_crop(right, shape.input_w, shape.input_h)
+
+    seam_mask = np.zeros((shape.canvas_h, shape.canvas_w), dtype=np.uint8)
+    seam_mask[:, : shape.x2 + (shape.overlap // 2)] = 1
+
+    write_control_dir(
+        control_dir,
+        left_crop,
+        right_crop,
+        identity_map_x(shape.input_w, shape.input_h),
+        identity_map_y(shape.input_w, shape.input_h),
+        identity_map_x(shape.input_w, shape.input_h),
+        identity_map_y(shape.input_w, shape.input_h),
+        seam_mask,
+        shape,
+    )
+
+
+def stage_control_dir(source_control_dir: Path, staged_control_dir: Path) -> None:
     staged_control_dir.mkdir(parents=True, exist_ok=True)
     for name in [
         "mapping_0000.tif",
@@ -287,79 +486,101 @@ def stage_external_control_dir(left_path: Path, right_path: Path, source_control
         "seam_file.png",
     ]:
         shutil.copy2(source_control_dir / name, staged_control_dir / name)
-
-    left_candidate = source_control_dir / "left.png"
-    right_candidate = source_control_dir / "right.png"
-    if left_candidate.exists():
-        shutil.copy2(left_candidate, staged_control_dir / "left.png")
-    else:
-        left = cv2.imread(str(left_path), cv2.IMREAD_COLOR)
-        if left is None:
-            raise FileNotFoundError(left_path)
-        if not cv2.imwrite(str(staged_control_dir / "left.png"), left):
-            raise RuntimeError(f"Failed to write {staged_control_dir / 'left.png'}")
-    if right_candidate.exists():
-        shutil.copy2(right_candidate, staged_control_dir / "right.png")
-    else:
-        right = cv2.imread(str(right_path), cv2.IMREAD_COLOR)
-        if right is None:
-            raise FileNotFoundError(right_path)
-        if not cv2.imwrite(str(staged_control_dir / "right.png"), right):
-            raise RuntimeError(f"Failed to write {staged_control_dir / 'right.png'}")
+    for name in ["left.png", "right.png", "case_shape.json"]:
+        candidate = source_control_dir / name
+        if candidate.exists():
+            shutil.copy2(candidate, staged_control_dir / name)
 
 
-def load_case_images(left_path: Path, right_path: Path, control_dir: Path) -> tuple[np.ndarray, np.ndarray]:
-    left_candidate = control_dir / "left.png"
-    right_candidate = control_dir / "right.png"
-    left_img = cv2.imread(str(left_candidate if left_candidate.exists() else left_path), cv2.IMREAD_COLOR)
-    right_img = cv2.imread(str(right_candidate if right_candidate.exists() else right_path), cv2.IMREAD_COLOR)
-    if left_img is None:
-        raise FileNotFoundError(left_candidate if left_candidate.exists() else left_path)
-    if right_img is None:
-        raise FileNotFoundError(right_candidate if right_candidate.exists() else right_path)
-    if left_img.shape[:2] != (INPUT_H, INPUT_W):
-        raise ValueError(f"Reduced RTL case requires left image shape {(INPUT_H, INPUT_W)}, got {left_img.shape[:2]}")
-    if right_img.shape[:2] != (INPUT_H, INPUT_W):
-        raise ValueError(f"Reduced RTL case requires right image shape {(INPUT_H, INPUT_W)}, got {right_img.shape[:2]}")
-    return left_img, right_img
+def seam_transition_columns(mask: np.ndarray, row: int) -> np.ndarray:
+    row_values = mask[row].astype(np.int16)
+    return np.where(row_values[:-1] != row_values[1:])[0] + 1
 
 
-def load_u16_map(path: Path) -> np.ndarray:
-    image = cv2.imread(str(path), cv2.IMREAD_ANYDEPTH)
-    if image is None:
-        raise FileNotFoundError(path)
-    if image.dtype != np.uint16:
-        raise ValueError(f"Expected CV_16U TIFF at {path}, got {image.dtype}")
-    if image.shape != (INPUT_H, INPUT_W):
-        raise ValueError(f"Expected reduced map shape {(INPUT_H, INPUT_W)} at {path}, got {image.shape}")
-    return image
+def rebase_source_and_maps(image: np.ndarray, map_x: np.ndarray, map_y: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    valid = (map_x != UNMAPPED) & (map_y != UNMAPPED)
+    if not np.any(valid):
+        raise ValueError("Extracted map window has no valid source coordinates")
+    min_x = int(map_x[valid].min())
+    max_x = int(map_x[valid].max())
+    min_y = int(map_y[valid].min())
+    max_y = int(map_y[valid].max())
+    if min_x < 0 or min_y < 0 or max_x >= image.shape[1] or max_y >= image.shape[0]:
+        raise ValueError("Map window references pixels outside the source image bounds")
+    rebased_x = np.where(valid, map_x - min_x, UNMAPPED).astype(np.uint16)
+    rebased_y = np.where(valid, map_y - min_y, UNMAPPED).astype(np.uint16)
+    return image[min_y : max_y + 1, min_x : max_x + 1].copy(), rebased_x, rebased_y
 
 
-def load_binary_seam(path: Path) -> np.ndarray:
-    image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
-    if image is None:
-        raise FileNotFoundError(path)
-    return pad_mask_to_canvas(normalize_binary_seam(image))
+def extract_control_window(
+    left_path: Path,
+    right_path: Path,
+    source_control_dir: Path,
+    outdir: Path,
+    shape: CaseShape,
+) -> None:
+    shape.validate()
+    data = load_control_data(source_control_dir, left_path, right_path)
+    map_h0, map_w0 = data.map1_x.shape
+    map_h1, map_w1 = data.map2_x.shape
+
+    x_range = WindowRange(
+        max(data.pos0[0], data.pos1[0] - shape.x2),
+        min(data.pos0[0] + map_w0 - shape.input_w, data.pos1[0] + map_w1 - shape.input_w - shape.x2),
+    )
+    y_range = WindowRange(
+        max(data.pos0[1], data.pos1[1]),
+        min(data.pos0[1] + map_h0 - shape.input_h, data.pos1[1] + map_h1 - shape.input_h),
+    )
+    if x_range.start > x_range.stop or y_range.start > y_range.stop:
+        raise ValueError("Requested window does not fit inside the source control geometry")
+
+    seam_rows = [row for row in range(y_range.start, y_range.stop + 1) if seam_transition_columns(data.seam_mask, row).size > 0]
+    if not seam_rows:
+        raise ValueError("Unable to find a row where the seam crosses inside the feasible window range")
+    seam_mid_row = seam_rows[len(seam_rows) // 2]
+    preferred_y0 = seam_mid_row - (shape.input_h // 2)
+    window_y0 = y_range.clamp(preferred_y0)
+
+    seam_cols = seam_transition_columns(data.seam_mask, seam_mid_row)
+    seam_x = int(seam_cols[len(seam_cols) // 2])
+    preferred_x0 = seam_x - (shape.x2 + (shape.overlap // 2))
+    window_x0 = x_range.clamp(preferred_x0)
+
+    left_crop_x = window_x0 - data.pos0[0]
+    left_crop_y = window_y0 - data.pos0[1]
+    right_crop_x = window_x0 + shape.x2 - data.pos1[0]
+    right_crop_y = window_y0 - data.pos1[1]
+
+    map1_x = data.map1_x[left_crop_y : left_crop_y + shape.input_h, left_crop_x : left_crop_x + shape.input_w].copy()
+    map1_y = data.map1_y[left_crop_y : left_crop_y + shape.input_h, left_crop_x : left_crop_x + shape.input_w].copy()
+    map2_x = data.map2_x[right_crop_y : right_crop_y + shape.input_h, right_crop_x : right_crop_x + shape.input_w].copy()
+    map2_y = data.map2_y[right_crop_y : right_crop_y + shape.input_h, right_crop_x : right_crop_x + shape.input_w].copy()
+
+    left_img, map1_x, map1_y = rebase_source_and_maps(data.left_img, map1_x, map1_y)
+    right_img, map2_x, map2_y = rebase_source_and_maps(data.right_img, map2_x, map2_y)
+    seam_crop = data.seam_mask[window_y0 : window_y0 + shape.canvas_h, window_x0 : window_x0 + shape.canvas_w].copy()
+
+    write_control_dir(outdir, left_img, right_img, map1_x, map1_y, map2_x, map2_y, seam_crop, shape)
 
 
-def load_positions(control_dir: Path) -> tuple[tuple[int, int], tuple[int, int]]:
-    pos0 = read_tiff_position(control_dir / "mapping_0000.tif")
-    pos1 = read_tiff_position(control_dir / "mapping_0001.tif")
-    min_x = min(pos0[0], pos1[0])
-    min_y = min(pos0[1], pos1[1])
-    norm0 = (pos0[0] - min_x, pos0[1] - min_y)
-    norm1 = (pos1[0] - min_x, pos1[1] - min_y)
-    if norm0 != (0, 0) or norm1 != (X2, 0):
-        raise ValueError(
-            f"Reduced RTL case expects normalized positions {(0, 0)} and {(X2, 0)}, got {norm0} and {norm1}"
-        )
-    return norm0, norm1
+def load_matching_control_data(control_dir: Path, left_path: Path, right_path: Path, shape: CaseShape) -> ControlData:
+    data = load_control_data(control_dir, left_path, right_path)
+    if data.map1_x.shape != (shape.input_h, shape.input_w):
+        raise ValueError(f"Expected map1 shape {(shape.input_h, shape.input_w)}, got {data.map1_x.shape}")
+    if data.map2_x.shape != (shape.input_h, shape.input_w):
+        raise ValueError(f"Expected map2 shape {(shape.input_h, shape.input_w)}, got {data.map2_x.shape}")
+    if data.pos0 != (0, 0) or data.pos1 != (shape.x2, 0):
+        raise ValueError(f"Expected normalized positions {(0, 0)} and {(shape.x2, 0)}, got {data.pos0} and {data.pos1}")
+    if data.seam_mask.shape != (shape.canvas_h, shape.canvas_w):
+        raise ValueError(f"Expected seam shape {(shape.canvas_h, shape.canvas_w)}, got {data.seam_mask.shape}")
+    return data
 
 
-def apply_remap(canvas: np.ndarray, source: np.ndarray, map_x: np.ndarray, map_y: np.ndarray, offset_x: int, offset_y: int) -> None:
+def apply_remap(canvas: np.ndarray, source: np.ndarray, map_x: np.ndarray, map_y: np.ndarray, offset_x: int, offset_y: int, shape: CaseShape) -> None:
     src_h, src_w = source.shape
-    for y in range(INPUT_H):
-        for x in range(INPUT_W):
+    for y in range(shape.input_h):
+        for x in range(shape.input_w):
             sx = int(map_x[y, x])
             sy = int(map_y[y, x])
             if sx == UNMAPPED or sy == UNMAPPED:
@@ -371,98 +592,138 @@ def apply_remap(canvas: np.ndarray, source: np.ndarray, map_x: np.ndarray, map_y
             canvas[offset_y + y, offset_x + x] = pixel
 
 
-def build_case(left_path: Path, right_path: Path, outdir: Path, control_dir: Path | None = None) -> None:
+def build_case(left_path: Path, right_path: Path, outdir: Path, shape: CaseShape, control_dir: Path | None = None) -> None:
+    shape.validate()
     outdir.mkdir(parents=True, exist_ok=True)
     staged_control_dir = outdir / "control"
     if control_dir is None:
-        write_reduced_control_dir(left_path, right_path, staged_control_dir)
+        write_generated_control_dir(left_path, right_path, staged_control_dir, shape)
     else:
-        stage_external_control_dir(left_path, right_path, control_dir.resolve(), staged_control_dir)
-    control_dir = staged_control_dir
+        control_dir = control_dir.resolve()
+        try:
+            control_shape = infer_shape_from_control(control_dir, shape.pad)
+        except Exception:
+            control_shape = None
+        if control_shape is not None and control_shape.input_w == shape.input_w and control_shape.input_h == shape.input_h and control_shape.overlap == shape.overlap:
+            stage_control_dir(control_dir, staged_control_dir)
+        else:
+            extract_control_window(left_path, right_path, control_dir, staged_control_dir, shape)
 
-    left_img, right_img = load_case_images(left_path, right_path, control_dir)
-    map1_x = load_u16_map(control_dir / "mapping_0000_x.tif")
-    map1_y = load_u16_map(control_dir / "mapping_0000_y.tif")
-    map2_x = load_u16_map(control_dir / "mapping_0001_x.tif")
-    map2_y = load_u16_map(control_dir / "mapping_0001_y.tif")
-    seam_mask = load_binary_seam(control_dir / "seam_file.png")
-    load_positions(control_dir)
+    data = load_matching_control_data(staged_control_dir, left_path, right_path, shape)
 
-    left_words = np.array([[pack_rgba_word(left_img[y, x]) for x in range(INPUT_W)] for y in range(INPUT_H)], dtype=np.uint32)
-    right_words = np.array([[pack_rgba_word(right_img[y, x]) for x in range(INPUT_W)] for y in range(INPUT_H)], dtype=np.uint32)
+    left_words = np.array(
+        [[pack_rgba_word(data.left_img[y, x]) for x in range(shape.input_w)] for y in range(shape.input_h)],
+        dtype=np.uint32,
+    )
+    right_words = np.array(
+        [[pack_rgba_word(data.right_img[y, x]) for x in range(shape.input_w)] for y in range(shape.input_h)],
+        dtype=np.uint32,
+    )
 
-    canvas = np.zeros((CANVAS_H, CANVAS_W), dtype=np.uint32)
-    apply_remap(canvas, left_words, map1_x, map1_y, 0, 0)
+    canvas = np.zeros((shape.canvas_h, shape.canvas_w), dtype=np.uint32)
+    apply_remap(canvas, left_words, data.map1_x, data.map1_y, 0, 0, shape)
 
-    blend_left = np.zeros((BLEND_H, BLEND_W), dtype=np.uint32)
-    blend_right = np.zeros((BLEND_H, BLEND_W), dtype=np.uint32)
-    blend_left[:, 0 : OVERLAP + PAD] = canvas[:, X2 - PAD : X2 - PAD + OVERLAP + PAD]
+    blend_left = np.zeros((shape.blend_h, shape.blend_w), dtype=np.uint32)
+    blend_right = np.zeros((shape.blend_h, shape.blend_w), dtype=np.uint32)
+    blend_left[:, 0 : shape.overlap + shape.pad] = canvas[:, shape.x2 - shape.pad : shape.x2 - shape.pad + shape.overlap + shape.pad]
 
-    apply_remap(canvas, right_words, map2_x, map2_y, X2, 0)
-    blend_right[:, PAD : PAD + OVERLAP + PAD] = canvas[:, X2 : X2 + OVERLAP + PAD]
+    apply_remap(canvas, right_words, data.map2_x, data.map2_y, shape.x2, 0, shape)
+    blend_right[:, shape.pad : shape.pad + shape.overlap + shape.pad] = canvas[:, shape.x2 : shape.x2 + shape.overlap + shape.pad]
 
-    mask_high_bin = seam_mask[:, X2 - PAD : X2 - PAD + BLEND_W]
+    mask_high_bin = data.seam_mask[:, shape.x2 - shape.pad : shape.x2 - shape.pad + shape.blend_w]
     mask_high = np.where(mask_high_bin != 0, MASK_ONE, 0).astype(np.uint16)
 
-    left_q = np.array([[word_to_qpixel(int(blend_left[y, x])) for x in range(BLEND_W)] for y in range(BLEND_H)], dtype=np.int32)
-    right_q = np.array([[word_to_qpixel(int(blend_right[y, x])) for x in range(BLEND_W)] for y in range(BLEND_H)], dtype=np.int32)
+    left_q = np.array(
+        [[word_to_qpixel(int(blend_left[y, x])) for x in range(shape.blend_w)] for y in range(shape.blend_h)],
+        dtype=np.int32,
+    )
+    right_q = np.array(
+        [[word_to_qpixel(int(blend_right[y, x])) for x in range(shape.blend_w)] for y in range(shape.blend_h)],
+        dtype=np.int32,
+    )
 
-    low_left = np.zeros((LOW_H, LOW_W, 4), dtype=np.int32)
-    low_right = np.zeros((LOW_H, LOW_W, 4), dtype=np.int32)
-    low_mask = np.zeros((LOW_H, LOW_W), dtype=np.uint16)
-    for y in range(LOW_H):
-        for x in range(LOW_W):
+    low_left = np.zeros((shape.low_h, shape.low_w, 4), dtype=np.int32)
+    low_right = np.zeros((shape.low_h, shape.low_w, 4), dtype=np.int32)
+    low_mask = np.zeros((shape.low_h, shape.low_w), dtype=np.uint16)
+    for y in range(shape.low_h):
+        for x in range(shape.low_w):
             low_left[y, x] = downsample_pixel(left_q, x, y)
             low_right[y, x] = downsample_pixel(right_q, x, y)
             low_mask[y, x] = downsample_mask(mask_high, x, y)
 
-    high_blend = np.zeros((BLEND_H, BLEND_W, 4), dtype=np.int32)
-    for y in range(BLEND_H):
-        for x in range(BLEND_W):
+    high_blend = np.zeros((shape.blend_h, shape.blend_w, 4), dtype=np.int32)
+    for y in range(shape.blend_h):
+        for x in range(shape.blend_w):
             low00, low10, low01, low11 = low_neighbor(low_left, x, y)
             lap1 = laplacian_pixel(left_q[y, x].tolist(), low00, low10, low01, low11, x, y)
             low00, low10, low01, low11 = low_neighbor(low_right, x, y)
             lap2 = laplacian_pixel(right_q[y, x].tolist(), low00, low10, low01, low11, x, y)
             high_blend[y, x] = blend_pixel(lap1, lap2, int(mask_high[y, x]))
 
-    low_blend = np.zeros((LOW_H, LOW_W, 4), dtype=np.int32)
-    for y in range(LOW_H):
-        for x in range(LOW_W):
+    low_blend = np.zeros((shape.low_h, shape.low_w, 4), dtype=np.int32)
+    for y in range(shape.low_h):
+        for x in range(shape.low_w):
             low_blend[y, x] = blend_pixel(low_left[y, x].tolist(), low_right[y, x].tolist(), int(low_mask[y, x]))
 
-    blend_out = np.zeros((BLEND_H, BLEND_W), dtype=np.uint32)
-    for y in range(BLEND_H):
-        for x in range(BLEND_W):
+    blend_out = np.zeros((shape.blend_h, shape.blend_w), dtype=np.uint32)
+    for y in range(shape.blend_h):
+        for x in range(shape.blend_w):
             low00, low10, low01, low11 = low_neighbor(low_blend, x, y)
             recon = reconstruct_pixel(low00, low10, low01, low11, high_blend[y, x].tolist(), x, y)
             blend_out[y, x] = qpixel_to_word(recon)
 
-    canvas[:, X2 - PAD : X2 - PAD + BLEND_W] = blend_out
+    canvas[:, shape.x2 - shape.pad : shape.x2 - shape.pad + shape.blend_w] = blend_out
 
     write_words32(outdir / "left.hex", left_words.reshape(-1).tolist())
     write_words32(outdir / "right.hex", right_words.reshape(-1).tolist())
-    write_words16(outdir / "map1_x.hex", map1_x.reshape(-1).tolist())
-    write_words16(outdir / "map1_y.hex", map1_y.reshape(-1).tolist())
-    write_words16(outdir / "map2_x.hex", map2_x.reshape(-1).tolist())
-    write_words16(outdir / "map2_y.hex", map2_y.reshape(-1).tolist())
+    write_words16(outdir / "map1_x.hex", data.map1_x.reshape(-1).tolist())
+    write_words16(outdir / "map1_y.hex", data.map1_y.reshape(-1).tolist())
+    write_words16(outdir / "map2_x.hex", data.map2_x.reshape(-1).tolist())
+    write_words16(outdir / "map2_y.hex", data.map2_y.reshape(-1).tolist())
     write_words16(outdir / "mask_high.hex", mask_high.reshape(-1).tolist())
     write_words32(outdir / "expected_canvas.hex", canvas.reshape(-1).tolist())
+    write_case_manifest(outdir, shape)
 
 
-def compare_case(outdir: Path) -> None:
+def compare_case(outdir: Path, actual_path: Path | None = None) -> None:
+    shape = load_case_manifest(outdir)
     expected = read_words(outdir / "expected_canvas.hex")
-    actual = read_words(outdir / "canvas_out.hex")
+    actual = read_words(actual_path if actual_path is not None else outdir / "canvas_out.hex")
     if len(expected) != len(actual):
         raise SystemExit(f"word-count mismatch: expected {len(expected)} got {len(actual)}")
     for index, (exp, got) in enumerate(zip(expected, actual)):
         if exp.lower() != got.lower():
-            y = index // CANVAS_W
-            x = index % CANVAS_W
+            y = index // shape.canvas_w
+            x = index % shape.canvas_w
             raise SystemExit(f"canvas mismatch at ({x}, {y}): expected 0x{exp} got 0x{got}")
 
 
+def resolve_shape(args: argparse.Namespace, control_dir: Path | None = None) -> CaseShape:
+    pad = args.pad
+    if args.width is None or args.height is None:
+        if control_dir is None:
+            width = args.width if args.width is not None else 16
+            height = args.height if args.height is not None else 8
+            overlap = args.overlap if args.overlap is not None else default_overlap(width)
+            shape = CaseShape(width, height, overlap, pad)
+            shape.validate()
+            return shape
+        control_shape = infer_shape_from_control(control_dir, pad)
+        width = control_shape.input_w if args.width is None else args.width
+        height = control_shape.input_h if args.height is None else args.height
+        overlap = control_shape.overlap if args.overlap is None else args.overlap
+        shape = CaseShape(width, height, overlap, pad)
+        shape.validate()
+        return shape
+
+    overlap = args.overlap if args.overlap is not None else default_overlap(args.width)
+    shape = CaseShape(args.width, args.height, overlap, pad)
+    shape.validate()
+    return shape
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate or compare reduced RTL stitch cases for two-image assets")
+    parser = argparse.ArgumentParser(description="Generate, extract, or compare two-image RTL stitch cases")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     gen = sub.add_parser("generate")
@@ -470,20 +731,49 @@ def main() -> None:
     gen.add_argument("--right", required=True)
     gen.add_argument("--outdir", required=True)
     gen.add_argument("--control-dir", default=None)
+    gen.add_argument("--width", type=int, default=None)
+    gen.add_argument("--height", type=int, default=None)
+    gen.add_argument("--overlap", type=int, default=None)
+    gen.add_argument("--pad", type=int, default=2)
+
+    extract = sub.add_parser("extract-control")
+    extract.add_argument("--left", required=True)
+    extract.add_argument("--right", required=True)
+    extract.add_argument("--control-dir", required=True)
+    extract.add_argument("--outdir", required=True)
+    extract.add_argument("--width", type=int, required=True)
+    extract.add_argument("--height", type=int, required=True)
+    extract.add_argument("--overlap", type=int, default=None)
+    extract.add_argument("--pad", type=int, default=2)
 
     cmp = sub.add_parser("compare")
     cmp.add_argument("--outdir", required=True)
+    cmp.add_argument("--actual", default=None)
 
     args = parser.parse_args()
-    if args.cmd == "generate":
-        build_case(
+    if args.cmd == "compare":
+        compare_case(Path(args.outdir), None if args.actual is None else Path(args.actual))
+        return
+
+    control_dir = None if getattr(args, "control_dir", None) is None else Path(args.control_dir)
+    shape = resolve_shape(args, control_dir)
+    if args.cmd == "extract-control":
+        extract_control_window(
             Path(args.left),
             Path(args.right),
+            Path(args.control_dir),
             Path(args.outdir),
-            None if args.control_dir is None else Path(args.control_dir),
+            shape,
         )
-    else:
-        compare_case(Path(args.outdir))
+        return
+
+    build_case(
+        Path(args.left),
+        Path(args.right),
+        Path(args.outdir),
+        shape,
+        control_dir,
+    )
 
 
 if __name__ == "__main__":

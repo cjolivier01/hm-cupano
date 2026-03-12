@@ -37,7 +37,9 @@ def _candidate_lib_dirs(prefix_is_local):
 def _detect_opencv():
     """Detects available OpenCV headers and returns a struct with version, headers, includes."""
     repo_root = "/usr"  # new_local_repository path in WORKSPACE
-    for version in ["opencv5", "opencv4"]:
+    # Prefer OpenCV 4 over 5 unless the machine only has 5 installed.
+    # The repo and local soname symlinks are typically aligned to 4.x today.
+    for version in ["opencv4", "opencv5"]:
         for prefix in _candidate_prefixes(version):
             headers = native.glob([prefix + "/opencv2/**/*.h*"], allow_empty = True)
             if headers:

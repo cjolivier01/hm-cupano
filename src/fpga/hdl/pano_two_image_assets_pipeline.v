@@ -5,13 +5,21 @@ module pano_two_image_assets_pipeline #(
     parameter INPUT_W = 16,
     parameter INPUT_H = 8,
     parameter OVERLAP = 4,
-    parameter PAD = 2
+    parameter PAD = 2,
+    parameter INIT_MEMS = 1
 ) (
     input wire clk,
     input wire rstn,
     input wire start,
+    input wire host_wr_en,
+    input wire [ADDR_WIDTH-1:0] host_wr_addr,
+    input wire [31:0] host_wr_data,
+    input wire host_rd_en,
+    input wire [ADDR_WIDTH-1:0] host_rd_addr,
     output reg busy,
-    output reg done
+    output reg done,
+    output reg [31:0] host_rd_data,
+    output reg host_rd_valid
 );
 
 localparam X2 = INPUT_W - OVERLAP;
@@ -38,6 +46,7 @@ localparam MAP1_X_BASE = 32'h0006_0000;
 localparam MAP1_Y_BASE = 32'h0007_0000;
 localparam MAP2_X_BASE = 32'h0008_0000;
 localparam MAP2_Y_BASE = 32'h0009_0000;
+localparam MASK_HIGH_BASE = 32'h000A_0000;
 
 localparam ST_IDLE = 6'd0;
 localparam ST_REMAP1_CFG = 6'd1;
@@ -196,6 +205,24 @@ function [15:0] load_map16;
     end
 endfunction
 
+function [31:0] load_host32;
+    input [ADDR_WIDTH-1:0] addr;
+    begin
+        if (addr >= MASK_HIGH_BASE && addr < MASK_HIGH_BASE + (BLEND_W * BLEND_H * 2)) begin
+            load_host32 = {16'd0, mask_high_mem[(addr - MASK_HIGH_BASE) >> 1]};
+        end else if (
+            addr >= MAP1_X_BASE && addr < MAP1_X_BASE + (INPUT_W * INPUT_H * 2) ||
+            addr >= MAP1_Y_BASE && addr < MAP1_Y_BASE + (INPUT_W * INPUT_H * 2) ||
+            addr >= MAP2_X_BASE && addr < MAP2_X_BASE + (INPUT_W * INPUT_H * 2) ||
+            addr >= MAP2_Y_BASE && addr < MAP2_Y_BASE + (INPUT_W * INPUT_H * 2)
+        ) begin
+            load_host32 = {16'd0, load_map16(addr)};
+        end else begin
+            load_host32 = load_pixel32(addr);
+        end
+    end
+endfunction
+
 function [71:0] pixel32_to_qpixel;
     input [31:0] pixel;
     reg [7:0] b;
@@ -278,6 +305,40 @@ task store_pixel32;
     end
 endtask
 
+task host_store32;
+    input [ADDR_WIDTH-1:0] addr;
+    input [31:0] data;
+    integer idx;
+    begin
+        if (addr >= LEFT_BASE && addr < LEFT_BASE + (INPUT_W * INPUT_H * 4)) begin
+            idx = (addr - LEFT_BASE) >> 2;
+            left_in_mem[idx] = data;
+        end else if (addr >= RIGHT_BASE && addr < RIGHT_BASE + (INPUT_W * INPUT_H * 4)) begin
+            idx = (addr - RIGHT_BASE) >> 2;
+            right_in_mem[idx] = data;
+        end else if (addr >= MASK_HIGH_BASE && addr < MASK_HIGH_BASE + (BLEND_W * BLEND_H * 2)) begin
+            idx = (addr - MASK_HIGH_BASE) >> 1;
+            mask_high_mem[idx] = data[15:0];
+        end else if (addr >= MAP1_X_BASE && addr < MAP1_X_BASE + (INPUT_W * INPUT_H * 2)) begin
+            idx = (addr - MAP1_X_BASE) >> 1;
+            map1_x_mem[idx] = data[15:0];
+        end else if (addr >= MAP1_Y_BASE && addr < MAP1_Y_BASE + (INPUT_W * INPUT_H * 2)) begin
+            idx = (addr - MAP1_Y_BASE) >> 1;
+            map1_y_mem[idx] = data[15:0];
+        end else if (addr >= MAP2_X_BASE && addr < MAP2_X_BASE + (INPUT_W * INPUT_H * 2)) begin
+            idx = (addr - MAP2_X_BASE) >> 1;
+            map2_x_mem[idx] = data[15:0];
+        end else if (addr >= MAP2_Y_BASE && addr < MAP2_Y_BASE + (INPUT_W * INPUT_H * 2)) begin
+            idx = (addr - MAP2_Y_BASE) >> 1;
+            map2_y_mem[idx] = data[15:0];
+        end else begin
+            store_pixel32(addr, data);
+        end
+    end
+endtask
+
+generate
+if (INIT_MEMS) begin : gen_init_mems
 initial begin
     for (init_i = 0; init_i < INPUT_W * INPUT_H; init_i = init_i + 1) begin
         left_in_mem[init_i] = 32'd0;
@@ -304,6 +365,8 @@ initial begin
         mask_low_mem[init_i] = 16'd0;
     end
 end
+end
+endgenerate
 
 reg remap_start;
 reg [ADDR_WIDTH-1:0] remap_src_base_addr;
@@ -590,6 +653,8 @@ always @(posedge clk or negedge rstn) begin
         copy_rd_rsp_valid <= 1'b0;
         copy_rd_rsp_data <= 32'd0;
         copy_wr_done_valid <= 1'b0;
+        host_rd_data <= 32'd0;
+        host_rd_valid <= 1'b0;
     end else begin
         remap_mapx_rsp_valid <= 1'b0;
         remap_mapy_rsp_valid <= 1'b0;
@@ -597,6 +662,7 @@ always @(posedge clk or negedge rstn) begin
         remap_wr_done_valid <= 1'b0;
         copy_rd_rsp_valid <= 1'b0;
         copy_wr_done_valid <= 1'b0;
+        host_rd_valid <= 1'b0;
 
         if (remap_mapx_req_valid) begin
             remap_mapx_rsp_data <= load_map16(remap_mapx_req_addr);
@@ -621,6 +687,13 @@ always @(posedge clk or negedge rstn) begin
         if (copy_wr_req_valid) begin
             store_pixel32(copy_wr_req_addr, copy_wr_req_data);
             copy_wr_done_valid <= 1'b1;
+        end
+        if (host_wr_en) begin
+            host_store32(host_wr_addr, host_wr_data);
+        end
+        if (host_rd_en) begin
+            host_rd_data <= load_host32(host_rd_addr);
+            host_rd_valid <= 1'b1;
         end
     end
 end
