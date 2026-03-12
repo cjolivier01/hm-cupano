@@ -35,6 +35,8 @@ filegroup(
     srcs = [
         "assets/left.png",
         "assets/right.png",
+        "assets/s1.jpg",
+        "assets/s2.jpg",
     ],
     visibility = ["//visibility:public"],
 )

@@ -17,6 +17,13 @@ module pano_two_image_assets_tb;
   always #5 clk = ~clk;
 
   initial begin
+    if ($test$plusargs("dump_vcd")) begin
+      $dumpfile("pano_two_image_assets.vcd");
+      $dumpvars(0, pano_two_image_assets_tb);
+    end
+  end
+
+  initial begin
     clk = 1'b0;
     rstn = 1'b0;
     start = 1'b0;
