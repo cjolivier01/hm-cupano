@@ -24,13 +24,28 @@ run_assets_pipeline_tb() {
   local case_name="$1"
   local left_asset="$2"
   local right_asset="$3"
+  local control_dir="${4:-}"
+  local control_arg=""
   local outdir
   outdir="$(mktemp -d)"
-  python3 "$BASE/tb/gen_two_image_assets_case.py" \
+  if [[ -n "$control_dir" ]]; then
+    if [[ "$control_dir" = /* ]]; then
+      control_arg="$control_dir"
+    else
+      control_arg="$ROOT/$control_dir"
+    fi
+  fi
+  local -a gen_args=(
+    python3 "$BASE/tb/gen_two_image_assets_case.py"
     generate \
     --left "$ROOT/$left_asset" \
     --right "$ROOT/$right_asset" \
     --outdir "$outdir"
+  )
+  if [[ -n "$control_arg" ]]; then
+    gen_args+=(--control-dir "$control_arg")
+  fi
+  "${gen_args[@]}"
   iverilog -g2005-sv -o "$outdir/pano_two_image_assets.out" \
     "$BASE/pano_remap_core.v" \
     "$BASE/zybo_pano_remap_engine.v" \
@@ -52,6 +67,13 @@ run_assets_pipeline_tb() {
   )
   python3 "$BASE/tb/gen_two_image_assets_case.py" compare --outdir "$outdir"
 
+  local artifact_root="${FPGA_ARTIFACT_DIR:-${TEST_UNDECLARED_OUTPUTS_DIR:-}}"
+  if [[ -n "$artifact_root" ]]; then
+    mkdir -p "$artifact_root/$case_name"
+    cp -R "$outdir"/. "$artifact_root/$case_name/"
+    echo "Wrote artifacts: $artifact_root/$case_name"
+  fi
+
   if [[ "${FPGA_DUMP_VCD:-0}" == "1" && -f "$outdir/pano_two_image_assets.vcd" ]]; then
     local vcd_root="${FPGA_VCD_DIR:-${TEST_UNDECLARED_OUTPUTS_DIR:-}}"
     if [[ -n "$vcd_root" ]]; then
@@ -65,6 +87,8 @@ run_assets_pipeline_tb() {
 }
 
 BASE="$ROOT/src/fpga/hdl"
+LEFT_RIGHT_CONTROL_DIR="${FPGA_CONTROL_DIR_LEFT_RIGHT:-}"
+S1_S2_CONTROL_DIR="${FPGA_CONTROL_DIR_S1_S2:-}"
 run_tb pano_downsample2x2_tb \
   "$BASE/pano_downsample2x2.v" \
   "$BASE/tb/pano_downsample2x2_tb.v"
@@ -74,5 +98,5 @@ run_tb pano_blend_core_tb \
 run_tb pano_reconstruct_core_tb \
   "$BASE/pano_reconstruct_core.v" \
   "$BASE/tb/pano_reconstruct_core_tb.v"
-run_assets_pipeline_tb left_right assets/left.png assets/right.png
-run_assets_pipeline_tb s1_s2 assets/s1.jpg assets/s2.jpg
+run_assets_pipeline_tb left_right assets/left.png assets/right.png "$LEFT_RIGHT_CONTROL_DIR"
+run_assets_pipeline_tb s1_s2 assets/s1.jpg assets/s2.jpg "$S1_S2_CONTROL_DIR"

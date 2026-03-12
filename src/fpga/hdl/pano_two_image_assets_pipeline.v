@@ -282,10 +282,10 @@ initial begin
     for (init_i = 0; init_i < INPUT_W * INPUT_H; init_i = init_i + 1) begin
         left_in_mem[init_i] = 32'd0;
         right_in_mem[init_i] = 32'd0;
-        map1_x_mem[init_i] = init_i % INPUT_W;
-        map1_y_mem[init_i] = init_i / INPUT_W;
-        map2_x_mem[init_i] = init_i % INPUT_W;
-        map2_y_mem[init_i] = init_i / INPUT_W;
+        map1_x_mem[init_i] = 16'd0;
+        map1_y_mem[init_i] = 16'd0;
+        map2_x_mem[init_i] = 16'd0;
+        map2_y_mem[init_i] = 16'd0;
     end
     for (init_i = 0; init_i < CANVAS_W * CANVAS_H; init_i = init_i + 1) begin
         canvas_mem[init_i] = 32'd0;
@@ -295,7 +295,7 @@ initial begin
         blend_right_mem[init_i] = 32'd0;
         blend_out_mem[init_i] = 32'd0;
         high_blend_mem[init_i] = 72'd0;
-        mask_high_mem[init_i] = ((init_i % BLEND_W) < (PAD + (OVERLAP / 2))) ? 16'hffff : 16'h0000;
+        mask_high_mem[init_i] = 16'd0;
     end
     for (init_i = 0; init_i < LOW_W * LOW_H; init_i = init_i + 1) begin
         low_left_mem[init_i] = 72'd0;
