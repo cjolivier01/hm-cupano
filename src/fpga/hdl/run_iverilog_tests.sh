@@ -40,13 +40,56 @@ run_assets_pipeline_tb() {
     generate \
     --left "$ROOT/$left_asset" \
     --right "$ROOT/$right_asset" \
-    --outdir "$outdir"
+    --outdir "$outdir" \
+    --pad "${FPGA_PAD:-2}"
   )
+  if [[ -n "${FPGA_INPUT_W:-}" ]]; then
+    gen_args+=(--width "$FPGA_INPUT_W")
+  fi
+  if [[ -n "${FPGA_INPUT_H:-}" ]]; then
+    gen_args+=(--height "$FPGA_INPUT_H")
+  fi
+  if [[ -n "${FPGA_OVERLAP:-}" ]]; then
+    gen_args+=(--overlap "$FPGA_OVERLAP")
+  fi
   if [[ -n "$control_arg" ]]; then
     gen_args+=(--control-dir "$control_arg")
   fi
   "${gen_args[@]}"
+  local input_w input_h overlap pad
+  input_w="$(python3 - <<'PY' "$outdir/case_manifest.json"
+import json, sys
+with open(sys.argv[1], 'r', encoding='ascii') as f:
+    meta = json.load(f)
+print(meta['input_w'])
+PY
+)"
+  input_h="$(python3 - <<'PY' "$outdir/case_manifest.json"
+import json, sys
+with open(sys.argv[1], 'r', encoding='ascii') as f:
+    meta = json.load(f)
+print(meta['input_h'])
+PY
+)"
+  overlap="$(python3 - <<'PY' "$outdir/case_manifest.json"
+import json, sys
+with open(sys.argv[1], 'r', encoding='ascii') as f:
+    meta = json.load(f)
+print(meta['overlap'])
+PY
+)"
+  pad="$(python3 - <<'PY' "$outdir/case_manifest.json"
+import json, sys
+with open(sys.argv[1], 'r', encoding='ascii') as f:
+    meta = json.load(f)
+print(meta['pad'])
+PY
+)"
   iverilog -g2005-sv -o "$outdir/pano_two_image_assets.out" \
+    -P "pano_two_image_assets_tb.INPUT_W=$input_w" \
+    -P "pano_two_image_assets_tb.INPUT_H=$input_h" \
+    -P "pano_two_image_assets_tb.OVERLAP=$overlap" \
+    -P "pano_two_image_assets_tb.PAD=$pad" \
     "$BASE/pano_remap_core.v" \
     "$BASE/zybo_pano_remap_engine.v" \
     "$BASE/pano_copy_roi_engine.v" \
