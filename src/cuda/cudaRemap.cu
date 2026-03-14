@@ -50,9 +50,9 @@ __global__ void BatchedRemapKernelEx(
   if (srcX < srcW && srcY < srcH) {
     const T_in* srcImage = src + b * srcImageSize;
     int srcIdx = srcY * srcW + srcX;
-    destImage[destIdx] = static_cast<T_out>(srcImage[srcIdx]);
+    destImage[destIdx] = perform_cast<T_out>(srcImage[srcIdx]);
   } else {
-    destImage[destIdx] = deflt;
+    destImage[destIdx] = perform_cast<T_out>(deflt);
   }
 }
 
@@ -249,7 +249,7 @@ __global__ void BatchedRemapKernelExOffsetAdjust(
     int srcImageSizeBytes = src.height * src.pitch;
     const T_in* srcImage = advance_bytes(src.d_ptr, b * srcImageSizeBytes);
     const T_in* src_pos = advance_bytes(srcImage, srcY * src.pitch) + srcX;
-    *dest_pos = PixelAdjuster<T_out>::adjust(static_cast<T_out>(*src_pos), adjustment);
+    *dest_pos = PixelAdjuster<T_out>::adjust(perform_cast<T_out>(*src_pos), adjustment);
   } else {
     if (!no_unmapped_write || srcX != kUnmappedPositionValue) {
       *dest_pos = perform_cast<T_out>(deflt);
@@ -304,9 +304,9 @@ __global__ void BatchedRemapKernelExOffsetWithDestMap(
 
     if (srcX < src.width && srcY < src.height) {
       const T_in* src_pos = surface_ptr(src, b, srcX, srcY);
-      *surface_ptr(dest, b, destX, destY) = static_cast<T_out>(*src_pos);
+      *surface_ptr(dest, b, destX, destY) = perform_cast<T_out>(*src_pos);
     } else {
-      *surface_ptr(dest, b, destX, destY) = deflt;
+      *surface_ptr(dest, b, destX, destY) = perform_cast<T_out>(deflt);
     }
   }
 }
@@ -741,8 +741,8 @@ INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ROI(uchar4, uchar4)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(float3, float3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(uchar3, uchar3)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(float4, float4)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(uchar4, float4)
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(uchar4, uchar4)
-// INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ADJUST(uchar4, float4)
 
 // For batched_remap_kernel_ex
 INSTANTIATE_BATCHED_REMAP_KERNEL_EX(float3, float3)
