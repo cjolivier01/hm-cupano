@@ -104,6 +104,10 @@ class CanvasManager {
     return _overlap_pad;
   }
 
+  constexpr bool minimize_blend() const {
+    return _minimize_blend;
+  }
+
   /**
    * @brief Returns the overlapping width computed by `updateMinimizeBlend()`.
    */

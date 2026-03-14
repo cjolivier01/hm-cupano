@@ -4,7 +4,13 @@ import numpy as np
 import pytest
 import torch
 
-from cupano import ControlMasks, ControlMasksN, CudaStitchPano, CudaStitchPanoN, SpatialTiff
+from cupano import (
+    ControlMasks,
+    ControlMasksN,
+    CudaStitchPano,
+    CudaStitchPanoN,
+    SpatialTiff,
+)
 from cupano.ops import compute_laplacian
 
 _MIN_TEST_FREE_BYTES = 1 << 30
@@ -25,7 +31,12 @@ def identity_map_y(width: int, height: int) -> np.ndarray:
     return np.tile(np.arange(height, dtype=np.uint16)[:, None], (1, width))
 
 
-def constant_image(width: int, height: int, rgba: tuple[float, float, float, float], device: torch.device) -> torch.Tensor:
+def constant_image(
+    width: int,
+    height: int,
+    rgba: tuple[float, float, float, float],
+    device: torch.device,
+) -> torch.Tensor:
     image = torch.zeros((1, height, width, 4), dtype=torch.float32, device=device)
     image[..., 0] = rgba[0]
     image[..., 1] = rgba[1]
@@ -34,7 +45,9 @@ def constant_image(width: int, height: int, rgba: tuple[float, float, float, flo
     return image
 
 
-def patterned_image(width: int, height: int, idx: int, device: torch.device) -> torch.Tensor:
+def patterned_image(
+    width: int, height: int, idx: int, device: torch.device
+) -> torch.Tensor:
     ys = torch.arange(height, dtype=torch.float32, device=device).view(1, height, 1, 1)
     xs = torch.arange(width, dtype=torch.float32, device=device).view(1, 1, width, 1)
     base = float(idx * 50)
@@ -58,7 +71,11 @@ def make_two_masks(width: int, height: int, seam: np.ndarray, x2: int) -> Contro
     return masks
 
 
-def make_n_masks(sizes: list[tuple[int, int]], positions: list[tuple[int, int]], seam_index: np.ndarray) -> ControlMasksN:
+def make_n_masks(
+    sizes: list[tuple[int, int]],
+    positions: list[tuple[int, int]],
+    seam_index: np.ndarray,
+) -> ControlMasksN:
     masks = ControlMasksN()
     masks.img_col = [identity_map_x(w, h) for w, h in sizes]
     masks.img_row = [identity_map_y(w, h) for w, h in sizes]
@@ -73,6 +90,15 @@ def assert_tensor_equal(a: torch.Tensor, b: torch.Tensor, tol: float = 0.0) -> N
         assert torch.equal(a, b), (a - b).abs().max().item()
     else:
         assert torch.allclose(a, b, atol=tol, rtol=0.0), (a - b).abs().max().item()
+
+
+def read_level_0_size(metadata_path) -> tuple[int, int]:
+    for line in metadata_path.read_text().splitlines():
+        if line.startswith("level_0="):
+            dims = line.split("=", 1)[1]
+            width, height = dims.split("x", 1)
+            return int(width), int(height)
+    raise AssertionError(f"Missing level_0 entry in {metadata_path}")
 
 
 @pytest.fixture(scope="module")
@@ -94,14 +120,17 @@ def test_cuda_pano_hard_seam_matches_expected_selection(device: torch.device) ->
     pano = CudaStitchPano(1, 0, masks, quiet=True)
     out = pano.process(image1, image2)
 
-    expected = torch.zeros((1, height, canvas_width, 4), dtype=torch.float32, device=device)
+    expected = torch.zeros(
+        (1, height, canvas_width, 4), dtype=torch.float32, device=device
+    )
     expected[:, :, :192, :] = image1[:, :, :192, :]
     expected[:, :, 192:, :] = image2[:, :, 64:, :]
     assert_tensor_equal(out, expected)
 
 
-
-def test_cuda_pano_soft_seam_single_level_matches_binary_mask(device: torch.device) -> None:
+def test_cuda_pano_soft_seam_single_level_matches_binary_mask(
+    device: torch.device,
+) -> None:
     width = 256
     height = 32
     x2 = 128
@@ -115,10 +144,49 @@ def test_cuda_pano_soft_seam_single_level_matches_binary_mask(device: torch.devi
     pano = CudaStitchPano(1, 1, masks, quiet=True)
     out = pano.process(image1, image2)
 
-    expected = torch.zeros((1, height, canvas_width, 4), dtype=torch.float32, device=device)
+    expected = torch.zeros(
+        (1, height, canvas_width, 4), dtype=torch.float32, device=device
+    )
     expected[:, :, :192, :] = image1[:, :, :192, :]
     expected[:, :, 192:, :] = image2[:, :, 64:, :]
     assert_tensor_equal(out, expected, tol=1e-5)
+
+
+def test_cuda_pano_minimize_blend_changes_workspace_size(
+    device: torch.device, tmp_path
+) -> None:
+    width = 384
+    height = 64
+    x2 = 192
+    canvas_width = width + x2
+    seam = np.zeros((height, canvas_width), dtype=np.uint8)
+    seam[:, : (canvas_width // 2)] = 1
+    masks = make_two_masks(width, height, seam, x2)
+
+    image1 = patterned_image(width, height, 0, device)
+    image2 = patterned_image(width, height, 1, device)
+
+    pano_full = CudaStitchPano(
+        1, 4, masks, quiet=True, minimize_blend=False, enable_cuda_graphs=False
+    )
+    pano_mini = CudaStitchPano(
+        1, 4, masks, quiet=True, minimize_blend=True, enable_cuda_graphs=False
+    )
+
+    out_full = pano_full.process(image1, image2)
+    out_mini = pano_mini.process(image1, image2)
+    assert_tensor_equal(out_full, out_mini, tol=1e-5)
+
+    full_dir = tmp_path / "full"
+    mini_dir = tmp_path / "mini"
+    pano_full.dump_soft_blend_pyramid(full_dir)
+    pano_mini.dump_soft_blend_pyramid(mini_dir)
+
+    full_w, full_h = read_level_0_size(full_dir / "metadata.txt")
+    mini_w, mini_h = read_level_0_size(mini_dir / "metadata.txt")
+    assert (full_w, full_h) == (canvas_width, height)
+    assert (mini_h) == height
+    assert mini_w < full_w
 
 
 def test_compute_laplacian_renormalizes_fractional_alpha_weights_cpu() -> None:
@@ -127,9 +195,10 @@ def test_compute_laplacian_renormalizes_fractional_alpha_weights_cpu() -> None:
     low[:, 1, 1, :] = torch.tensor([100.0, 110.0, 120.0, 255.0])
 
     lap = compute_laplacian(high, low, backend="auto")
-    assert_tensor_equal(lap[0, 1, 1, :3], torch.tensor([-100.0, -110.0, -120.0]), tol=1e-5)
+    assert_tensor_equal(
+        lap[0, 1, 1, :3], torch.tensor([-100.0, -110.0, -120.0]), tol=1e-5
+    )
     assert lap[0, 1, 1, 3].item() == 0.0
-
 
 
 def test_cuda_pano_n_minimize_blend_matches_full_blend(device: torch.device) -> None:
@@ -138,7 +207,10 @@ def test_cuda_pano_n_minimize_blend_matches_full_blend(device: torch.device) -> 
     seam = np.zeros((height, width), dtype=np.uint8)
     seam[:, width // 2 :] = 1
     masks = make_n_masks([(width, height), (width, height)], [(0, 0), (0, 0)], seam)
-    images = [patterned_image(width, height, 0, device), patterned_image(width, height, 1, device)]
+    images = [
+        patterned_image(width, height, 0, device),
+        patterned_image(width, height, 1, device),
+    ]
 
     pano_full = CudaStitchPanoN(1, 4, masks, quiet=True, minimize_blend=False)
     pano_mini = CudaStitchPanoN(1, 4, masks, quiet=True, minimize_blend=True)
@@ -148,14 +220,17 @@ def test_cuda_pano_n_minimize_blend_matches_full_blend(device: torch.device) -> 
     assert_tensor_equal(out_full, out_mini, tol=1e-5)
 
 
-
 def test_cuda_pano_n_hard_seam_selects_indexed_image(device: torch.device) -> None:
     width = 48
     height = 24
     seam = np.zeros((height, width), dtype=np.uint8)
     seam[:, 16:32] = 1
     seam[:, 32:] = 2
-    masks = make_n_masks([(width, height), (width, height), (width, height)], [(0, 0), (0, 0), (0, 0)], seam)
+    masks = make_n_masks(
+        [(width, height), (width, height), (width, height)],
+        [(0, 0), (0, 0), (0, 0)],
+        seam,
+    )
     images = [
         constant_image(width, height, (10.0, 0.0, 0.0, 255.0), device),
         constant_image(width, height, (0.0, 20.0, 0.0, 255.0), device),

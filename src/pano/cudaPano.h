@@ -74,7 +74,7 @@ class CudaStitchPano {
       const ControlMasks& control_masks,
       bool match_exposure = false,
       bool quiet = false,
-      [[maybe_unused]] bool minimize_blend = true,
+      bool minimize_blend = true,
       [[maybe_unused]] int max_output_width = 0);
 
   int canvas_width() const {

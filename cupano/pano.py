@@ -59,13 +59,17 @@ class RemapRoiInfo:
 class _TwoImageSoftScratch:
     full1: torch.Tensor
     full2: torch.Tensor
-    blend_workspace: LaplacianBlendWorkspace = field(default_factory=LaplacianBlendWorkspace)
+    blend_workspace: LaplacianBlendWorkspace = field(
+        default_factory=LaplacianBlendWorkspace
+    )
 
 
 @dataclass
 class _NImageSoftScratch:
     compute_buffers: list[torch.Tensor]
-    blend_workspace: LaplacianBlendWorkspace = field(default_factory=LaplacianBlendWorkspace)
+    blend_workspace: LaplacianBlendWorkspace = field(
+        default_factory=LaplacianBlendWorkspace
+    )
 
 
 @dataclass
@@ -74,7 +78,6 @@ class _GraphState:
     graph: object
     static_inputs: list[torch.Tensor]
     static_output: torch.Tensor
-
 
 
 def _status_or_raise(status: CudaStatus) -> None:
@@ -86,7 +89,9 @@ class _DeviceCache:
     def __init__(self) -> None:
         self._cache: dict[tuple[str, str], torch.Tensor] = {}
 
-    def tensor(self, array: np.ndarray, device: torch.device, dtype: torch.dtype | None = None) -> torch.Tensor:
+    def tensor(
+        self, array: np.ndarray, device: torch.device, dtype: torch.dtype | None = None
+    ) -> torch.Tensor:
         use_dtype = dtype or torch.from_numpy(array).dtype
         key = (str(device), f"{array.__array_interface__['data'][0]}:{use_dtype}")
         if key not in self._cache:
@@ -94,15 +99,21 @@ class _DeviceCache:
         return self._cache[key]
 
 
-
 def _cuda_graphs_supported(device: torch.device) -> bool:
-    return device.type == "cuda" and torch.cuda.is_available() and torch.version.hip is None and hasattr(torch.cuda, "CUDAGraph")
+    return (
+        device.type == "cuda"
+        and torch.cuda.is_available()
+        and torch.version.hip is None
+        and hasattr(torch.cuda, "CUDAGraph")
+    )
 
 
 def _write_batched_tiffs(tensor: torch.Tensor, out_dir: Path, stem: str) -> None:
     array = tensor.detach().cpu().numpy()
     if array.ndim == 3:
-        if not cv2.imwrite(str(out_dir / f"{stem}.tiff"), array.astype(np.float32, copy=False)):
+        if not cv2.imwrite(
+            str(out_dir / f"{stem}.tiff"), array.astype(np.float32, copy=False)
+        ):
             raise RuntimeError(f"Unable to write {(out_dir / f'{stem}.tiff')}")
         return
     if array.ndim != 4:
@@ -130,6 +141,7 @@ class CudaStitchPano:
         self._status = CudaStatus()
         self._num_levels = num_levels
         self._match_exposure = match_exposure
+        self._minimize_blend = bool(minimize_blend and num_levels > 0)
         self._backend = backend
         self._enable_cuda_graphs = enable_cuda_graphs
         self._image_adjustment: torch.Tensor | None = None
@@ -143,7 +155,9 @@ class CudaStitchPano:
             self._status = CudaStatus(1, "Stitching masks were not able to be loaded")
             return
 
-        self._context = StitchingContext(batch_size=batch_size, is_hard_seam=(num_levels == 0))
+        self._context = StitchingContext(
+            batch_size=batch_size, is_hard_seam=(num_levels == 0)
+        )
         canvas_w = control_masks.canvas_width()
         canvas_h = control_masks.canvas_height()
         if not quiet:
@@ -154,11 +168,17 @@ class CudaStitchPano:
                 width=canvas_w,
                 height=canvas_h,
                 positions=[
-                    (int(control_masks.positions[0].xpos), int(control_masks.positions[0].ypos)),
-                    (int(control_masks.positions[1].xpos), int(control_masks.positions[1].ypos)),
+                    (
+                        int(control_masks.positions[0].xpos),
+                        int(control_masks.positions[0].ypos),
+                    ),
+                    (
+                        int(control_masks.positions[1].xpos),
+                        int(control_masks.positions[1].ypos),
+                    ),
                 ],
             ),
-            minimize_blend=not self._context.is_hard_seam,
+            minimize_blend=self._minimize_blend,
         )
         self._canvas_manager._remapper_1.width = control_masks.img1_col.shape[1]
         self._canvas_manager._remapper_1.height = control_masks.img1_col.shape[0]
@@ -169,7 +189,9 @@ class CudaStitchPano:
             (control_masks.img2_col.shape[1], control_masks.img2_col.shape[0]),
         )
 
-        blend_seam = self._canvas_manager.convertMaskMat(control_masks.whole_seam_mask_image)
+        blend_seam = self._canvas_manager.convertMaskMat(
+            control_masks.whole_seam_mask_image
+        )
         self._context.remap_1_x = control_masks.img1_col
         self._context.remap_1_y = control_masks.img1_row
         self._context.remap_2_x = control_masks.img2_col
@@ -177,7 +199,9 @@ class CudaStitchPano:
         self._context.hard_seam = blend_seam.astype(np.uint8, copy=False)
         self._context.blend_seam = blend_seam.astype(np.float32, copy=False)
         if not self._context.is_hard_seam:
-            blend_mask = np.empty(self._context.blend_seam.shape + (2,), dtype=np.float32)
+            blend_mask = np.empty(
+                self._context.blend_seam.shape + (2,), dtype=np.float32
+            )
             blend_mask[..., 0] = self._context.blend_seam
             blend_mask[..., 1] = 1.0 - self._context.blend_seam
             self._context.blend_mask = blend_mask
@@ -197,10 +221,14 @@ class CudaStitchPano:
     def batch_size(self) -> int:
         return self._context.batch_size
 
-    def _tensor(self, array: np.ndarray, device: torch.device, dtype: torch.dtype | None = None) -> torch.Tensor:
+    def _tensor(
+        self, array: np.ndarray, device: torch.device, dtype: torch.dtype | None = None
+    ) -> torch.Tensor:
         return self._cache.tensor(array, device=device, dtype=dtype)
 
-    def _compute_image_adjustment(self, image1: torch.Tensor, image2: torch.Tensor) -> torch.Tensor | None:
+    def _compute_image_adjustment(
+        self, image1: torch.Tensor, image2: torch.Tensor
+    ) -> torch.Tensor | None:
         if self._whole_seam_mask_image is None:
             return None
         seam = self._whole_seam_mask_image
@@ -222,7 +250,9 @@ class CudaStitchPano:
             _status_or_raise(self._status)
         self._neg_image_adjustment = -self._image_adjustment
 
-    def _soft_scratch_for(self, device: torch.device, channels: int) -> _TwoImageSoftScratch:
+    def _soft_scratch_for(
+        self, device: torch.device, channels: int
+    ) -> _TwoImageSoftScratch:
         key = (str(device), channels)
         scratch = self._soft_scratch.get(key)
         blend_h = int(self._context.blend_seam.shape[0])
@@ -236,7 +266,9 @@ class CudaStitchPano:
             self._soft_scratch[key] = scratch
         return scratch
 
-    def _graph_key(self, input_image_1: torch.Tensor, input_image_2: torch.Tensor) -> tuple[object, ...]:
+    def _graph_key(
+        self, input_image_1: torch.Tensor, input_image_2: torch.Tensor
+    ) -> tuple[object, ...]:
         return (
             str(input_image_1.device),
             tuple(input_image_1.shape),
@@ -245,12 +277,21 @@ class CudaStitchPano:
             input_image_2.dtype,
         )
 
-    def _process_impl(self, input_image_1: torch.Tensor, input_image_2: torch.Tensor, canvas: torch.Tensor) -> torch.Tensor:
+    def _process_impl(
+        self,
+        input_image_1: torch.Tensor,
+        input_image_2: torch.Tensor,
+        canvas: torch.Tensor,
+    ) -> torch.Tensor:
         device = input_image_1.device
         channels = input_image_1.shape[-1]
         canvas.zero_()
         adjustment = self._image_adjustment
-        neg_adjustment = self._neg_image_adjustment if self._neg_image_adjustment is not None else (adjustment.neg() if adjustment is not None else None)
+        neg_adjustment = (
+            self._neg_image_adjustment
+            if self._neg_image_adjustment is not None
+            else (adjustment.neg() if adjustment is not None else None)
+        )
 
         if self._context.is_hard_seam:
             seam = self._tensor(self._context.hard_seam, device, torch.uint8)
@@ -288,7 +329,7 @@ class CudaStitchPano:
 
         remap_to_canvas(
             input_image_1,
-            canvas,
+            canvas if self._minimize_blend else full1,
             self._tensor(self._context.remap_1_x, device, torch.int32),
             self._tensor(self._context.remap_1_y, device, torch.int32),
             self._canvas_manager._x1,
@@ -297,22 +338,24 @@ class CudaStitchPano:
             fill_invalid_alpha=True,
             backend=self._backend,
         )
-        remap_to_canvas(
-            input_image_1,
-            full1,
-            self._tensor(self._context.remap_1_x, device, torch.int32),
-            self._tensor(self._context.remap_1_y, device, torch.int32),
-            self._canvas_manager._remapper_1.xpos - self._canvas_manager.remapped_image_roi_blend_1.x,
-            self._canvas_manager._y1,
-            adjustment=neg_adjustment,
-            roi=self._canvas_manager.remapped_image_roi_blend_1,
-            fill_invalid_alpha=True,
-            backend=self._backend,
-        )
+        if self._minimize_blend:
+            remap_to_canvas(
+                input_image_1,
+                full1,
+                self._tensor(self._context.remap_1_x, device, torch.int32),
+                self._tensor(self._context.remap_1_y, device, torch.int32),
+                self._canvas_manager._remapper_1.xpos
+                - self._canvas_manager.remapped_image_roi_blend_1.x,
+                self._canvas_manager._y1,
+                adjustment=neg_adjustment,
+                roi=self._canvas_manager.remapped_image_roi_blend_1,
+                fill_invalid_alpha=True,
+                backend=self._backend,
+            )
 
         remap_to_canvas(
             input_image_2,
-            canvas,
+            canvas if self._minimize_blend else full2,
             self._tensor(self._context.remap_2_x, device, torch.int32),
             self._tensor(self._context.remap_2_y, device, torch.int32),
             self._canvas_manager._x2,
@@ -321,18 +364,20 @@ class CudaStitchPano:
             fill_invalid_alpha=True,
             backend=self._backend,
         )
-        remap_to_canvas(
-            input_image_2,
-            full2,
-            self._tensor(self._context.remap_2_x, device, torch.int32),
-            self._tensor(self._context.remap_2_y, device, torch.int32),
-            self._canvas_manager._remapper_2.xpos - self._canvas_manager.remapped_image_roi_blend_2.x,
-            self._canvas_manager._y2,
-            adjustment=adjustment,
-            roi=self._canvas_manager.remapped_image_roi_blend_2,
-            fill_invalid_alpha=True,
-            backend=self._backend,
-        )
+        if self._minimize_blend:
+            remap_to_canvas(
+                input_image_2,
+                full2,
+                self._tensor(self._context.remap_2_x, device, torch.int32),
+                self._tensor(self._context.remap_2_y, device, torch.int32),
+                self._canvas_manager._remapper_2.xpos
+                - self._canvas_manager.remapped_image_roi_blend_2.x,
+                self._canvas_manager._y2,
+                adjustment=adjustment,
+                roi=self._canvas_manager.remapped_image_roi_blend_2,
+                fill_invalid_alpha=True,
+                backend=self._backend,
+            )
 
         mask = self._tensor(self._context.blend_mask, device, torch.float32)
         blended = laplacian_blend_n(
@@ -348,17 +393,28 @@ class CudaStitchPano:
             Rect(0, 0, blended.shape[2], blended.shape[1]),
             0,
             0,
-            self._canvas_manager._x2 - self._canvas_manager.overlap_padding(),
+            (
+                self._canvas_manager._x2 - self._canvas_manager.overlap_padding()
+                if self._minimize_blend
+                else 0
+            ),
             0,
             backend=self._backend,
         )
         return cast_like(canvas, input_image_1.dtype)
 
-    def _capture_graph(self, input_image_1: torch.Tensor, input_image_2: torch.Tensor) -> _GraphState:
+    def _capture_graph(
+        self, input_image_1: torch.Tensor, input_image_2: torch.Tensor
+    ) -> _GraphState:
         static_input_1 = torch.empty_like(input_image_1)
         static_input_2 = torch.empty_like(input_image_2)
         static_output = torch.empty(
-            (self._context.batch_size, self.canvas_height(), self.canvas_width(), input_image_1.shape[-1]),
+            (
+                self._context.batch_size,
+                self.canvas_height(),
+                self.canvas_width(),
+                input_image_1.shape[-1],
+            ),
             device=input_image_1.device,
             dtype=input_image_1.dtype,
         )
@@ -386,7 +442,12 @@ class CudaStitchPano:
         input_image_2: torch.Tensor,
         canvas: torch.Tensor | None,
     ) -> torch.Tensor | None:
-        if self._graph_disabled or not self._enable_cuda_graphs or self._match_exposure or not _cuda_graphs_supported(input_image_1.device):
+        if (
+            self._graph_disabled
+            or not self._enable_cuda_graphs
+            or self._match_exposure
+            or not _cuda_graphs_supported(input_image_1.device)
+        ):
             return None
         if input_image_1.device != input_image_2.device:
             return None
@@ -409,11 +470,19 @@ class CudaStitchPano:
         out.copy_(self._graph_state.static_output)
         return out
 
-    def process(self, input_image_1: torch.Tensor, input_image_2: torch.Tensor, canvas: torch.Tensor | None = None) -> torch.Tensor:
+    def process(
+        self,
+        input_image_1: torch.Tensor,
+        input_image_2: torch.Tensor,
+        canvas: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         _status_or_raise(self._status)
         input_image_1 = ensure_batched(input_image_1)
         input_image_2 = ensure_batched(input_image_2)
-        if input_image_1.shape[0] != self._context.batch_size or input_image_2.shape[0] != self._context.batch_size:
+        if (
+            input_image_1.shape[0] != self._context.batch_size
+            or input_image_2.shape[0] != self._context.batch_size
+        ):
             raise ValueError("Input batch size does not match stitcher batch size")
         if input_image_1.shape[-1] not in (3, 4):
             raise ValueError("Only 3- and 4-channel inputs are supported")
@@ -429,7 +498,12 @@ class CudaStitchPano:
         device = input_image_1.device
         if canvas is None:
             canvas = torch.empty(
-                (self._context.batch_size, self.canvas_height(), self.canvas_width(), input_image_1.shape[-1]),
+                (
+                    self._context.batch_size,
+                    self.canvas_height(),
+                    self.canvas_width(),
+                    input_image_1.shape[-1],
+                ),
                 device=device,
                 dtype=input_image_1.dtype,
             )
@@ -446,14 +520,18 @@ class CudaStitchPano:
             raise ValueError("Soft-blend pyramid is only available when num_levels > 0")
         if device is None or channels is None:
             if len(self._soft_scratch) != 1:
-                raise ValueError("device and channels must be provided when multiple scratch buffers exist")
+                raise ValueError(
+                    "device and channels must be provided when multiple scratch buffers exist"
+                )
             (device_key, channels_key), scratch = next(iter(self._soft_scratch.items()))
             device = torch.device(device_key)
             channels = channels_key
         else:
             scratch = self._soft_scratch.get((str(device), channels))
             if scratch is None:
-                raise ValueError(f"No soft scratch buffers available for device={device} channels={channels}")
+                raise ValueError(
+                    f"No soft scratch buffers available for device={device} channels={channels}"
+                )
 
         out_dir = Path(directory)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -477,19 +555,45 @@ class CudaStitchPano:
             + "\n"
         )
 
-        for subdir in ("gauss1", "gauss2", "mask", "lap1", "lap2", "blend", "reconstruct"):
+        for subdir in (
+            "gauss1",
+            "gauss2",
+            "mask",
+            "lap1",
+            "lap2",
+            "blend",
+            "reconstruct",
+        ):
             (out_dir / subdir).mkdir(parents=True, exist_ok=True)
 
         for level in range(levels):
-            _write_batched_tiffs(workspace.gauss[0][level], out_dir / "gauss1", f"level_{level}")
-            _write_batched_tiffs(workspace.gauss[1][level], out_dir / "gauss2", f"level_{level}")
-            _write_batched_tiffs(workspace.mask_pyr[level], out_dir / "mask", f"level_{level}")
-            lap1 = workspace.gauss[0][level] if level == levels - 1 else workspace.laps[0][level]
-            lap2 = workspace.gauss[1][level] if level == levels - 1 else workspace.laps[1][level]
+            _write_batched_tiffs(
+                workspace.gauss[0][level], out_dir / "gauss1", f"level_{level}"
+            )
+            _write_batched_tiffs(
+                workspace.gauss[1][level], out_dir / "gauss2", f"level_{level}"
+            )
+            _write_batched_tiffs(
+                workspace.mask_pyr[level], out_dir / "mask", f"level_{level}"
+            )
+            lap1 = (
+                workspace.gauss[0][level]
+                if level == levels - 1
+                else workspace.laps[0][level]
+            )
+            lap2 = (
+                workspace.gauss[1][level]
+                if level == levels - 1
+                else workspace.laps[1][level]
+            )
             _write_batched_tiffs(lap1, out_dir / "lap1", f"level_{level}")
             _write_batched_tiffs(lap2, out_dir / "lap2", f"level_{level}")
-            _write_batched_tiffs(workspace.blended[level], out_dir / "blend", f"level_{level}")
-            _write_batched_tiffs(workspace.recon[level], out_dir / "reconstruct", f"level_{level}")
+            _write_batched_tiffs(
+                workspace.blended[level], out_dir / "blend", f"level_{level}"
+            )
+            _write_batched_tiffs(
+                workspace.recon[level], out_dir / "reconstruct", f"level_{level}"
+            )
 
 
 class CudaStitchPanoN:
@@ -519,7 +623,9 @@ class CudaStitchPanoN:
         self._graph_disabled = False
 
         if not control_masks.is_valid():
-            self._status = CudaStatus(1, "Stitching masks (N-image) could not be loaded")
+            self._status = CudaStatus(
+                1, "Stitching masks (N-image) could not be loaded"
+            )
             return
 
         n = len(control_masks.img_col)
@@ -532,11 +638,16 @@ class CudaStitchPanoN:
         if not quiet:
             print(f"Stitched (N-image) canvas size: {canvas_w} x {canvas_h}")
         positions = [(int(p.xpos), int(p.ypos)) for p in control_masks.positions]
-        self._canvas_manager = CanvasManagerN(CanvasInfo(canvas_w, canvas_h, positions), minimize_blend=self._minimize_blend)
+        self._canvas_manager = CanvasManagerN(
+            CanvasInfo(canvas_w, canvas_h, positions),
+            minimize_blend=self._minimize_blend,
+        )
         for idx, remap in enumerate(control_masks.img_col):
             self._canvas_manager.set_remap_size(idx, (remap.shape[1], remap.shape[0]))
 
-        seam_index_padded = self._canvas_manager.convertMaskMat(control_masks.whole_seam_mask_indexed.copy())
+        seam_index_padded = self._canvas_manager.convertMaskMat(
+            control_masks.whole_seam_mask_indexed.copy()
+        )
         seam_for_blend = seam_index_padded
         self._context = StitchingContextN(
             batch_size=batch_size,
@@ -550,27 +661,52 @@ class CudaStitchPanoN:
         if not self._context.is_hard_seam and self._minimize_blend:
             boundary_bbox = seam_boundary_bbox(seam_index_padded)
             if boundary_bbox is not None:
-                self._write_roi_canvas = expand_and_clamp(boundary_bbox, self._canvas_manager.overlap_padding(), canvas_w, canvas_h)
-                self._blend_roi_canvas = expand_and_clamp(self._write_roi_canvas, pyramid_margin(num_levels), canvas_w, canvas_h)
-                self._blend_roi_canvas = align_and_clamp(self._blend_roi_canvas, pyramid_alignment(num_levels), canvas_w, canvas_h)
+                self._write_roi_canvas = expand_and_clamp(
+                    boundary_bbox,
+                    self._canvas_manager.overlap_padding(),
+                    canvas_w,
+                    canvas_h,
+                )
+                self._blend_roi_canvas = expand_and_clamp(
+                    self._write_roi_canvas,
+                    pyramid_margin(num_levels),
+                    canvas_w,
+                    canvas_h,
+                )
+                self._blend_roi_canvas = align_and_clamp(
+                    self._blend_roi_canvas,
+                    pyramid_alignment(num_levels),
+                    canvas_w,
+                    canvas_h,
+                )
                 seam_for_blend = seam_index_padded[
                     self._blend_roi_canvas.y : self._blend_roi_canvas.bottom,
                     self._blend_roi_canvas.x : self._blend_roi_canvas.right,
                 ]
                 self._remap_rois = [RemapRoiInfo() for _ in range(n)]
                 for i, pos in enumerate(self._canvas_manager.canvas_positions()):
-                    size = control_masks.img_col[i].shape[1], control_masks.img_col[i].shape[0]
+                    size = (
+                        control_masks.img_col[i].shape[1],
+                        control_masks.img_col[i].shape[0],
+                    )
                     img_rect = Rect(pos[0], pos[1], size[0], size[1])
                     inter = img_rect.intersect(self._blend_roi_canvas)
                     self._remap_rois[i].offset_x = pos[0] - self._blend_roi_canvas.x
                     self._remap_rois[i].offset_y = pos[1] - self._blend_roi_canvas.y
                     if not inter.empty:
-                        self._remap_rois[i].roi = Rect(inter.x - pos[0], inter.y - pos[1], inter.width, inter.height)
+                        self._remap_rois[i].roi = Rect(
+                            inter.x - pos[0],
+                            inter.y - pos[1],
+                            inter.width,
+                            inter.height,
+                        )
             else:
                 self._remap_rois = [RemapRoiInfo() for _ in range(n)]
 
         if not self._context.is_hard_seam:
-            self._context.blend_mask = ControlMasksN.split_to_channels(seam_for_blend, n).astype(np.float32, copy=False)
+            self._context.blend_mask = ControlMasksN.split_to_channels(
+                seam_for_blend, n
+            ).astype(np.float32, copy=False)
 
     @property
     def status(self) -> CudaStatus:
@@ -585,13 +721,21 @@ class CudaStitchPanoN:
     def batch_size(self) -> int:
         return self._context.batch_size
 
-    def _tensor(self, array: np.ndarray, device: torch.device, dtype: torch.dtype | None = None) -> torch.Tensor:
+    def _tensor(
+        self, array: np.ndarray, device: torch.device, dtype: torch.dtype | None = None
+    ) -> torch.Tensor:
         return self._cache.tensor(array, device=device, dtype=dtype)
 
     def _use_minimized_blend(self) -> bool:
-        return self._minimize_blend and not self._blend_roi_canvas.empty and not self._write_roi_canvas.empty
+        return (
+            self._minimize_blend
+            and not self._blend_roi_canvas.empty
+            and not self._write_roi_canvas.empty
+        )
 
-    def _soft_scratch_for(self, device: torch.device, channels: int, minimized: bool) -> _NImageSoftScratch:
+    def _soft_scratch_for(
+        self, device: torch.device, channels: int, minimized: bool
+    ) -> _NImageSoftScratch:
         key = (str(device), channels, minimized)
         scratch = self._soft_scratch.get(key)
         if minimized:
@@ -603,7 +747,10 @@ class CudaStitchPanoN:
         shape = (self._context.batch_size, blend_h, blend_w, channels)
         if scratch is None:
             scratch = _NImageSoftScratch(
-                compute_buffers=[torch.empty(shape, device=device, dtype=torch.float32) for _ in range(self._context.n_images)],
+                compute_buffers=[
+                    torch.empty(shape, device=device, dtype=torch.float32)
+                    for _ in range(self._context.n_images)
+                ],
             )
             self._soft_scratch[key] = scratch
         return scratch
@@ -616,7 +763,9 @@ class CudaStitchPanoN:
             self._use_minimized_blend(),
         )
 
-    def _process_impl(self, batched_inputs: list[torch.Tensor], canvas: torch.Tensor) -> torch.Tensor:
+    def _process_impl(
+        self, batched_inputs: list[torch.Tensor], canvas: torch.Tensor
+    ) -> torch.Tensor:
         device = batched_inputs[0].device
         channels = batched_inputs[0].shape[-1]
         canvas.zero_()
@@ -706,7 +855,16 @@ class CudaStitchPanoN:
             backend=self._backend,
             workspace=scratch.blend_workspace,
         )
-        copy_roi(blended, canvas, Rect(0, 0, blended.shape[2], blended.shape[1]), 0, 0, 0, 0, backend=self._backend)
+        copy_roi(
+            blended,
+            canvas,
+            Rect(0, 0, blended.shape[2], blended.shape[1]),
+            0,
+            0,
+            0,
+            0,
+            backend=self._backend,
+        )
         return cast_like(canvas, batched_inputs[0].dtype)
 
     def _capture_graph(self, inputs: list[torch.Tensor]) -> _GraphState:
@@ -714,7 +872,12 @@ class CudaStitchPanoN:
         for static, inp in zip(static_inputs, inputs, strict=True):
             static.copy_(inp)
         static_output = torch.empty(
-            (self._context.batch_size, self.canvas_height(), self.canvas_width(), inputs[0].shape[-1]),
+            (
+                self._context.batch_size,
+                self.canvas_height(),
+                self.canvas_width(),
+                inputs[0].shape[-1],
+            ),
             device=inputs[0].device,
             dtype=inputs[0].dtype,
         )
@@ -734,8 +897,15 @@ class CudaStitchPanoN:
             static_output=static_output,
         )
 
-    def _maybe_run_graph(self, inputs: list[torch.Tensor], canvas: torch.Tensor | None) -> torch.Tensor | None:
-        if self._graph_disabled or not self._enable_cuda_graphs or self._match_exposure or not _cuda_graphs_supported(inputs[0].device):
+    def _maybe_run_graph(
+        self, inputs: list[torch.Tensor], canvas: torch.Tensor | None
+    ) -> torch.Tensor | None:
+        if (
+            self._graph_disabled
+            or not self._enable_cuda_graphs
+            or self._match_exposure
+            or not _cuda_graphs_supported(inputs[0].device)
+        ):
             return None
         if any(inp.device != inputs[0].device for inp in inputs):
             return None
@@ -758,7 +928,9 @@ class CudaStitchPanoN:
         out.copy_(self._graph_state.static_output)
         return out
 
-    def process(self, inputs: Iterable[torch.Tensor], canvas: torch.Tensor | None = None) -> torch.Tensor:
+    def process(
+        self, inputs: Iterable[torch.Tensor], canvas: torch.Tensor | None = None
+    ) -> torch.Tensor:
         _status_or_raise(self._status)
         batched_inputs = [ensure_batched(inp) for inp in inputs]
         if len(batched_inputs) != self._context.n_images:
@@ -780,8 +952,14 @@ class CudaStitchPanoN:
 
         device = batched_inputs[0].device
         if canvas is None:
-            canvas = torch.empty((batch, self.canvas_height(), self.canvas_width(), channels), device=device, dtype=batched_inputs[0].dtype)
+            canvas = torch.empty(
+                (batch, self.canvas_height(), self.canvas_width(), channels),
+                device=device,
+                dtype=batched_inputs[0].dtype,
+            )
         return self._process_impl(batched_inputs, canvas)
+
+
 def match_seam_images(
     image1: np.ndarray,
     image2: np.ndarray,
@@ -802,7 +980,9 @@ def match_seam_images(
     top_divisor = 4
     bottom_divisor = 10
 
-    def _sample_left(img: np.ndarray, top_left: tuple[int, int]) -> tuple[np.ndarray, int]:
+    def _sample_left(
+        img: np.ndarray, top_left: tuple[int, int]
+    ) -> tuple[np.ndarray, int]:
         total = np.zeros(3, dtype=np.float64)
         count = 0
         start_row = img.shape[0] // top_divisor
@@ -829,7 +1009,9 @@ def match_seam_images(
                 count += pixels.shape[0]
         return total, count
 
-    def _sample_right(img: np.ndarray, top_left: tuple[int, int]) -> tuple[np.ndarray, int]:
+    def _sample_right(
+        img: np.ndarray, top_left: tuple[int, int]
+    ) -> tuple[np.ndarray, int]:
         total = np.zeros(3, dtype=np.float64)
         count = 0
         start_row = img.shape[0] // top_divisor
