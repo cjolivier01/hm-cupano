@@ -1,3 +1,5 @@
+SHELL := /bin/bash
+
 TOPDIR := $(shell pwd)
 
 UNAME_M := $(shell uname -m)
@@ -45,27 +47,27 @@ all: $(if $(DEFAULT_BACKEND),perf,print_targets)
 .PHONY: all print_targets perf debug bld cuda rocm test test-cuda test-rocm clean distclean expunge
 
 perf:
-	@bash -lc '$(call run_default_build,opt)'
+	@$(call run_default_build,opt)
 
 debug:
-	@bash -lc '$(call run_default_build,debug)'
+	@$(call run_default_build,debug)
 
 bld: debug
 
 cuda:
-	@bash -lc 'source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env; ensure_rocm_env || true; ensure_cuda_bazel_archs; exec $(BAZELISK) build --config=opt --cpu=$(BAZEL_CPU) --cuda_archs=$${CUDA_BAZEL_ARCHS} $(BAZEL_ARGS) $(BAZEL_TARGETS)'
+	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env; ensure_rocm_env || true; ensure_cuda_bazel_archs; exec $(BAZELISK) build --config=opt --cpu=$(BAZEL_CPU) --cuda_archs=$${CUDA_BAZEL_ARCHS} $(BAZEL_ARGS) $(BAZEL_TARGETS)
 
 rocm:
-	@bash -lc 'source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env || true; ensure_rocm_env; exec $(BAZELISK) build --config=opt --config=rocm --cpu=$(BAZEL_CPU) $(BAZEL_ARGS) $(BAZEL_TARGETS)'
+	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env || true; ensure_rocm_env; exec $(BAZELISK) build --config=opt --config=rocm --cpu=$(BAZEL_CPU) $(BAZEL_ARGS) $(BAZEL_TARGETS)
 
 test:
-	@bash -lc '$(call run_default_test,opt)'
+	@$(call run_default_test,opt)
 
 test-cuda:
-	@bash -lc 'source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env; ensure_rocm_env || true; ensure_cuda_bazel_archs; exec $(BAZELISK) test --config=opt --cpu=$(BAZEL_CPU) --cuda_archs=$${CUDA_BAZEL_ARCHS} $(BAZEL_ARGS) $(BAZEL_TARGETS)'
+	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env; ensure_rocm_env || true; ensure_cuda_bazel_archs; exec $(BAZELISK) test --config=opt --cpu=$(BAZEL_CPU) --cuda_archs=$${CUDA_BAZEL_ARCHS} $(BAZEL_ARGS) $(BAZEL_TARGETS)
 
 test-rocm:
-	@bash -lc 'source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env || true; ensure_rocm_env; exec $(BAZELISK) test --config=opt --config=rocm --cpu=$(BAZEL_CPU) $(BAZEL_ARGS) $(BAZEL_TARGETS)'
+	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env || true; ensure_rocm_env; exec $(BAZELISK) test --config=opt --config=rocm --cpu=$(BAZEL_CPU) $(BAZEL_ARGS) $(BAZEL_TARGETS)
 
 clean:
 	$(BAZELISK) clean
