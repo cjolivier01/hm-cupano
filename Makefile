@@ -10,8 +10,6 @@ BAZELISK ?= bazelisk
 BAZEL_TARGETS ?= //...
 BAZEL_ARGS ?=
 
-DEFAULT_BACKEND := $(shell bash -lc 'source "$(TOPDIR)/toolchain_env.sh"; if ensure_cuda_env >/dev/null 2>&1; then printf cuda; elif ensure_rocm_env >/dev/null 2>&1; then printf rocm; fi')
-
 define run_default_build
 source "$(TOPDIR)/toolchain_env.sh"; \
 if ensure_cuda_env >/dev/null 2>&1; then \
@@ -42,7 +40,7 @@ else \
 fi
 endef
 
-all: $(if $(DEFAULT_BACKEND),perf,print_targets)
+all: print_targets
 
 .PHONY: all print_targets perf debug bld cuda rocm test test-cuda test-rocm clean distclean expunge
 
@@ -81,6 +79,7 @@ print_targets:
 		'' \
 		'Build Outputs' \
 		'-------------' \
+		'all          Show this help text (same as print_targets).' \
 		'perf         Build with the preferred installed backend (CUDA first, then ROCm).' \
 		'cuda         Build with the CUDA backend.' \
 		'rocm         Build with the HIP/ROCm backend.' \
@@ -98,6 +97,10 @@ print_targets:
 		'clean        bazel clean to drop cached outputs.' \
 		'distclean    bazel clean --expunge (also aliased as expunge) for a fully fresh Bazel state.' \
 		'expunge      Same as distclean; provided for convenience.' \
+		'' \
+		'Meta' \
+		'----' \
+		'print_targets  Shows this help text.' \
 		'' \
 		'Variables' \
 		'---------' \
