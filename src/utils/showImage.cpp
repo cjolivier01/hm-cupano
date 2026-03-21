@@ -3,13 +3,14 @@
 #include "cupano/utils/imageUtils.h"
 
 #include <set>
+#include <memory>
 #include <unordered_set>
 
 #include <opencv2/highgui.hpp>
 #include <opencv2/opencv.hpp>
 
 #include <fcntl.h>
-#include <opencv4/opencv2/imgproc.hpp>
+#include <opencv2/imgproc.hpp>
 #include <stdio.h>
 #include <termios.h>
 #include <unistd.h>

@@ -3,6 +3,7 @@ _workspace_name = "hm-cupano"
 workspace(name = _workspace_name)
 
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
+load("//:bazel/dependencies.bzl", "local_rocm_repository")
 
 git_repository(
     name = "rules_cuda",
@@ -90,9 +91,114 @@ cc_library(
 )
 
 new_local_repository(
+    name = "lcms2",
+    path = "/usr",
+    build_file_content = """
+cc_library(
+    name = "lcms2",
+    hdrs = glob(["include/lcms2*.h", "include/x86_64-linux-gnu/lcms2*.h"], allow_empty = True),
+    includes = ["include", "include/x86_64-linux-gnu"],
+    linkopts = [
+        "-L/usr/lib/x86_64-linux-gnu",
+        "-L/usr/lib",
+        "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
+        "-llcms2",
+    ],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+new_local_repository(
+    name = "boost",
+    path = "/usr",
+    build_file_content = """
+cc_library(
+    name = "filesystem",
+    hdrs = glob(["include/boost/**/*.hpp"], allow_empty = True),
+    includes = ["include"],
+    linkopts = [
+        "-L/usr/lib/x86_64-linux-gnu",
+        "-L/usr/lib",
+        "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
+        "-lboost_filesystem",
+        "-lboost_system",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "system",
+    hdrs = glob(["include/boost/**/*.hpp"], allow_empty = True),
+    includes = ["include"],
+    linkopts = [
+        "-L/usr/lib/x86_64-linux-gnu",
+        "-L/usr/lib",
+        "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
+        "-lboost_system",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "algorithm",
+    hdrs = glob(["include/boost/**/*.hpp"], allow_empty = True),
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "math",
+    hdrs = glob(["include/boost/**/*.hpp"], allow_empty = True),
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+new_local_repository(
+    name = "gsl",
+    path = "/usr",
+    build_file_content = """
+cc_library(
+    name = "gsl",
+    hdrs = glob(["include/gsl/*.h"], allow_empty = True),
+    includes = ["include"],
+    linkopts = [
+        "-L/usr/lib/x86_64-linux-gnu",
+        "-L/usr/lib",
+        "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
+        "-lgsl",
+        "-lgslcblas",
+    ],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+new_local_repository(
+    name = "vigra",
+    path = "/usr",
+    build_file_content = """
+cc_library(
+    name = "vigra",
+    hdrs = glob(["include/vigra/**/*.hxx", "include/vigra/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    linkopts = [
+        "-L/usr/lib/x86_64-linux-gnu",
+        "-L/usr/lib",
+        "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
+        "-lvigraimpex",
+    ],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+new_local_repository(
     name = "opencv_linux",
     build_file = "@//buildfiles:third_party/opencv_linux.BUILD",
-    path = "/usr/include",
+    path = "/usr",
     # path = "/usr/local/include",
 )
 
@@ -119,21 +225,7 @@ git_repository(
     branch = "colivier/hockeymom",
 )
 
-# Local ROCm (HIP) headers and runtime (if installed under /opt/rocm)
-new_local_repository(
+# Local ROCm (HIP) headers and runtime
+local_rocm_repository(
     name = "local_rocm",
-    path = "/opt/rocm",
-    build_file_content = """
-cc_library(
-    name = "hip_runtime",
-    hdrs = glob(["include/**/*.h"], allow_empty = True),
-    includes = ["include"],
-    linkopts = [
-        "-L/opt/rocm/lib",
-        "-Wl,-rpath,/opt/rocm/lib",
-        "-lamdhip64",
-    ],
-    visibility = ["//visibility:public"],
-)
-""",
 )

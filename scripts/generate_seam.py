@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Generate seam_file.png for a stitched folder using multiblend (default for N>=3)
-or enblend (supported for 2 and 3+). Prefers Bazel external tools when available.
+or enblend (supported for 2 and 3+). Prefer Bazel-managed tools from this repo,
+falling back to system tools when needed.
 
 Usage:
   python3 scripts/generate_seam.py --directory <dir> --num-images 3 --seam multiblend
@@ -14,26 +15,36 @@ import glob
 import os
 import shutil
 import subprocess
+from pathlib import Path
 from typing import List
 
 from PIL import Image
 import numpy as np
 import cv2
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 def prefer_bazel_tool(name: str) -> List[str]:
     if name == "multiblend":
-        if shutil.which("bazelisk") or shutil.which("bazel"):
-            return ["bazelisk", "run", "@multiblend//:multiblend", "--"]
+        if shutil.which("bazelisk"):
+            return ["bazelisk", "run", "--noenable_bzlmod", "@multiblend//:multiblend", "--"]
+        if shutil.which("bazel"):
+            return ["bazel", "run", "--noenable_bzlmod", "@multiblend//:multiblend", "--"]
     if name == "enblend":
-        if shutil.which("bazelisk") or shutil.which("bazel"):
-            return ["bazelisk", "run", "@enblend//:enblend", "--"]
+        if shutil.which("bazelisk"):
+            return ["bazelisk", "run", "--noenable_bzlmod", "@enblend//:enblend", "--"]
+        if shutil.which("bazel"):
+            return ["bazel", "run", "--noenable_bzlmod", "@enblend//:enblend", "--"]
+    if shutil.which(name):
+        return [name]
     return [name]
 
 
 def run(cmd: List[str], cwd: str) -> None:
     print("EXEC:", " ".join(cmd))
-    subprocess.run(cmd, cwd=cwd, check=True)
+    run_cwd = str(REPO_ROOT if cmd[0] in ("bazelisk", "bazel") else cwd)
+    subprocess.run(cmd, cwd=run_cwd, check=True)
 
 
 def main() -> None:

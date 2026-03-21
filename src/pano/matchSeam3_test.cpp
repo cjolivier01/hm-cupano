@@ -1,8 +1,8 @@
 // Unit test for match_seam_images3 (multi-image exposure matching)
 
 #include <gtest/gtest.h>
-#include <opencv4/opencv2/core.hpp>
-#include <opencv4/opencv2/imgproc.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include "cupano/pano/cudaPano3.h"
 
@@ -57,4 +57,3 @@ TEST(MatchSeamImages3, SolvesAdditiveOffsetsConstantImages) {
   expect_near_scalar(adj[1], -20.0, -20.0, -20.0, 1e-3);
   expect_near_scalar(adj[2], -40.0, -40.0, -40.0, 1e-3);
 }
-

@@ -53,6 +53,41 @@ cudaError_t batched_remap_kernel_ex_offset(
     bool no_unmapped_write,
     cudaStream_t stream);
 
+/**
+ * @brief Batched remap for a rectangular ROI inside the remap map.
+ *
+ * This is equivalent to `batched_remap_kernel_ex_offset()`, but only processes a
+ * sub-rectangle `[roiX, roiY, roiW, roiH]` in the remap map (and thus only writes
+ * the corresponding region in `dest`).
+ *
+ * ROI coordinates are expressed in the remap-map coordinate system (i.e. local
+ * to the remapped image). The `offsetX/offsetY` apply to the full remap map, and
+ * destination coordinates are computed as:
+ *   `destX = offsetX + (roiX + x)`
+ *   `destY = offsetY + (roiY + y)`
+ *
+ * @tparam T_in  Input pixel type (source surface).
+ * @tparam T_out Output pixel type (destination surface).
+ */
+template <typename T_in, typename T_out>
+cudaError_t batched_remap_kernel_ex_offset_roi(
+    const CudaSurface<T_in>& src,
+    const CudaSurface<T_out>& dest,
+    const unsigned short* d_mapX,
+    const unsigned short* d_mapY,
+    T_in deflt,
+    int batchSize,
+    int remapW,
+    int remapH,
+    int offsetX,
+    int offsetY,
+    int roiX,
+    int roiY,
+    int roiW,
+    int roiH,
+    bool no_unmapped_write,
+    cudaStream_t stream);
+
 template <typename T_in, typename T_out>
 cudaError_t batched_remap_kernel_ex_offset_adjust(
     const CudaSurface<T_in>& src,
@@ -100,4 +135,27 @@ cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust(
     int offsetX,
     int offsetY,
     float3 adjustment,
+    cudaStream_t stream);
+
+/**
+ * @brief Fused hard-seam remap for N images.
+ *
+ * For each output pixel, selects the contributing image from `dest_image_map`, then applies that image's
+ * remap to sample from the corresponding input surface. Pixels with unmapped/invalid coordinates are
+ * left unchanged, so callers typically `cudaMemsetAsync()` the destination to 0 before invoking.
+ *
+ * All pointer arrays (`d_inputs`, `d_mapX_ptrs`, `d_mapY_ptrs`, `d_offsets`, `d_sizes`) must live in
+ * device memory and have length `n_images`.
+ */
+template <typename T>
+cudaError_t batched_remap_hard_seam_kernel_n(
+    const CudaSurface<T>* d_inputs,
+    const unsigned short* const* d_mapX_ptrs,
+    const unsigned short* const* d_mapY_ptrs,
+    const int2* d_offsets,
+    const int2* d_sizes,
+    int n_images,
+    const unsigned char* dest_image_map,
+    CudaSurface<T> dest,
+    int batchSize,
     cudaStream_t stream);

@@ -35,3 +35,14 @@ config_setting(
     name = "use_hip",
     values = {"define": "backend=hip"},
 )
+
+filegroup(
+    name = "fpga_stitch_assets",
+    srcs = [
+        "assets/left.png",
+        "assets/right.png",
+        "assets/s1.jpg",
+        "assets/s2.jpg",
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -9,12 +9,13 @@
 - `tests/`: runnable sample/test binaries (Bazel `cc_binary`) and GTest targets under `src/*`.
 - `scripts/`: setup and tooling (e.g., `install_bazelisk.sh`, `create_control_points.py`).
 - Bazel files: `WORKSPACE`, `MODULE.bazel`, `BUILD.bazel` files under dirs.
-- Other: `assets/` sample images, `.clang-format` style, helper scripts `bld`, `perf`.
+- Other: `assets/` sample images, `.clang-format` style, root `Makefile` for common Bazel workflows.
 
 ## Build, Test, Run
 - Install Bazelisk: `./scripts/install_bazelisk.sh` (Linux x86_64/aarch64).
-- Debug build all: `./bld` (wraps `bazelisk build --config=debug //...`).
-- Optimized build: `./perf` (then cleans).
+- Debug build all: `make debug` (or `make bld`).
+- Optimized build: `make perf`.
+- Clean: `make clean` (or `make expunge` for a full clean).
 - Specific targets: `bazelisk build //src/pano:cuda_pano`.
 - GTest targets: `bazelisk test //src/pano:cudaPano3_test //src/cuda:cudaBlend3_test`.
 - Stitching demo (after build): `./bazel-bin/tests/test_cuda_blend --show --perf --output=out.png --directory=<data_dir>` or `./laplacian_blend.sh <data_dir>`.
@@ -40,4 +41,3 @@
 - Requires NVIDIA CUDA toolkit/driver and OpenCV dev headers (`/usr/include` by default).
 - External tools for config: Hugin/Enblend (`sudo apt-get install hugin hugin-tools enblend`).
 - Generate control points: `python scripts/create_control_points.py <left.mp4> <right.mp4>` before running demos.
-

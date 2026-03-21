@@ -71,7 +71,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = (
-      ["//src/gpu:gpu_runtime", ":gl_window", "//src/pano:cuda_matrix"]
+      ["//src/gpu:gpu_runtime", ":gl_window", "//src/pano:cuda_matrix", "@opencv_linux//:opencv"]
       + select({
         "@//:use_hip": ["@local_rocm//:hip_runtime"],
         "//conditions:default": ["@local_cuda//:cuda_runtime"],
@@ -96,7 +96,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = (
-      ["//src/gpu:gpu_runtime", ":image_utils", ":gl_window", "//src/pano:cuda_matrix"]
+      ["//src/gpu:gpu_runtime", ":image_utils", ":gl_window", "//src/pano:cuda_matrix", "@opencv_linux//:opencv"]
       + select({
         "@//:use_hip": ["@local_rocm//:hip_runtime"],
         "//conditions:default": ["@local_cuda//:cuda_runtime"],

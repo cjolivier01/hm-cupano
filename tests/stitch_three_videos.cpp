@@ -313,7 +313,6 @@ int main(int argc, char** argv) {
       6;
 #endif
   int max_frames = -1;
-  int batch_size = 1;
   int bitrate_kbps = 0; // only used by cudacodec
 
   // Command-line options.

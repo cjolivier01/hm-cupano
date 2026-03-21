@@ -1,6 +1,6 @@
 #include "controlMasks3.h"
-#include <opencv4/opencv2/highgui.hpp>
-#include <opencv4/opencv2/imgcodecs.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <png.h>
 #include <tiffio.h> // For TIFF metadata
 #include <stdexcept>
@@ -204,19 +204,15 @@ ControlMasks3::ControlMasks3(const std::string& game_dir) {
 }
 
 cv::Mat ControlMasks3::split_to_channels(const cv::Mat& seam_mask) {
+  CV_Assert(seam_mask.type() == CV_8U);
   cv::Mat seam_mask_dest = cv::Mat(cv::Size(seam_mask.cols, seam_mask.rows), CV_8UC3, cv::Scalar(0, 0, 0));
-
-  std::vector<int> unique_values = get_unique_values(seam_mask);
-  // Accept degenerate masks with fewer than 3 labels; missing channels remain zero.
 
   std::vector<cv::Mat> channels;
   cv::split(seam_mask_dest, channels);
-  if (channels.size() != 3) {
-    channels.resize(3);
-    channels[0] = cv::Mat(seam_mask.size(), CV_8U, cv::Scalar(0));
-    channels[1] = cv::Mat(seam_mask.size(), CV_8U, cv::Scalar(0));
-    channels[2] = cv::Mat(seam_mask.size(), CV_8U, cv::Scalar(0));
-  }
+
+  // `seam_mask` stores image indices. Some masks may not contain all labels, so we
+  // build a fixed 3-channel one-hot encoding for indices {0,1,2} without requiring
+  // all labels to appear.
 
   // Map label values 0,1,2 to fixed channel indices 0,1,2.
   channels[0].setTo(1, (seam_mask == 0));

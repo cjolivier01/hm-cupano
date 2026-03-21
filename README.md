@@ -202,15 +202,84 @@ Notes:
 
 This repository supports building against AMD GPUs via HIP/ROCm in addition to NVIDIA CUDA.
 
-- Prerequisites (on an AMD system):
-  - ROCm installed under `/opt/rocm` (headers and `libamdhip64` available)
-  - `hipcc` present at `/opt/rocm/bin/hipcc`
+- Prerequisites:
+  - a ROCm installation with `hipcc`, HIP headers, and `libamdhip64`
+  - either `ROCM_PATH` / `HIP_PATH` exported or the toolkit installed in a standard ROCm location
 
 - Build for HIP:
-  - Use the ROCm config: `bazelisk build --config=rocm //src/...` (or `bazel build --config=rocm //src/...`)
+  - Use the ROCm config: `bazelisk build --config=rocm //src/...`
+  - Run tests with: `bazelisk test --config=rocm //src/... //tests/...`
   - This selects HIP-aware headers and links against `libamdhip64`. CUDA remains the default backend.
 
 - Notes:
   - CUDA/HIP runtime differences are bridged via `cupano/gpu/gpu_runtime.h` and `cupano/gpu/gpu_gl_interop.h`.
   - HIP compilation of kernels is provided via a `genrule` that calls `hipcc` and is tagged `manual`; it is not built by default on CUDA systems.
   - To explicitly build the HIP kernel library: `bazelisk build --config=rocm //src/cuda:cuda_blend_cuda_lib_hip`.
+
+## Python/PyTorch Port
+
+A Python port of the two-image and generic N-image stitchers now lives under `cupano/`.
+It mirrors the C++ control-mask loaders and the `cudaPano` / `cudaPanoN` orchestration, but runs on PyTorch tensors in `BHWC` layout.
+
+Key points:
+- `cupano.CudaStitchPano`: two-image path with hard seam or Laplacian blend.
+- `cupano.CudaStitchPanoN`: generic 2..8 image path, including the minimized soft-seam ROI path.
+- `cupano.ControlMasks` / `cupano.ControlMasksN`: Python loaders for the same Hugin/enblend mapping outputs used by the C++ code.
+- Backend selection is exposed as `backend="auto" | "triton"`.
+- There is no separate public `python-torch` mode anymore; `auto` selects Triton for supported GPU tensors and otherwise falls back internally.
+- The implementation targets portability across CUDA and ROCm through PyTorch, with Triton kernels for ROI copy, remap, mask/image pyramid construction, Laplacian generation, reconstruction, and N-way blend when Triton is installed.
+- The Python stitchers reuse persistent blend scratch buffers, and on CUDA they can optionally capture steady-state execution with CUDA graphs.
+
+Example:
+```python
+import cv2
+import torch
+
+from cupano import ControlMasks, CudaStitchPano
+
+masks = ControlMasks("assets")
+left = torch.from_numpy(cv2.cvtColor(cv2.imread("assets/image0.png"), cv2.COLOR_BGR2BGRA)).float().cuda().unsqueeze(0)
+right = torch.from_numpy(cv2.cvtColor(cv2.imread("assets/image1.png"), cv2.COLOR_BGR2BGRA)).float().cuda().unsqueeze(0)
+
+stitcher = CudaStitchPano(batch_size=1, num_levels=6, control_masks=masks, backend="auto", enable_cuda_graphs=True)
+out = stitcher.process(left, right)
+```
+
+Tests:
+```bash
+pytest -q tests/python/test_pytorch_pano.py
+pytest -q tests/python/test_triton_backend.py
+```
+
+Real-image parity harness:
+```bash
+python scripts/compare_pano_parity.py \
+  --left assets/left.png \
+  --right assets/right.png \
+  --levels 0 \
+  --backend triton \
+  --work-dir /tmp/cupano_parity \
+  --build-if-needed
+```
+
+This compares the Python stitcher against the existing C++ binary on the same control-mask directory and writes:
+- C++ output
+- Python output
+- a diff heatmap
+- JSON metrics (`max_abs`, `mean_abs`, `rmse`, `psnr`)
+
+Synthetic performance benchmark:
+```bash
+python scripts/benchmark_pano.py \
+  --sizes 768x384 1024x512 1536x768 \
+  --levels 0 1 6 \
+  --output-json /tmp/cupano_bench.json
+```
+
+This benchmarks the existing two-image C++ binary and the Python Triton backend on the same synthetic control directories and prints a summary table plus JSON.
+Pass `--disable-cuda-graphs` to benchmark the eager Python path instead of the CUDA-graph replay path.
+
+Note on CuTe DSL:
+- NVIDIA CuTe DSL is CUDA-only, so it cannot satisfy a single-source CUDA+ROCm requirement.
+- The Python port therefore prioritizes a portable PyTorch implementation rather than introducing a CUDA-only CuTe dependency.
+- Triton is the cross-vendor kernel path in this repo; on ROCm it depends on a ROCm-capable Triton/PyTorch installation, and on CUDA it uses the regular Triton GPU backend.

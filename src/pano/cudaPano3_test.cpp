@@ -2,9 +2,9 @@
 
 #include <cupano/gpu/gpu_runtime.h>
 #include <gtest/gtest.h>
+#include <opencv2/core.hpp>
+#include <opencv2/core/hal/interface.h>
 #include <opencv2/opencv.hpp>
-#include <opencv4/opencv2/core.hpp>
-#include <opencv4/opencv2/core/hal/interface.h>
 
 // Include your project headers; adjust include paths as needed:
 #include "cupano/pano/controlMasks3.h"
