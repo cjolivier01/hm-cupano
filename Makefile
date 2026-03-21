@@ -1,3 +1,5 @@
+SHELL := /bin/bash
+
 TOPDIR := $(shell pwd)
 
 UNAME_M := $(shell uname -m)
@@ -8,18 +10,62 @@ BAZELISK ?= bazelisk
 BAZEL_TARGETS ?= //...
 BAZEL_ARGS ?=
 
+define run_default_build
+source "$(TOPDIR)/toolchain_env.sh"; \
+if ensure_cuda_env >/dev/null 2>&1; then \
+	ensure_rocm_env >/dev/null 2>&1 || true; \
+	ensure_cuda_bazel_archs; \
+	exec $(BAZELISK) build --config=$(1) --cpu=$(BAZEL_CPU) --cuda_archs=$${CUDA_BAZEL_ARCHS} $(BAZEL_ARGS) $(BAZEL_TARGETS); \
+elif ensure_rocm_env >/dev/null 2>&1; then \
+	ensure_cuda_env >/dev/null 2>&1 || true; \
+	exec $(BAZELISK) build --config=$(1) --config=rocm --cpu=$(BAZEL_CPU) $(BAZEL_ARGS) $(BAZEL_TARGETS); \
+else \
+	printf 'No CUDA or ROCm toolkit detected.\n' >&2; \
+	exit 1; \
+fi
+endef
+
+define run_default_test
+source "$(TOPDIR)/toolchain_env.sh"; \
+if ensure_cuda_env >/dev/null 2>&1; then \
+	ensure_rocm_env >/dev/null 2>&1 || true; \
+	ensure_cuda_bazel_archs; \
+	exec $(BAZELISK) test --config=$(1) --cpu=$(BAZEL_CPU) --cuda_archs=$${CUDA_BAZEL_ARCHS} $(BAZEL_ARGS) $(BAZEL_TARGETS); \
+elif ensure_rocm_env >/dev/null 2>&1; then \
+	ensure_cuda_env >/dev/null 2>&1 || true; \
+	exec $(BAZELISK) test --config=$(1) --config=rocm --cpu=$(BAZEL_CPU) $(BAZEL_ARGS) $(BAZEL_TARGETS); \
+else \
+	printf 'No CUDA or ROCm toolkit detected.\n' >&2; \
+	exit 1; \
+fi
+endef
+
 all: print_targets
 
-.PHONY: all print_targets perf debug bld test clean distclean expunge
+.PHONY: all print_targets perf debug bld cuda rocm test test-cuda test-rocm clean distclean expunge
 
 perf:
-	$(BAZELISK) build --config=opt --cpu=$(BAZEL_CPU) $(BAZEL_ARGS) $(BAZEL_TARGETS)
+	@$(call run_default_build,opt)
 
-debug bld:
-	$(BAZELISK) build --config=debug --cpu=$(BAZEL_CPU) $(BAZEL_ARGS) $(BAZEL_TARGETS)
+debug:
+	@$(call run_default_build,debug)
+
+bld: debug
+
+cuda:
+	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env; ensure_rocm_env || true; ensure_cuda_bazel_archs; exec $(BAZELISK) build --config=opt --cpu=$(BAZEL_CPU) --cuda_archs=$${CUDA_BAZEL_ARCHS} $(BAZEL_ARGS) $(BAZEL_TARGETS)
+
+rocm:
+	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env || true; ensure_rocm_env; exec $(BAZELISK) build --config=opt --config=rocm --cpu=$(BAZEL_CPU) $(BAZEL_ARGS) $(BAZEL_TARGETS)
 
 test:
-	$(BAZELISK) test --config=opt --cpu=$(BAZEL_CPU) $(BAZEL_ARGS) $(BAZEL_TARGETS)
+	@$(call run_default_test,opt)
+
+test-cuda:
+	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env; ensure_rocm_env || true; ensure_cuda_bazel_archs; exec $(BAZELISK) test --config=opt --cpu=$(BAZEL_CPU) --cuda_archs=$${CUDA_BAZEL_ARCHS} $(BAZEL_ARGS) $(BAZEL_TARGETS)
+
+test-rocm:
+	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env || true; ensure_rocm_env; exec $(BAZELISK) test --config=opt --config=rocm --cpu=$(BAZEL_CPU) $(BAZEL_ARGS) $(BAZEL_TARGETS)
 
 clean:
 	$(BAZELISK) clean
@@ -33,13 +79,18 @@ print_targets:
 		'' \
 		'Build Outputs' \
 		'-------------' \
-		'perf         Build every Bazel target with --config=opt (optimized).' \
-		'debug        Build every Bazel target with --config=debug (symbols, no opt).' \
+		'all          Show this help text (same as print_targets).' \
+		'perf         Build with the preferred installed backend (CUDA first, then ROCm).' \
+		'cuda         Build with the CUDA backend.' \
+		'rocm         Build with the HIP/ROCm backend.' \
+		'debug        Debug build with the preferred installed backend.' \
 		'bld          Alias for debug (matches legacy workflow).' \
 		'' \
 		'Developer Workflow' \
 		'------------------' \
-		'test         Runs the optimized Bazel test suite.' \
+		'test         Run tests with the preferred installed backend.' \
+		'test-cuda    Run tests with the CUDA backend.' \
+		'test-rocm    Run tests with the HIP/ROCm backend.' \
 		'' \
 		'Maintenance & Cleanup' \
 		'---------------------' \
@@ -47,9 +98,13 @@ print_targets:
 		'distclean    bazel clean --expunge (also aliased as expunge) for a fully fresh Bazel state.' \
 		'expunge      Same as distclean; provided for convenience.' \
 		'' \
+		'Meta' \
+		'----' \
+		'print_targets  Shows this help text.' \
+		'' \
 		'Variables' \
 		'---------' \
 		'BAZEL_CPU     Override auto-detected CPU ("k8" on x86_64; otherwise uname -m).' \
 		'BAZEL_TARGETS Override default build/test target set (default: //...).' \
-		'BAZEL_ARGS    Extra flags passed through to bazelisk (e.g. BAZEL_ARGS=--test_output=errors).'
-
+		'BAZEL_ARGS    Extra flags passed through to bazelisk (e.g. BAZEL_ARGS=--test_output=errors).' \
+		'CUDA_BAZEL_ARCHS Override detected rules_cuda arch list (e.g. sm_70;sm_80).'

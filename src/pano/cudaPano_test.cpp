@@ -1,4 +1,3 @@
-#include <cuda_runtime.h>
 #include <gtest/gtest.h>
 #include <opencv2/core.hpp>
 
@@ -8,6 +7,7 @@
 #include <memory>
 #include <string>
 
+#include "cupano/gpu/gpu_runtime.h"
 #include "cupano/pano/controlMasks.h"
 #include "cupano/pano/cudaMat.h"
 #include "cupano/pano/cudaPano.h"

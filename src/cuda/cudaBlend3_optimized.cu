@@ -2,8 +2,7 @@
 
 #include "pthread_clock_compat.h"
 
-#include <cooperative_groups.h>
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <device_launch_parameters.h>
 #include <cassert>
 #include <cmath>
@@ -12,8 +11,6 @@
 #include "cudaBlend3.h"
 #include "cudaTypes.h"
 #include "cudaUtils.cuh"
-
-namespace cg = cooperative_groups;
 
 // namespace hm {
 // namespace pano {
@@ -79,8 +76,8 @@ __global__ void FusedPyramidConstructionKernel3(
   // const int nextMaskSize = nextWidth * nextHeight * 3;
 
   // Shared memory for caching
-  //extern __shared__ char shared_mem[];
-  //F_T* s_cache = reinterpret_cast<F_T*>(shared_mem);
+  // extern __shared__ char shared_mem[];
+  // F_T* s_cache = reinterpret_cast<F_T*>(shared_mem);
 
   // Process downsampling and Laplacian in a single pass
   for (int idx = tid; idx < currWidth * currHeight; idx += stride) {
@@ -215,11 +212,6 @@ __global__ void OptimizedBlendKernel3(
     int width,
     int height,
     int batchSize) {
-  // Use cooperative groups for better synchronization
-  #if CUDA_VERSION >= 10020
-  cg::grid_group grid = cg::this_grid();
-  #endif
-
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
   int b = blockIdx.z;

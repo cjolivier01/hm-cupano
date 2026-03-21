@@ -1,7 +1,7 @@
 // cudaBlendN.h
 #pragma once
 
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <array>
 #include <cassert>
 #include <vector>

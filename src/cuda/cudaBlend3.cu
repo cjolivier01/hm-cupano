@@ -7,8 +7,7 @@
 #include "cupano/utils/imageUtils.h"
 #include "cupano/utils/showImage.h"
 
-#include <cuda_fp16.h>
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <device_launch_parameters.h>
 
 #include <cassert>

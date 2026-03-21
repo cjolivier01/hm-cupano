@@ -10,8 +10,8 @@ namespace pano {
 namespace cuda {
 
 namespace detailN {
-constexpr inline float3 neg(const float3& f) {
-  return float3{.x = -f.x, .y = -f.y, .z = -f.z};
+inline float3 neg(const float3& f) {
+  return make_float3(-f.x, -f.y, -f.z);
 }
 
 template <typename T>
@@ -116,7 +116,7 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
     bool minimize_blend)
     : match_exposure_(match_exposure), minimize_blend_(minimize_blend && num_levels > 0) {
   if (!control_masks.is_valid()) {
-    status_ = CudaStatus(cudaError_t::cudaErrorFileNotFound, "Stitching masks (N-image) could not be loaded");
+    status_ = CudaStatus(cudaErrorFileNotFound, "Stitching masks (N-image) could not be loaded");
     return;
   }
 
@@ -386,12 +386,13 @@ CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::remap_soft(
     int batch_size,
     cudaStream_t stream) {
   (void)image_adjustment;
+  const T_pipeline default_pixel = T_pipeline{};
   return batched_remap_kernel_ex_offset(
       input.surface(),
       dest_canvas.surface(),
       map_x.data(),
       map_y.data(),
-      {0},
+      default_pixel,
       batch_size,
       map_x.width(),
       map_y.height(),
@@ -415,12 +416,13 @@ CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::remap_hard(
     int batch_size,
     cudaStream_t stream) {
   (void)image_adjustment;
+  const T_pipeline default_pixel = T_pipeline{};
   return batched_remap_kernel_ex_offset_with_dest_map(
       input.surface(),
       dest_canvas.surface(),
       map_x.data(),
       map_y.data(),
-      {0},
+      default_pixel,
       image_index,
       dest_index_map.data(),
       batch_size,
@@ -509,6 +511,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T
   }
   if (canvas->batch_size() != stitch_context_->batch_size())
     return CudaStatus(cudaErrorInvalidValue, "Canvas batch mismatch");
+
+  const T_pipeline default_pixel = T_pipeline{};
 
   if (stitch_context_->is_hard_seam()) {
     auto cuerr = cudaMemsetAsync(canvas->data(), 0, canvas->size(), stream);
@@ -603,7 +607,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T
           stitch_context_->cudaFull[i]->surface(),
           mx.data(),
           my.data(),
-          {0},
+          default_pixel,
           stitch_context_->batch_size(),
           mx.width(),
           mx.height(),

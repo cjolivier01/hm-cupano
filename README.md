@@ -198,6 +198,24 @@ Notes:
 - The apps attempt GPU decode/encode via OpenCV cudacodec if available; otherwise they fall back to CPU.
 - Output codec defaults to `mp4v` for broad compatibility; override with `--fourcc=avc1` or `--fourcc=hevc` if supported.
 
+## AMD ROCm/HIP Backend (Experimental)
+
+This repository supports building against AMD GPUs via HIP/ROCm in addition to NVIDIA CUDA.
+
+- Prerequisites:
+  - a ROCm installation with `hipcc`, HIP headers, and `libamdhip64`
+  - either `ROCM_PATH` / `HIP_PATH` exported or the toolkit installed in a standard ROCm location
+
+- Build for HIP:
+  - Use the ROCm config: `bazelisk build --config=rocm //src/...`
+  - Run tests with: `bazelisk test --config=rocm //src/... //tests/...`
+  - This selects HIP-aware headers and links against `libamdhip64`. CUDA remains the default backend.
+
+- Notes:
+  - CUDA/HIP runtime differences are bridged via `cupano/gpu/gpu_runtime.h` and `cupano/gpu/gpu_gl_interop.h`.
+  - HIP compilation of kernels is provided via a `genrule` that calls `hipcc` and is tagged `manual`; it is not built by default on CUDA systems.
+  - To explicitly build the HIP kernel library: `bazelisk build --config=rocm //src/cuda:cuda_blend_cuda_lib_hip`.
+
 ## Python/PyTorch Port
 
 A Python port of the two-image and generic N-image stitchers now lives under `cupano/`.

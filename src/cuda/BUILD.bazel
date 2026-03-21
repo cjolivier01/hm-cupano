@@ -54,13 +54,23 @@ cuda_library(
         "//conditions:default": [],
     }),
     visibility = ["//visibility:public"],
-    deps = [
-        ":cuda_blend_cuda_lib_headers",
-        "//src/utils:show_image",
-        "//src/pano:canvas_manager",
-        "@local_cuda//:cuda_runtime",
-        "@opencv_linux//:opencv",
-    ],
+    target_compatible_with = select({
+        "@//:use_hip": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = (
+        [
+            "//src/gpu:gpu_runtime",
+            ":cuda_blend_cuda_lib_headers",
+            "//src/utils:show_image",
+            "//src/pano:canvas_manager",
+            "@opencv_linux//:opencv",
+        ]
+        + select({
+            "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "//conditions:default": ["@local_cuda//:cuda_runtime"],
+        })
+    ),
 )
 
 cc_library(
@@ -93,9 +103,13 @@ cc_library(
     ],
     include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
-    deps = [
-        "@local_cuda//:cuda_runtime",
-    ],
+    deps = (
+        ["//src/gpu:gpu_runtime"]
+        + select({
+            "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "//conditions:default": ["@local_cuda//:cuda_runtime"],
+        })
+    ),
 )
 
 cc_library(
@@ -110,8 +124,23 @@ cc_library(
 cc_test(
     name = "cudaBlend3_test",
     srcs = ["cudaBlend3_test.cpp"],
+    deps = (
+        select({
+            "@//:use_hip": [":cuda_blend_cuda_lib_hip"],
+            "//conditions:default": [":cuda_blend_cuda_lib"],
+        })
+        + [
+            "@googletest//:gtest",
+            "@googletest//:gtest_main",
+        ]
+    ),
+)
+
+cc_test(
+    name = "cudaTypes_test",
+    srcs = ["cudaTypes_test.cpp"],
     deps = [
-        ":cuda_blend_cuda_lib",
+        ":cuda_blend_cuda_lib_headers",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],
@@ -120,9 +149,90 @@ cc_test(
 cc_test(
     name = "cudaBlendN_test",
     srcs = ["cudaBlendN_test.cpp"],
+    deps = (
+        select({
+            "@//:use_hip": [":cuda_blend_cuda_lib_hip"],
+            "//conditions:default": [":cuda_blend_cuda_lib"],
+        })
+        + [
+            "@googletest//:gtest",
+            "@googletest//:gtest_main",
+        ]
+    ),
+)
+
+# HIP backend (ROCm) — builds .cu sources with hipcc into objects and links them.
+# Only used when --define=backend=hip (see //:use_hip).
+filegroup(
+    name = "cuda_public_headers",
+    srcs = glob(["*.h", "*.cuh"]),
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "hip_objs",
+    srcs = [
+        "cudaBlend.cu",
+        "cudaBlend3.cu",
+        "cudaBlend3_optimized.cu",
+        "cudaFusedKernels3.cu",
+        "cudaBlendN.cu",
+        "cudaImageAdjust.cu",
+        "cudaMakeFull.cu",
+        "cudaRemap.cu",
+        "cudaStabilize.cu",
+        "cudaUtils.cu",
+    ] + [":cuda_public_headers", "//src/gpu:gpu_public_headers", "//src/utils:utils_public_headers", "//src/pano:pano_public_headers"],
+    outs = [
+        "cudaBlend.o",
+        "cudaBlend3.o",
+        "cudaBlend3_optimized.o",
+        "cudaFusedKernels3.o",
+        "cudaBlendN.o",
+        "cudaImageAdjust.o",
+        "cudaMakeFull.o",
+        "cudaRemap.o",
+        "cudaStabilize.o",
+        "cudaUtils.o",
+    ],
+    cmd = (
+        "set -e; HIPCC=$(location @local_rocm//:hipcc); "
+        # Create a virtual include tree to satisfy include_prefix paths like <cupano/...>
+        + "mkdir -p $(RULEDIR)/inc; "
+        + "ln -sfn \"$$(pwd)/src\" $(RULEDIR)/inc/cupano; "
+        # Provide a CUDA compatibility header expected by CUDA sources when compiling with HIP
+        + "printf '#pragma once\n#include <hip/hip_runtime.h>\n' > $(RULEDIR)/inc/device_launch_parameters.h; "
+        + "for i in $(SRCS); do case \"$$i\" in *.cu) base=$$(basename \"$$i\" .cu); "
+        + "$$HIPCC -std=c++17 -O2 -fPIC -DUSE_HIP -D__HIP_PLATFORM_AMD__ -I$(RULEDIR)/inc -I. -I src -I src/cuda -I/usr/include/opencv4 \"$$i\" -c -o $(RULEDIR)/$$base.o ;; esac; done"
+    ),
+    tags = ["manual"],
+    tools = ["@local_rocm//:hipcc"],
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "cuda_blend_cuda_lib_hip",
+    srcs = [":hip_objs"],
+    hdrs = [
+        "cudaImageAdjust.cuh",
+        "cudaUtils.cuh",
+        "cudaBlend.h",
+        "cudaBlend3.h",
+        "cudaFusedKernels3.h",
+        "cudaBlendN.h",
+        "cudaMakeFull.h",
+        "cudaRemap.h",
+        "cudaStatus.h",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    copts = ["-std=c++17"],
+    visibility = ["//visibility:public"],
+    tags = ["manual"],
     deps = [
-        ":cuda_blend_cuda_lib",
-        "@googletest//:gtest",
-        "@googletest//:gtest_main",
+        "//src/gpu:gpu_runtime",
+        "//src/utils:show_image",
+        "//src/pano:canvas_manager",
+        "@opencv_linux//:opencv",
+        "@local_rocm//:hip_runtime",
     ],
 )

@@ -4,20 +4,13 @@
 #include "cupano/pano/cudaPano.h"
 #include "cupano/utils/showImage.h"
 
-#include <cuda_runtime.h> // for CUDA vector types
 #include <opencv2/opencv.hpp>
+#include "cupano/gpu/gpu_runtime.h"
 
 #include <cassert>
 #include <cmath>
 #include <iostream>
 #include <type_traits>
-
-#include <cuda_runtime.h>
-// #if (CUDART_VERSION >= 11000)
-// #include <cuda_bf16.h>
-// #endif
-#include <cuda_fp16.h>
-#include <cuda_runtime.h>
 
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/highgui.hpp>

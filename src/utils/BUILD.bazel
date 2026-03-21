@@ -18,11 +18,16 @@ cc_library(
         "-lpng",
     ],
     visibility = ["//visibility:public"],
-    deps = [
-        ":show_image",
-        "//src/cuda:cuda_blend_cuda_lib",
-        "@opencv_linux//:opencv",
-    ],
+    deps = (
+        [
+            ":show_image",
+            "@opencv_linux//:opencv",
+        ]
+        + select({
+            "@//:use_hip": ["//src/cuda:cuda_blend_cuda_lib_hip"],
+            "//conditions:default": ["//src/cuda:cuda_blend_cuda_lib"],
+        })
+    ),
 )
 
 cc_library(
@@ -41,10 +46,13 @@ cc_library(
         "-I/usr/include",
     ],
     visibility = ["//visibility:public"],
-    deps = [
-      "//src/pano:cuda_matrix",
-      "@local_cuda//:cuda_runtime",
-    ],
+    deps = (
+      ["//src/gpu:gpu_runtime", "//src/pano:cuda_matrix"]
+      + select({
+        "@//:use_hip": ["@local_rocm//:hip_runtime"],
+        "//conditions:default": ["@local_cuda//:cuda_runtime"],
+      })
+    ),
 )
 
 cc_library(
@@ -62,12 +70,13 @@ cc_library(
         "-lGL",
     ],
     visibility = ["//visibility:public"],
-    deps = [
-      ":gl_window",
-      "//src/pano:cuda_matrix",
-      "@local_cuda//:cuda_runtime",
-      "@opencv_linux//:opencv",
-    ],
+    deps = (
+      ["//src/gpu:gpu_runtime", ":gl_window", "//src/pano:cuda_matrix", "@opencv_linux//:opencv"]
+      + select({
+        "@//:use_hip": ["@local_rocm//:hip_runtime"],
+        "//conditions:default": ["@local_cuda//:cuda_runtime"],
+      })
+    ),
 )
 
 
@@ -86,11 +95,23 @@ cc_library(
         "-lGL",
     ],
     visibility = ["//visibility:public"],
-    deps = [
-      ":image_utils",
-      ":gl_window",
-      "//src/pano:cuda_matrix",
-      "@local_cuda//:cuda_runtime",
-      "@opencv_linux//:opencv",
+    deps = (
+      ["//src/gpu:gpu_runtime", ":image_utils", ":gl_window", "//src/pano:cuda_matrix", "@opencv_linux//:opencv"]
+      + select({
+        "@//:use_hip": ["@local_rocm//:hip_runtime"],
+        "//conditions:default": ["@local_cuda//:cuda_runtime"],
+      })
+    ),
+)
+
+# Headers used by HIP genrule to construct a virtual include tree
+filegroup(
+    name = "utils_public_headers",
+    srcs = [
+        "cudaBlendShow.h",
+        "cudaGLWindow.h",
+        "imageUtils.h",
+        "showImage.h",
     ],
+    visibility = ["//visibility:public"],
 )

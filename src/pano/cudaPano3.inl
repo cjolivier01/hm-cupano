@@ -32,7 +32,7 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
     bool quiet)
     : match_exposure_(match_exposure) {
   if (!control_masks.is_valid()) {
-    status_ = CudaStatus(cudaError_t::cudaErrorFileNotFound, "Stitching masks (3‐image) were not able to be loaded");
+    status_ = CudaStatus(cudaErrorFileNotFound, "Stitching masks (3‐image) were not able to be loaded");
     return;
   }
   // 1) Create stitch_context:
@@ -110,12 +110,8 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
 }
 
 namespace tmp3 {
-constexpr inline float3 neg(const float3& f) {
-  return float3{
-      .x = -f.x,
-      .y = -f.y,
-      .z = -f.z,
-  };
+inline float3 neg(const float3& f) {
+  return make_float3(-f.x, -f.y, -f.z);
 }
 
 template <typename T>
@@ -138,6 +134,7 @@ CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_blending
     int batch_size,
     cudaStream_t stream) {
   CudaStatus cuerr;
+  const T_pipeline default_pixel = T_pipeline{};
   assert(map_x.width() == map_y.width() && map_x.height() == map_y.height());
   // SOFT-SEAM: remap image0 onto canvas
   if (image_adjustment.has_value()) {
@@ -146,10 +143,7 @@ CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_blending
         dest_canvas.surface(),
         map_x.data(),
         map_y.data(),
-        /*deflt=*/
-        {
-            0,
-        },
+        /*deflt=*/default_pixel,
         /*batchSize=*/batch_size,
         map_x.width(),
         map_x.height(),
@@ -164,10 +158,7 @@ CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_blending
         dest_canvas.surface(),
         map_x.data(),
         map_y.data(),
-        /*deflt=*/
-        {
-            0,
-        },
+        /*deflt=*/default_pixel,
         /*batchSize=*/batch_size,
         map_x.width(),
         map_y.height(),
@@ -246,6 +237,7 @@ CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_hard_sea
     int batch_size,
     cudaStream_t stream) {
   CudaStatus cuerr;
+  const T_pipeline default_pixel = T_pipeline{};
   assert(map_x.width() == map_y.width() && map_x.height() == map_y.height());
 
   if (image_adjustment.has_value()) {
@@ -254,10 +246,7 @@ CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_hard_sea
         dest_canvas.surface(),
         map_x.data(),
         map_y.data(),
-        /*deflt=*/
-        {
-            0,
-        },
+        /*deflt=*/default_pixel,
         /*this_image_index=*/canvas_position_image_index, // channel 0 in the 3-channel mask
         canvas_position_image_index_map.data(),
         /*batchSize=*/batch_size,
@@ -273,10 +262,7 @@ CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_hard_sea
         dest_canvas.surface(),
         map_x.data(),
         map_y.data(),
-        /*deflt=*/
-        {
-            0,
-        },
+        /*deflt=*/default_pixel,
         /*this_image_index=*/canvas_position_image_index,
         canvas_position_image_index_map.data(),
         /*batchSize=*/batch_size,
@@ -560,7 +546,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
   if (match_exposure_ && !image_adjustment_.has_value()) {
     image_adjustment_ = compute_image_adjustment(inputImage0, inputImage1, inputImage2);
     if (!image_adjustment_.has_value()) {
-      return CudaStatus(cudaError_t::cudaErrorAssert, "Unable to compute 3‐image adjustment");
+      return CudaStatus(cudaErrorAssert, "Unable to compute 3‐image adjustment");
     }
   }
   auto result = process_impl(
@@ -580,11 +566,11 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
 
 // Compute per-image additive offsets (RGB) that minimize seam differences.
 template <typename T_pipeline, typename T_compute>
-std::optional<typename CudaStitchPano3<T_pipeline, T_compute>::ImageAdjust3>
-CudaStitchPano3<T_pipeline, T_compute>::compute_image_adjustment(
-    const CudaMat<T_pipeline>& inputImage0,
-    const CudaMat<T_pipeline>& inputImage1,
-    const CudaMat<T_pipeline>& inputImage2) {
+std::optional<typename CudaStitchPano3<T_pipeline, T_compute>::ImageAdjust3> CudaStitchPano3<T_pipeline, T_compute>::
+    compute_image_adjustment(
+        const CudaMat<T_pipeline>& inputImage0,
+        const CudaMat<T_pipeline>& inputImage1,
+        const CudaMat<T_pipeline>& inputImage2) {
   if (!whole_seam_mask_image_.has_value()) {
     return std::nullopt;
   }
@@ -611,9 +597,9 @@ CudaStitchPano3<T_pipeline, T_compute>::compute_image_adjustment(
     return std::nullopt;
   }
   ImageAdjust3 out{
-      .adj0 = float3{.x = (float)(*adj)[0][0], .y = (float)(*adj)[0][1], .z = (float)(*adj)[0][2]},
-      .adj1 = float3{.x = (float)(*adj)[1][0], .y = (float)(*adj)[1][1], .z = (float)(*adj)[1][2]},
-      .adj2 = float3{.x = (float)(*adj)[2][0], .y = (float)(*adj)[2][1], .z = (float)(*adj)[2][2]},
+      .adj0 = make_float3((float)(*adj)[0][0], (float)(*adj)[0][1], (float)(*adj)[0][2]),
+      .adj1 = make_float3((float)(*adj)[1][0], (float)(*adj)[1][1], (float)(*adj)[1][2]),
+      .adj2 = make_float3((float)(*adj)[2][0], (float)(*adj)[2][1], (float)(*adj)[2][2]),
   };
   return out;
 }

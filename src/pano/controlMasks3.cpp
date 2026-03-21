@@ -213,9 +213,11 @@ cv::Mat ControlMasks3::split_to_channels(const cv::Mat& seam_mask) {
   // `seam_mask` stores image indices. Some masks may not contain all labels, so we
   // build a fixed 3-channel one-hot encoding for indices {0,1,2} without requiring
   // all labels to appear.
-  channels[0].setTo(1, seam_mask == 0);
-  channels[1].setTo(1, seam_mask == 1);
-  channels[2].setTo(1, seam_mask == 2);
+
+  // Map label values 0,1,2 to fixed channel indices 0,1,2.
+  channels[0].setTo(1, (seam_mask == 0));
+  channels[1].setTo(1, (seam_mask == 1));
+  channels[2].setTo(1, (seam_mask == 2));
 
   // Merge channels back
   cv::merge(channels, seam_mask_dest);

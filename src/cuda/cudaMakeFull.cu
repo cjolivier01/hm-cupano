@@ -3,13 +3,8 @@
 
 #include "cudaUtils.cuh"
 
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <cassert>
-
-#if (CUDART_VERSION >= 11000)
-#include <cuda_bf16.h>
-#endif
-#include <cuda_fp16.h>
 
 ////////////////////////////////////////////////////////////////////////////////
 // Templated Device Kernels

@@ -4,7 +4,7 @@
 // Google Test for N-way Laplacian blending (templates in cudaBlendN.h/cudaBlendN.cu).
 /* clang-format on */
 
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <gtest/gtest.h>
 
 #include "cudaBlendN.h"

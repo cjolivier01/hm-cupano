@@ -28,7 +28,7 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
     : match_exposure_(match_exposure) {
   (void)max_output_width;
   if (!control_masks.is_valid()) {
-    status_ = CudaStatus(cudaError_t::cudaErrorFileNotFound, "Stitching masks were not able to be loaded");
+    status_ = CudaStatus(cudaErrorFileNotFound, "Stitching masks were not able to be loaded");
     return;
   }
   stitch_context_ = std::make_unique<StitchingContext<T_pipeline, T_compute>>(
@@ -99,12 +99,8 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
 }
 
 namespace tmp {
-constexpr inline float3 neg(const float3& f) {
-  return float3{
-      .x = -f.x,
-      .y = -f.y,
-      .z = -f.z,
-  };
+inline float3 neg(const float3& f) {
+  return make_float3(-f.x, -f.y, -f.z);
 }
 
 template <typename T>
@@ -143,9 +139,7 @@ CudaStatus write_image_pyramid_level(
     std::ostringstream filename;
     filename << "level_" << level << "_batch_" << batch_item << ".tiff";
     if (!cv::imwrite((subdir / filename.str()).string(), mat.download(batch_item))) {
-      return CudaStatus(
-          cudaErrorUnknown,
-          "Unable to write " + (subdir / filename.str()).string());
+      return CudaStatus(cudaErrorUnknown, "Unable to write " + (subdir / filename.str()).string());
     }
   }
   return CudaStatus::OkStatus();
@@ -189,6 +183,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
   CudaStatus cuerr;
+  const T_pipeline default_pixel = T_pipeline{};
 
   assert(canvas);
   assert(inputImage1.batch_size() == stitch_context.batch_size());
@@ -228,7 +223,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
             canvas->surface(),
             stitch_context.remap_1_x->data(),
             stitch_context.remap_1_y->data(),
-            {0, 0, 0},
+            default_pixel,
             /*batchSize=*/batch_size,
             stitch_context.remap_1_x->width(),
             stitch_context.remap_1_x->height(),
@@ -243,7 +238,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
             canvas->surface(),
             stitch_context.remap_1_x->data(),
             stitch_context.remap_1_y->data(),
-            {0, 0, 0},
+            default_pixel,
             /*batchSize=*/batch_size,
             stitch_context.remap_1_x->width(),
             stitch_context.remap_1_x->height(),
@@ -277,7 +272,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
             stitch_context.cudaFull1->surface(),
             stitch_context.remap_1_x->data(),
             stitch_context.remap_1_y->data(),
-            {0, 0, 0},
+            default_pixel,
             /*batchSize=*/batch_size,
             stitch_context.remap_1_x->width(),
             stitch_context.remap_1_x->height(),
@@ -292,7 +287,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
             stitch_context.cudaFull1->surface(),
             stitch_context.remap_1_x->data(),
             stitch_context.remap_1_y->data(),
-            {0, 0, 0},
+            default_pixel,
             /*batchSize=*/batch_size,
             stitch_context.remap_1_x->width(),
             stitch_context.remap_1_x->height(),
@@ -314,7 +309,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           canvas->surface(),
           stitch_context.remap_1_x->data(),
           stitch_context.remap_1_y->data(),
-          {0, 0, 0},
+          default_pixel,
           /*this_image_index=*/
           1 /* <-- we inverted the mask at load-time to make it a weight, so image 0 is actually 1 in the mask */,
           stitch_context.cudaBlendHardSeam->data(),
@@ -331,7 +326,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           canvas->surface(),
           stitch_context.remap_1_x->data(),
           stitch_context.remap_1_y->data(),
-          {0, 0, 0},
+          default_pixel,
           /*this_image_index=*/
           1 /* <-- we inverted the mask at load-time to make it a weight, so image 0 is actually 1 in the mask */,
           stitch_context.cudaBlendHardSeam->data(),
@@ -362,7 +357,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
             canvas->surface(),
             stitch_context.remap_2_x->data(),
             stitch_context.remap_2_y->data(),
-            {0, 0, 0},
+            default_pixel,
             /*batchSize=*/stitch_context.batch_size(),
             stitch_context.remap_2_x->width(),
             stitch_context.remap_2_x->height(),
@@ -377,7 +372,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
             canvas->surface(),
             stitch_context.remap_2_x->data(),
             stitch_context.remap_2_y->data(),
-            {0, 0, 0},
+            default_pixel,
             /*batchSize=*/stitch_context.batch_size(),
             stitch_context.remap_2_x->width(),
             stitch_context.remap_2_x->height(),
@@ -411,7 +406,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
             stitch_context.cudaFull2->surface(),
             stitch_context.remap_2_x->data(),
             stitch_context.remap_2_y->data(),
-            {0, 0, 0},
+            default_pixel,
             /*batchSize=*/stitch_context.batch_size(),
             stitch_context.remap_2_x->width(),
             stitch_context.remap_2_x->height(),
@@ -426,7 +421,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
             stitch_context.cudaFull2->surface(),
             stitch_context.remap_2_x->data(),
             stitch_context.remap_2_y->data(),
-            {0, 0, 0},
+            default_pixel,
             /*batchSize=*/stitch_context.batch_size(),
             stitch_context.remap_2_x->width(),
             stitch_context.remap_2_x->height(),
@@ -450,7 +445,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           canvas->surface(),
           stitch_context.remap_2_x->data(),
           stitch_context.remap_2_y->data(),
-          {0, 0, 0},
+          default_pixel,
           /*this_image_index=*/
           0 /* <-- we inverted the mask at load-time to make it a weight, so image 1 is actually 0 in the mask */,
           stitch_context.cudaBlendHardSeam->data(),
@@ -467,7 +462,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           canvas->surface(),
           stitch_context.remap_2_x->data(),
           stitch_context.remap_2_y->data(),
-          {0, 0, 0},
+          default_pixel,
           /*this_image_index=*/
           0 /* <-- we inverted the mask at load-time to make it a weight, so image 1 is actually 0 in the mask */,
           stitch_context.cudaBlendHardSeam->data(),
@@ -566,10 +561,8 @@ CudaStatus CudaStitchPano<T_pipeline, T_compute>::dump_soft_blend_pyramid(
   }
 
   for (int level = 0; level < context.numLevels; ++level) {
-    CUDA_RETURN_IF_ERROR(
-        write_image_pyramid_level<T_compute>(context, context.d_gauss1, level, directory, "gauss1"));
-    CUDA_RETURN_IF_ERROR(
-        write_image_pyramid_level<T_compute>(context, context.d_gauss2, level, directory, "gauss2"));
+    CUDA_RETURN_IF_ERROR(write_image_pyramid_level<T_compute>(context, context.d_gauss1, level, directory, "gauss1"));
+    CUDA_RETURN_IF_ERROR(write_image_pyramid_level<T_compute>(context, context.d_gauss2, level, directory, "gauss2"));
     CUDA_RETURN_IF_ERROR(write_mask_pyramid_level(context, context.d_maskPyr, level, directory, "mask"));
     CUDA_RETURN_IF_ERROR(write_image_pyramid_level<T_compute>(context, context.d_lap1, level, directory, "lap1"));
     CUDA_RETURN_IF_ERROR(write_image_pyramid_level<T_compute>(context, context.d_lap2, level, directory, "lap2"));
@@ -595,11 +588,7 @@ std::optional<float3> CudaStitchPano<T_pipeline, T_compute>::compute_image_adjus
       canvas_manager_->canvas_positions()[1]);
   if (adjustment_result.has_value()) {
     const cv::Scalar& adjustment = *adjustment_result;
-    return float3{
-        .x = (float)adjustment[0],
-        .y = (float)adjustment[1],
-        .z = (float)adjustment[2],
-    };
+    return make_float3((float)adjustment[0], (float)adjustment[1], (float)adjustment[2]);
   }
   return std::nullopt;
 }
@@ -614,7 +603,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   if (match_exposure_ && !image_adjustment_.has_value()) {
     image_adjustment_ = compute_image_adjustment(inputImage1, inputImage2);
     if (!image_adjustment_.has_value()) {
-      return CudaStatus(cudaError_t::cudaErrorAssert, "Unable to compute image adjustment");
+      return CudaStatus(cudaErrorAssert, "Unable to compute image adjustment");
     }
   }
   auto result = process_impl(

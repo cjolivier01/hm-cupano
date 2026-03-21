@@ -11,7 +11,7 @@
 // ./cudaBlend3_test
 /* clang-format on */
 
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <gtest/gtest.h>
 #include "cudaBlend3.h"
 
@@ -235,9 +235,9 @@ TEST(CudaBlend3SmallTest, SinglePixelRGBAAlphaBlending) {
   }
 
   // Expected blending:
-  // R = 0.2*10 + 0.3*50 + 0.5*90 = 2 + 15 + 45 = 62
-  // G = 0.2*20 + 0.3*60 + 0.5*100 = 4 + 18 + 50 = 72
-  // B = 0.2*30 + 0.3*70 + 0.5*110 = 6 + 21 + 55 = 82
+  // R = 0.2*10 + 0.3*50 + 0.5*90 = 62
+  // G = 0.2*20 + 0.3*60 + 0.5*100 = 72
+  // B = 0.2*30 + 0.3*70 + 0.5*110 = 82
   // A = max(alpha1, alpha2, alpha3) = 120 (alpha is not weight-blended).
   std::vector<float> expected = {62.0f, 72.0f, 82.0f, 120.0f};
 
@@ -280,8 +280,8 @@ TEST(CudaBlend3SmallTest, AlphaZeroSkipsContribution) {
   // Pull result back to host for verification
   CUDA_CHECK(cudaMemcpy(h_output.data(), output.data(), pixelCount * sizeof(float), cudaMemcpyDeviceToHost));
 
-  // Because image2 has alpha==0, its weight is zeroed and remaining weights renormalize:
-  // m1' = 0.1/(0.1+0.1) = 0.5, m3' = 0.5. So RGB = (img1+img3)/2, A = (255+255)/2 = 255.
+  // Because image2 has alpha==0, remaining weights renormalize across non-transparent inputs.
+  // m1' = 0.1/(0.1+0.1) = 0.5, m3' = 0.5. So RGB = (img1+img3)/2, A preserved (255).
   std::vector<float> expected{(10.0f + 90.0f) * 0.5f, (20.0f + 100.0f) * 0.5f, (30.0f + 110.0f) * 0.5f, 255.0f};
   for (int c = 0; c < channels; ++c) {
     EXPECT_NEAR(h_output[c], expected[c], kEpsilon) << "Channel " << c << " mismatch with alpha gating.";
@@ -320,7 +320,7 @@ TEST(CudaBlend3SmallTest, MaskSelectsTransparentThenFallback) {
   CUDA_CHECK(cudaDeviceSynchronize());
   CUDA_CHECK(cudaMemcpy(h_output.data(), output.data(), pixelCount * sizeof(float), cudaMemcpyDeviceToHost));
 
-  // Expect fallback picked image1 (highest alpha 255)
+  // Expect fallback picked image1 (highest alpha 255).
   std::vector<float> expected{255.0f, 0.0f, 0.0f, 255.0f};
   for (int c = 0; c < channels; ++c) {
     EXPECT_NEAR(h_output[c], expected[c], kEpsilon) << "Channel " << c << " mismatch in fallback.";

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 
 #include <opencv2/cudafeatures2d.hpp>
 #include <opencv2/cudaimgproc.hpp>

@@ -1,30 +1,6 @@
 #pragma once
 
-#include <cuda_runtime_api.h>
-
-#ifndef CUDART_VERSION
-#error CUDART_VERSION Undefined!
-#elif (CUDART_VERSION >= 12000)
-  // Code specific to CUDA 12.x and higher
-  #if (CUDART_VERSION >= 13000)
-    // Code specific to CUDA 13.x and higher
-  #else
-    // Code specific to CUDA 12.x (but lower than 13)
-  #endif
-#elif (CUDART_VERSION >= 11000)
-  // Code specific to CUDA 11.x
-#elif (CUDART_VERSION >= 10000)
-  // Code specific to CUDA 10.x
-#else
-  // Code for older CUDA versions or if CUDA is not available
-  #error Unsupported CUDA version
-#endif
-
-#if (CUDART_VERSION >= 11000)
-// #include <cuda_bf16.h>
-#endif
-
-#include <cuda_fp16.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <opencv2/opencv.hpp>
 #include <vector>
 
@@ -96,9 +72,12 @@ enum CudaPixelType {
   CUDA_PIXEL_HALF1, ///< 16-bit float (half), 1 channel (__half).
   CUDA_PIXEL_HALF3, ///< 16-bit float (half), 3 channels (half3).
   CUDA_PIXEL_HALF4, ///< 16-bit float (half), 4 channels (custom half4).
-  CUDA_PIXEL_BF16_1, ///< 16-bit bfloat, 1 channel (__nv_bfloat16).
+  // BF16 pixel types are only available when the backend supports BF16.
+#if GPU_HAS_BF16
+  CUDA_PIXEL_BF16_1, ///< 16-bit bfloat, 1 channel (gpu_bfloat16).
   CUDA_PIXEL_BF16_3, ///< 16-bit bfloat, 3 channels (bfloat16_3).
-  CUDA_PIXEL_BF16_4 ///< 16-bit bfloat, 4 channels (bfloat16_4).
+  CUDA_PIXEL_BF16_4  ///< 16-bit bfloat, 4 channels (bfloat16_4).
+#endif
 };
 
 /**
@@ -225,10 +204,10 @@ struct CudaPixelTypeToCudaType<CUDA_PIXEL_HALF4> {
   using type = half4; // Our custom half4.
 };
 
-#if (CUDART_VERSION >= 11000)
+#if GPU_HAS_BF16
 template <>
 struct CudaPixelTypeToCudaType<CUDA_PIXEL_BF16_1> {
-  using type = __nv_bfloat16;
+  using type = gpu_bfloat16;
 };
 
 template <>
@@ -279,9 +258,9 @@ struct CudaTypeToPixelType<__half> {
   static constexpr CudaPixelType value = CUDA_PIXEL_HALF1;
 };
 
-#if (CUDART_VERSION >= 11000)
+#if GPU_HAS_BF16
 template <>
-struct CudaTypeToPixelType<__nv_bfloat16> {
+struct CudaTypeToPixelType<gpu_bfloat16> {
   static constexpr CudaPixelType value = CUDA_PIXEL_BF16_1;
 };
 #endif
@@ -312,7 +291,7 @@ struct CudaTypeToPixelType<half3> {
   static constexpr CudaPixelType value = CUDA_PIXEL_HALF3;
 };
 
-#if (CUDART_VERSION >= 11000)
+#if GPU_HAS_BF16
 template <>
 struct CudaTypeToPixelType<bfloat16_3> {
   static constexpr CudaPixelType value = CUDA_PIXEL_BF16_3;

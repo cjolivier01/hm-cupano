@@ -30,6 +30,12 @@ config_setting(
     values = {"define": "enblend_cuda=true"},
 )
 
+# Global switch for selecting HIP/ROCm backend
+config_setting(
+    name = "use_hip",
+    values = {"define": "backend=hip"},
+)
+
 filegroup(
     name = "fpga_stitch_assets",
     srcs = [

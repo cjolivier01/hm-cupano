@@ -1,5 +1,5 @@
 #include "cudaMat.h"
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <cassert>
 
 namespace hm {

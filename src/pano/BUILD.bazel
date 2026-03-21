@@ -25,12 +25,18 @@ cc_library(
     ],
     include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
-    deps = [
-        ":cv_types",
-        "//src/cuda:cuda_types",
-        "@local_cuda//:cuda_runtime",
-        "@opencv_linux//:opencv",
-    ],
+    deps = (
+        [
+            "//src/gpu:gpu_runtime",
+            ":cv_types",
+            "//src/cuda:cuda_types",
+            "@opencv_linux//:opencv",
+        ]
+        + select({
+            "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "//conditions:default": ["@local_cuda//:cuda_runtime"],
+        })
+    ),
 )
 
 cc_library(
@@ -128,6 +134,7 @@ cc_library(
     include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
     deps = [
+        "//src/gpu:gpu_runtime",
         ":cv_types",
         ":canvas",
         ":cuda_matrix",
@@ -167,6 +174,16 @@ cc_test(
     "@googletest//:gtest",
     "@googletest//:gtest_main",
   ]
+)
+
+cc_test(
+  name = "cudaMat_basic_test",
+  srcs = ["cudaMat_basic_test.cpp"],
+  deps = [
+    ":cuda_pano",
+    "@googletest//:gtest",
+    "@googletest//:gtest_main",
+  ],
 )
 
 cc_test(
@@ -221,10 +238,25 @@ cc_library(
     ],
     include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
-    deps = [
-        ":cv_types",
-        ":canvas",
-        "//src/cuda:cuda_blend_cuda_lib",
-        "@opencv_linux//:opencv",
-    ],
+    deps = (
+        [
+            ":cv_types",
+            ":canvas",
+            "@opencv_linux//:opencv",
+        ]
+        + select({
+            "@//:use_hip": ["//src/cuda:cuda_blend_cuda_lib_hip"],
+            "//conditions:default": ["//src/cuda:cuda_blend_cuda_lib"],
+        })
+    ),
+)
+
+# Headers used by HIP genrule to construct a virtual include tree
+filegroup(
+    name = "pano_public_headers",
+    srcs = glob([
+        "*.h",
+        "*.inl",
+    ]),
+    visibility = ["//visibility:public"],
 )

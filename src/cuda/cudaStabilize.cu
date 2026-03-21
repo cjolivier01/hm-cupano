@@ -1,6 +1,6 @@
 #include "pthread_clock_compat.h"
 
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <math.h>
 #include <vector>
 

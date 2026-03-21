@@ -3,6 +3,7 @@ _workspace_name = "hm-cupano"
 workspace(name = _workspace_name)
 
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
+load("//:bazel/dependencies.bzl", "local_rocm_repository")
 
 git_repository(
     name = "rules_cuda",
@@ -222,4 +223,9 @@ git_repository(
     name = "enblend",
     remote = "https://github.com/cjolivier01/enblend-enfuse",
     branch = "colivier/hockeymom",
+)
+
+# Local ROCm (HIP) headers and runtime
+local_rocm_repository(
+    name = "local_rocm",
 )

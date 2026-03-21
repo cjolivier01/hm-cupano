@@ -1,10 +1,6 @@
 #pragma once
 
-#include <cuda_runtime.h>
-#if (CUDART_VERSION >= 11000)
-#include <cuda_bf16.h>
-#endif
-#include <cuda_fp16.h>
+#include <cupano/gpu/gpu_runtime.h>
 
 #include <cstdint>
 
@@ -39,24 +35,24 @@ struct half4 {
 
 // USHORT types are typically provided by CUDA as "ushort3", "ushort4" etc.
 // If not available, you could define your own similar to half3/half4.
-#if (CUDART_VERSION >= 11000)
+#if GPU_HAS_BF16
 #ifndef BF16_3_DEFINED
 #define BF16_3_DEFINED
 /**
- * @brief 3-element vector of __nv_bfloat16 values.
+ * @brief 3-element vector of gpu_bfloat16 values.
  */
 struct bfloat16_3 {
-  __nv_bfloat16 x, y, z;
+  gpu_bfloat16 x, y, z;
 };
 #endif
 
 #ifndef BF16_4_DEFINED
 #define BF16_4_DEFINED
 /**
- * @brief 4-element vector of __nv_bfloat16 values.
+ * @brief 4-element vector of gpu_bfloat16 values.
  */
 struct bfloat16_4 {
-  __nv_bfloat16 x, y, z, w;
+  gpu_bfloat16 x, y, z, w;
 };
 #endif
 #endif
@@ -110,10 +106,10 @@ struct BaseScalar<__half> {
   using type = __half;
 };
 
-#if (CUDART_VERSION >= 11000)
+#if GPU_HAS_BF16
 template <>
-struct BaseScalar<__nv_bfloat16> {
-  using type = __nv_bfloat16;
+struct BaseScalar<gpu_bfloat16> {
+  using type = gpu_bfloat16;
 };
 #endif
 // --- 3-channel types ---
@@ -142,10 +138,10 @@ struct BaseScalar<half3> {
   using type = __half;
 };
 
-#if (CUDART_VERSION >= 11000)
+#if GPU_HAS_BF16
 template <>
 struct BaseScalar<bfloat16_3> {
-  using type = __nv_bfloat16;
+  using type = gpu_bfloat16;
 };
 #endif
 
@@ -175,10 +171,10 @@ struct BaseScalar<half4> {
   using type = __half;
 };
 
-#if (CUDART_VERSION >= 11000)
+#if GPU_HAS_BF16
 template <>
 struct BaseScalar<bfloat16_4> {
-  using type = __nv_bfloat16;
+  using type = gpu_bfloat16;
 };
 #endif
 

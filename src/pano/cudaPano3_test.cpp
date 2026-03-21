@@ -1,6 +1,6 @@
 // cudaPano3_test.cpp
 
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <gtest/gtest.h>
 #include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
@@ -194,6 +194,7 @@ TEST(CudaStitchPano3_SoftSeamTrivial, OneHotLabelSelectsMiddleImage) {
   EXPECT_NEAR(pixel[0], 60.0f, 1e-3f);
   EXPECT_NEAR(pixel[1], 60.0f, 1e-3f);
   EXPECT_NEAR(pixel[2], 60.0f, 1e-3f);
+  // Preserve alpha
   EXPECT_NEAR(pixel[3], 255.0f, 1e-3f);
 }
 

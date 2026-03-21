@@ -7,9 +7,15 @@ build --copt=--std=c++17
 build --repo_env=AR=/usr/bin/ar
 build --repo_env=CC=/usr/bin/gcc
 build --repo_env=CXX=/usr/bin/g++
+build --repo_env=CUDA_HOME
+build --repo_env=CUDA_PATH
+build --repo_env=CUDA_ROOT
 build --repo_env=LD=/usr/bin/ld
 build --repo_env=NM=/usr/bin/nm
 build --repo_env=RANLIB=/usr/bin/ranlib
+build --repo_env=HIP_PATH
+build --repo_env=ROCM_PATH
+build --flag_alias=cuda_archs=@rules_cuda//cuda:archs
 
 #build -c opt
 build:opt -c opt
@@ -41,3 +47,10 @@ build --action_env=target_platform="jetson"
 build:jetson --cpu=aarch64
 build:jetson --define=target_platform=jetson
 build:jetson --action_env=target_platform="jetson"
+
+# ROCm/HIP backend config
+build:rocm --define=backend=hip
+build:rocm --cxxopt=-DUSE_HIP
+build:rocm --host_cxxopt=-DUSE_HIP
+build:rocm --cxxopt=-D__HIP_PLATFORM_AMD__
+build:rocm --host_cxxopt=-D__HIP_PLATFORM_AMD__

@@ -1,5 +1,5 @@
 // cudaBlendN.cu
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 #include <iostream>
 #include <vector>
 #include "cudaBlendN.h"

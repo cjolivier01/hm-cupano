@@ -1,11 +1,11 @@
 #pragma once
 
-#include <cuda_runtime.h>
+#include <cupano/gpu/gpu_runtime.h>
 
 template <typename T>
 void adjustImageCudaBatch(T* d_image, int batchSize, int width, int height, const float3& adjustment);
 
-#ifdef __CUDACC__
+#if defined(__CUDACC__) || defined(__HIPCC__)
 template <typename T>
 struct PixelAdjuster {
   __device__ static T adjust(const T& pixel, const float3& adjustment);
