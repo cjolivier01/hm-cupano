@@ -80,8 +80,28 @@ detect_rocm_path() {
 	return 1
 }
 
+normalize_cuda_arch_for_rules_cuda() {
+	local arch="$1"
+
+	case "$arch" in
+	30|32|35|37|50|52|53|60|61|62|70|72|75|80|86|87|89|90)
+		printf 'sm_%s\n' "$arch"
+		return 0
+		;;
+	esac
+
+	# Older rules_cuda releases in this repo currently top out at sm_90.
+	if [ "$arch" -gt 90 ] 2>/dev/null; then
+		printf '%s\n' 'sm_90'
+		return 0
+	fi
+
+	return 1
+}
+
 detect_cuda_bazel_archs() {
 	local archs=""
+	local raw_archs=""
 
 	if [ -n "${CUDA_BAZEL_ARCHS:-}" ]; then
 		printf '%s\n' "$CUDA_BAZEL_ARCHS"
@@ -89,7 +109,7 @@ detect_cuda_bazel_archs() {
 	fi
 
 	if command -v nvidia-smi >/dev/null 2>&1; then
-		archs="$(
+		raw_archs="$(
 			nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits 2>/dev/null \
 				| awk '
 					NF {
@@ -97,9 +117,16 @@ detect_cuda_bazel_archs() {
 						if (length($1) == 1) {
 							$1 = $1 "0"
 						}
-						print "sm_" $1
+						print $1
 					}
-				' \
+					' \
+					| awk '!seen[$0]++'
+			)"
+
+		archs="$(
+			while IFS= read -r arch; do
+				normalize_cuda_arch_for_rules_cuda "$arch" || true
+			done <<<"$raw_archs" \
 				| awk '!seen[$0]++' \
 				| paste -sd ';' -
 		)"
