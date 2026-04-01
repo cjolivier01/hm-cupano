@@ -88,3 +88,17 @@ cc_binary(
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         }),
 )
+
+sh_test(
+    name = "ffmpeg_cuda_runtime_test",
+    srcs = ["ffmpeg_cuda_runtime_test.sh"],
+    args = ["$(location @ffmpeg_linux//:ffmpeg)"],
+    data = [
+        "@ffmpeg_linux//:ffmpeg",
+        "@ffmpeg_linux//:runtime_libs",
+    ],
+    tags = [
+        "local",
+        "requires-gpu",
+    ],
+)

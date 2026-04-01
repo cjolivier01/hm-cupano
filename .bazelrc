@@ -54,3 +54,5 @@ build:rocm --cxxopt=-DUSE_HIP
 build:rocm --host_cxxopt=-DUSE_HIP
 build:rocm --cxxopt=-D__HIP_PLATFORM_AMD__
 build:rocm --host_cxxopt=-D__HIP_PLATFORM_AMD__
+
+common --enable_bzlmod

@@ -3,7 +3,7 @@ _workspace_name = "hm-cupano"
 workspace(name = _workspace_name)
 
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
-load("//:bazel/dependencies.bzl", "local_rocm_repository")
+load("//bazel:dependencies.bzl", "local_rocm_repository")
 
 git_repository(
     name = "rules_cuda",

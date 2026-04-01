@@ -1,1 +1,6 @@
-bazel_dep(name = "googletest", version = "1.17.0")
+module(
+    name = "hm_cupano",
+)
+
+ffmpeg_ext = use_extension("//bazel:ffmpeg_extension.bzl", "ffmpeg_ext")
+use_repo(ffmpeg_ext, "ffmpeg_linux")

@@ -64,22 +64,47 @@ def _detect_opencv():
     fail("OpenCV headers not found (looked for opencv5/opencv2 or opencv4/opencv2)")
 
 
+_REQUIRED_OPENCV_LIBS = [
+    "core",
+    "imgproc",
+    "imgcodecs",
+    "highgui",
+    "video",
+    "videoio",
+    "cudacodec",
+    "cudaimgproc",
+    "cudawarping",
+]
+
+
+def _ensure_required_libs(lib_dir):
+    missing = []
+    for lib in _REQUIRED_OPENCV_LIBS:
+        if not native.glob(["{}/libopencv_{}.so*".format(lib_dir, lib)], allow_empty = True):
+            missing.append(lib)
+
+    if missing:
+        fail("OpenCV is missing required libs in '{}': {}".format(lib_dir, ", ".join(missing)))
+
+
 def opencv_library(name, visibility = None):
     detected = _detect_opencv()
+    if not detected.lib_dir_abs or not detected.lib_dir:
+        fail("OpenCV headers were found, but no corresponding OpenCV lib directory was detected")
 
-    linkopts = []
-    if detected.lib_dir_abs:
-        linkopts.append("-L{}".format(detected.lib_dir_abs))
-        linkopts.append("-Wl,-rpath,{}".format(detected.lib_dir_abs))
+    # Enforce that CUDA-enabled OpenCV libs are available at analysis time.
+    _ensure_required_libs(detected.lib_dir)
 
-    linkopts.extend([
+    linkopts = [
+        "-L{}".format(detected.lib_dir_abs),
+        "-Wl,-rpath,{}".format(detected.lib_dir_abs),
         "-l:libopencv_core.so",
         "-l:libopencv_imgproc.so",
         "-l:libopencv_imgcodecs.so",
         "-l:libopencv_highgui.so",
         "-l:libopencv_video.so",
         "-l:libopencv_videoio.so",
-    ])
+    ]
 
     native.cc_library(
         name = name,
