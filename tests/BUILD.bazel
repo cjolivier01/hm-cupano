@@ -27,7 +27,6 @@ cc_binary(
         "-lopencv_cudaimgproc",
         "-lopencv_cudawarping",
     ],
-    tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = ["//src/pano:cuda_pano", "@opencv_linux//:opencv"]
         + select({
@@ -48,7 +47,6 @@ cc_binary(
         "-lopencv_cudaimgproc",
         "-lopencv_cudawarping",
     ],
-    tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = ["//src/pano:cuda_pano", "@opencv_linux//:opencv"]
         + select({
