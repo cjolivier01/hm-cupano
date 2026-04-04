@@ -59,6 +59,7 @@ def _detect_opencv():
                     includes = includes,
                     lib_dir = lib_dir,
                     lib_dir_abs = lib_dir_abs,
+                    prefix = prefix,
                 )
 
     fail("OpenCV headers not found (looked for opencv5/opencv2 or opencv4/opencv2)")
@@ -78,6 +79,28 @@ _REQUIRED_OPENCV_LIBS = [
 
 _CPU_OPENCV_LIBS = ["core", "imgproc", "imgcodecs", "highgui", "video", "videoio"]
 _CUDA_OPENCV_LIBS = ["cudacodec", "cudaimgproc", "cudawarping"]
+_REQUIRED_CUDA_HEADERS = [
+    "cudaarithm.hpp",
+    "cudacodec.hpp",
+    "cudaimgproc.hpp",
+    "cudawarping.hpp",
+]
+
+_CUDA_NVCC_GLOBS = [
+    "bin/nvcc",
+    "local/cuda/bin/nvcc",
+    "local/cuda-*/bin/nvcc",
+    "lib/cuda/bin/nvcc",
+]
+
+_CUDA_CUDART_GLOBS = [
+    "lib/x86_64-linux-gnu/libcudart.so*",
+    "lib/aarch64-linux-gnu/libcudart.so*",
+    "lib/libcudart.so*",
+    "lib64/libcudart.so*",
+    "local/cuda/lib64/libcudart.so*",
+    "local/cuda-*/lib64/libcudart.so*",
+]
 
 
 def _dedupe(values):
@@ -89,6 +112,13 @@ def _dedupe(values):
         seen[value] = True
         out.append(value)
     return out
+
+
+def _has_any_glob(patterns):
+    for pattern in patterns:
+        if native.glob([pattern], allow_empty = True):
+            return True
+    return False
 
 
 def _collect_soname_suffixes(lib_dir, lib):
@@ -127,6 +157,25 @@ def _find_common_suffixes(lib_dir, libs):
     return common
 
 
+def _ensure_cuda_toolkit():
+    if not _has_any_glob(_CUDA_NVCC_GLOBS):
+        fail("CUDA toolkit is required for OpenCV build, but nvcc was not found under /usr")
+
+    if not _has_any_glob(_CUDA_CUDART_GLOBS):
+        fail("CUDA toolkit is required for OpenCV build, but libcudart.so was not found under /usr")
+
+
+def _ensure_required_headers(prefix):
+    missing = []
+    for header in _REQUIRED_CUDA_HEADERS:
+        header_path = "{}/opencv2/{}".format(prefix, header)
+        if not native.glob([header_path], allow_empty = True):
+            missing.append(header)
+
+    if missing:
+        fail("OpenCV CUDA headers are missing in '{}': {}".format(prefix, ", ".join(missing)))
+
+
 def _ensure_required_libs(lib_dir):
     missing = []
     for lib in _REQUIRED_OPENCV_LIBS:
@@ -134,7 +183,7 @@ def _ensure_required_libs(lib_dir):
             missing.append(lib)
 
     if missing:
-        fail("OpenCV is missing required libs in '{}': {}".format(lib_dir, ", ".join(missing)))
+        fail("CUDA-enabled OpenCV is required, but missing libs in '{}': {}".format(lib_dir, ", ".join(missing)))
 
     # Keep CPU-side OpenCV libraries ABI-consistent.
     cpu_common = _find_common_suffixes(lib_dir, _CPU_OPENCV_LIBS)
@@ -148,11 +197,14 @@ def _ensure_required_libs(lib_dir):
 
 
 def opencv_library(name, visibility = None):
+    _ensure_cuda_toolkit()
+
     detected = _detect_opencv()
     if not detected.lib_dir_abs or not detected.lib_dir:
         fail("OpenCV headers were found, but no corresponding OpenCV lib directory was detected")
 
-    # Enforce that CUDA-enabled OpenCV libs are available at analysis time.
+    # Enforce that CUDA-enabled OpenCV libs/headers are available at analysis time.
+    _ensure_required_headers(detected.prefix)
     _ensure_required_libs(detected.lib_dir)
 
     linkopts = [

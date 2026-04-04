@@ -1,4 +1,4 @@
-"""Repository rule that builds FFmpeg with project-required settings."""
+"""Repository rule that builds FFmpeg with required CUDA/NVDEC/NVENC settings."""
 
 _FFMPEG_BASE_CONFIGURE_FLAGS = [
     "--disable-doc",
@@ -75,10 +75,6 @@ def _build_env(ctx, cuda_home):
     return env
 
 
-def _has_nvcc(ctx, env):
-    return ctx.execute(["bash", "-lc", "command -v nvcc"], environment = env, quiet = True).return_code == 0
-
-
 def _detect_nvcc_arch(ctx, env):
     # CUDA 12+ may drop older default arches (e.g. compute_60). Pick the
     # lowest nvcc-supported arch so configure checks remain portable.
@@ -100,7 +96,12 @@ def _ffmpeg_linux_repo_impl(ctx):
     install_dir = "install"
     cuda_home = ctx.os.environ.get("CUDA_HOME", "") or ctx.os.environ.get("CUDA_PATH", "") or ctx.os.environ.get("CUDA_ROOT", "") or "/usr/local/cuda"
     env = _build_env(ctx, cuda_home)
-    nvcc_available = _has_nvcc(ctx, env)
+
+    nvcc_check = ctx.execute(["bash", "-lc", "command -v nvcc"], environment = env, quiet = True)
+    if nvcc_check.return_code:
+        fail("Could not find nvcc while preparing FFmpeg build (searched PATH with CUDA home {}).".format(cuda_home))
+
+    nvcc_arch = _detect_nvcc_arch(ctx, env)
 
     ctx.download_and_extract(
         url = "https://ffmpeg.org/releases/ffmpeg-{}.tar.xz".format(version),
@@ -112,16 +113,11 @@ def _ffmpeg_linux_repo_impl(ctx):
     configure_args = [
         "./configure",
         "--prefix={}".format(ctx.path(install_dir)),
-    ] + _FFMPEG_BASE_CONFIGURE_FLAGS
-
-    if nvcc_available:
-        nvcc_arch = _detect_nvcc_arch(ctx, env)
-        configure_args.extend([
-            "--extra-cflags=-I{}/include".format(cuda_home),
-            "--extra-ldflags=-L{}/lib64".format(cuda_home),
-            "--nvcc={}/bin/nvcc".format(cuda_home),
-            "--nvccflags=-gencode arch=compute_{0},code=sm_{0} -gencode arch=compute_{0},code=compute_{0}".format(nvcc_arch),
-        ] + _FFMPEG_CUDA_CONFIGURE_FLAGS)
+        "--extra-cflags=-I{}/include".format(cuda_home),
+        "--extra-ldflags=-L{}/lib64".format(cuda_home),
+        "--nvcc={}/bin/nvcc".format(cuda_home),
+        "--nvccflags=-gencode arch=compute_{0},code=sm_{0} -gencode arch=compute_{0},code=compute_{0}".format(nvcc_arch),
+    ] + _FFMPEG_BASE_CONFIGURE_FLAGS + _FFMPEG_CUDA_CONFIGURE_FLAGS
 
     if ctx.which("rocm-smi"):
         configure_args.extend([
@@ -135,16 +131,10 @@ def _ffmpeg_linux_repo_impl(ctx):
     build_script = [
         "set -euo pipefail",
         "cd {}".format(_shell_quote(ctx.path(src_dir))),
-    ]
-
-    if not nvcc_available:
-        build_script.append("echo 'nvcc not found; building CPU-only FFmpeg in @ffmpeg_linux' >&2")
-
-    build_script.extend([
         _join_shell_args(configure_args),
         "make -j{}".format(jobs),
         "make install",
-    ])
+    ]
 
     result = ctx.execute(["bash", "-lc", "\n".join(build_script)], environment = env, quiet = False)
     if result.return_code:
