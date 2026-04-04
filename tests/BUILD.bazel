@@ -23,12 +23,9 @@ cc_binary(
     linkopts = [
         "-ltiff",
         "-lopencv_imgproc",
-        "-lopencv_cudacodec",
-        "-lopencv_cudaimgproc",
-        "-lopencv_cudawarping",
     ],
     visibility = ["//visibility:public"],
-    deps = ["//src/pano:cuda_pano", "@opencv_linux//:opencv"]
+    deps = ["//src/pano:cuda_pano", "@ffmpeg_linux//:ffmpeg_libs", "@opencv_linux//:opencv"]
         + select({
             "@//:use_hip": ["@local_rocm//:hip_runtime"],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
@@ -43,12 +40,9 @@ cc_binary(
     linkopts = [
         "-ltiff",
         "-lopencv_imgproc",
-        "-lopencv_cudacodec",
-        "-lopencv_cudaimgproc",
-        "-lopencv_cudawarping",
     ],
     visibility = ["//visibility:public"],
-    deps = ["//src/pano:cuda_pano", "@opencv_linux//:opencv"]
+    deps = ["//src/pano:cuda_pano", "@ffmpeg_linux//:ffmpeg_libs", "@opencv_linux//:opencv"]
         + select({
             "@//:use_hip": ["@local_rocm//:hip_runtime"],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],

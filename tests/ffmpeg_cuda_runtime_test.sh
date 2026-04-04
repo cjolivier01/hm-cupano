@@ -19,6 +19,11 @@ if [[ -z "$ffmpeg_bin" || ! -x "$ffmpeg_bin" ]]; then
   exit 1
 fi
 
+ffmpeg_root="$(cd "$(dirname "$ffmpeg_bin")/.." && pwd -P)"
+if [[ -d "$ffmpeg_root/lib" ]]; then
+  export LD_LIBRARY_PATH="$ffmpeg_root/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
 require_cmd nvidia-smi
 
 if ! nvidia-smi --query-gpu=name --format=csv,noheader >/dev/null 2>&1; then

@@ -1,18 +1,12 @@
-"""Repository rule that builds FFmpeg with project-required CUDA/NVDEC/NVENC settings."""
+"""Repository rule that builds FFmpeg with project-required settings."""
 
-_FFMPEG_CONFIGURE_FLAGS = [
+_FFMPEG_BASE_CONFIGURE_FLAGS = [
     "--disable-doc",
     "--enable-decoder=aac",
     "--enable-decoder=h264",
-    "--enable-decoder=h264_cuvid",
-    "--enable-decoder=hevc_cuvid",
-    "--enable-decoder=av1_cuvid",
     "--enable-decoder=rawvideo",
     "--enable-indev=lavfi",
     "--enable-encoder=libx264",
-    "--enable-encoder=h264_nvenc",
-    "--enable-encoder=hevc_nvenc",
-    "--enable-encoder=av1_nvenc",
     "--enable-demuxer=mov",
     "--enable-muxer=mp4",
     "--enable-filter=scale",
@@ -23,12 +17,7 @@ _FFMPEG_CONFIGURE_FLAGS = [
     "--enable-shared",
     "--enable-gpl",
     "--enable-nonfree",
-    "--enable-cuda-nvcc",
     "--enable-libx264",
-    "--disable-libnpp",
-    "--enable-nvenc",
-    "--enable-cuvid",
-    "--enable-nvdec",
     "--enable-pic",
     "--enable-rpath",
     "--enable-libfontconfig",
@@ -37,6 +26,20 @@ _FFMPEG_CONFIGURE_FLAGS = [
     "--enable-libharfbuzz",
     "--enable-libvidstab",
     "--enable-vaapi",
+]
+
+_FFMPEG_CUDA_CONFIGURE_FLAGS = [
+    "--enable-decoder=h264_cuvid",
+    "--enable-decoder=hevc_cuvid",
+    "--enable-decoder=av1_cuvid",
+    "--enable-encoder=h264_nvenc",
+    "--enable-encoder=hevc_nvenc",
+    "--enable-encoder=av1_nvenc",
+    "--enable-cuda-nvcc",
+    "--disable-libnpp",
+    "--enable-nvenc",
+    "--enable-cuvid",
+    "--enable-nvdec",
 ]
 
 
@@ -72,6 +75,10 @@ def _build_env(ctx, cuda_home):
     return env
 
 
+def _has_nvcc(ctx, env):
+    return ctx.execute(["bash", "-lc", "command -v nvcc"], environment = env, quiet = True).return_code == 0
+
+
 def _detect_nvcc_arch(ctx, env):
     # CUDA 12+ may drop older default arches (e.g. compute_60). Pick the
     # lowest nvcc-supported arch so configure checks remain portable.
@@ -93,10 +100,7 @@ def _ffmpeg_linux_repo_impl(ctx):
     install_dir = "install"
     cuda_home = ctx.os.environ.get("CUDA_HOME", "") or ctx.os.environ.get("CUDA_PATH", "") or ctx.os.environ.get("CUDA_ROOT", "") or "/usr/local/cuda"
     env = _build_env(ctx, cuda_home)
-    nvcc_check = ctx.execute(["bash", "-lc", "command -v nvcc"], environment = env, quiet = True)
-    if nvcc_check.return_code:
-        fail("Could not find nvcc while preparing FFmpeg build (searched PATH with CUDA home {}).".format(cuda_home))
-    nvcc_arch = _detect_nvcc_arch(ctx, env)
+    nvcc_available = _has_nvcc(ctx, env)
 
     ctx.download_and_extract(
         url = "https://ffmpeg.org/releases/ffmpeg-{}.tar.xz".format(version),
@@ -108,11 +112,16 @@ def _ffmpeg_linux_repo_impl(ctx):
     configure_args = [
         "./configure",
         "--prefix={}".format(ctx.path(install_dir)),
-        "--extra-cflags=-I{}/include".format(cuda_home),
-        "--extra-ldflags=-L{}/lib64".format(cuda_home),
-        "--nvcc={}/bin/nvcc".format(cuda_home),
-        "--nvccflags=-gencode arch=compute_{0},code=sm_{0} -gencode arch=compute_{0},code=compute_{0}".format(nvcc_arch),
-    ] + _FFMPEG_CONFIGURE_FLAGS
+    ] + _FFMPEG_BASE_CONFIGURE_FLAGS
+
+    if nvcc_available:
+        nvcc_arch = _detect_nvcc_arch(ctx, env)
+        configure_args.extend([
+            "--extra-cflags=-I{}/include".format(cuda_home),
+            "--extra-ldflags=-L{}/lib64".format(cuda_home),
+            "--nvcc={}/bin/nvcc".format(cuda_home),
+            "--nvccflags=-gencode arch=compute_{0},code=sm_{0} -gencode arch=compute_{0},code=compute_{0}".format(nvcc_arch),
+        ] + _FFMPEG_CUDA_CONFIGURE_FLAGS)
 
     if ctx.which("rocm-smi"):
         configure_args.extend([
@@ -123,15 +132,21 @@ def _ffmpeg_linux_repo_impl(ctx):
 
     jobs = _detect_jobs(ctx)
 
-    build_script = "\n".join([
+    build_script = [
         "set -euo pipefail",
         "cd {}".format(_shell_quote(ctx.path(src_dir))),
+    ]
+
+    if not nvcc_available:
+        build_script.append("echo 'nvcc not found; building CPU-only FFmpeg in @ffmpeg_linux' >&2")
+
+    build_script.extend([
         _join_shell_args(configure_args),
         "make -j{}".format(jobs),
         "make install",
     ])
 
-    result = ctx.execute(["bash", "-lc", build_script], environment = env, quiet = False)
+    result = ctx.execute(["bash", "-lc", "\n".join(build_script)], environment = env, quiet = False)
     if result.return_code:
         fail("\n".join([
             "FFmpeg build failed (return code {}).".format(result.return_code),
@@ -139,12 +154,13 @@ def _ffmpeg_linux_repo_impl(ctx):
             "stderr:\n{}".format(result.stderr),
         ]))
 
+    install_lib = str(ctx.path(install_dir + "/lib"))
     ctx.file(
         "BUILD.bazel",
         """
 package(default_visibility = ["//visibility:public"])
 
-licenses(["notice"])
+licenses(["restricted"])
 
 cc_import(
     name = "avcodec",
@@ -190,6 +206,20 @@ cc_library(
     name = "ffmpeg_libs",
     hdrs = glob(["install/include/**/*.h"]),
     includes = ["install/include"],
+    linkopts = [
+        "-L{install_lib}",
+        "-Wl,-rpath,{install_lib}",
+        "-Wl,--no-as-needed",
+        "-l:libavcodec.so",
+        "-l:libavdevice.so",
+        "-l:libavfilter.so",
+        "-l:libavformat.so",
+        "-l:libavutil.so",
+        "-l:libpostproc.so",
+        "-l:libswresample.so",
+        "-l:libswscale.so",
+        "-Wl,--as-needed",
+    ],
     deps = [
         ":avcodec",
         ":avdevice",
@@ -216,7 +246,7 @@ filegroup(
     name = "runtime_libs",
     srcs = glob(["install/lib/*.so*"]),
 )
-""",
+""".format(install_lib = install_lib),
     )
 
 

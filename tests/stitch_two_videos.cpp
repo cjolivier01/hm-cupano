@@ -57,6 +57,8 @@
 #include <type_traits>
 #include <vector>
 
+extern "C" unsigned avcodec_version(void);
+
 namespace {
 
 /**
@@ -365,6 +367,8 @@ static void maybe_print_progress(
  * stitch loop while printing progress.
  */
 int main(int argc, char** argv) {
+  const volatile unsigned ffmpeg_link_probe = avcodec_version();
+  (void)ffmpeg_link_probe;
   std::string left_path;
   std::string right_path;
   std::string out_path = "stitched_two.mp4";

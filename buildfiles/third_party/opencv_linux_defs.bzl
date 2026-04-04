@@ -1,12 +1,12 @@
 def _candidate_prefixes(version):
-    # Search order: prefer /usr/local includes, then /usr includes, then multiarch variants.
+    # Search order: prefer /usr includes first to avoid stale local installs, then /usr/local.
     return [
-        "local/include/{}".format(version),
         "include/{}".format(version),
-        "local/include/x86_64-linux-gnu/{}".format(version),
         "include/x86_64-linux-gnu/{}".format(version),
-        "local/include/aarch64-linux-gnu/{}".format(version),
         "include/aarch64-linux-gnu/{}".format(version),
+        "local/include/{}".format(version),
+        "local/include/x86_64-linux-gnu/{}".format(version),
+        "local/include/aarch64-linux-gnu/{}".format(version),
     ]
 
 
@@ -76,6 +76,56 @@ _REQUIRED_OPENCV_LIBS = [
     "cudawarping",
 ]
 
+_CPU_OPENCV_LIBS = ["core", "imgproc", "imgcodecs", "highgui", "video", "videoio"]
+_CUDA_OPENCV_LIBS = ["cudacodec", "cudaimgproc", "cudawarping"]
+
+
+def _dedupe(values):
+    seen = {}
+    out = []
+    for value in values:
+        if value in seen:
+            continue
+        seen[value] = True
+        out.append(value)
+    return out
+
+
+def _collect_soname_suffixes(lib_dir, lib):
+    prefix = "{}/libopencv_{}.so.".format(lib_dir, lib)
+    matches = native.glob(["{}/libopencv_{}.so.*".format(lib_dir, lib)], allow_empty = True)
+    suffixes = []
+    for path in matches:
+        if path.startswith(prefix):
+            suffixes.append(path[len(prefix):])
+    return _dedupe(suffixes)
+
+
+def _intersection(lhs, rhs):
+    rhs_set = {}
+    for item in rhs:
+        rhs_set[item] = True
+    out = []
+    for item in lhs:
+        if item in rhs_set:
+            out.append(item)
+    return out
+
+
+def _find_common_suffixes(lib_dir, libs):
+    common = None
+    for lib in libs:
+        suffixes = _collect_soname_suffixes(lib_dir, lib)
+        if not suffixes:
+            return []
+        if common == None:
+            common = suffixes
+        else:
+            common = _intersection(common, suffixes)
+        if not common:
+            return []
+    return common
+
 
 def _ensure_required_libs(lib_dir):
     missing = []
@@ -85,6 +135,16 @@ def _ensure_required_libs(lib_dir):
 
     if missing:
         fail("OpenCV is missing required libs in '{}': {}".format(lib_dir, ", ".join(missing)))
+
+    # Keep CPU-side OpenCV libraries ABI-consistent.
+    cpu_common = _find_common_suffixes(lib_dir, _CPU_OPENCV_LIBS)
+    if not cpu_common:
+        fail("OpenCV CPU libs are version-inconsistent in '{}': {}".format(lib_dir, ", ".join(_CPU_OPENCV_LIBS)))
+
+    # Keep CUDA-side OpenCV libraries ABI-consistent.
+    cuda_common = _find_common_suffixes(lib_dir, _CUDA_OPENCV_LIBS)
+    if not cuda_common:
+        fail("OpenCV CUDA libs are version-inconsistent in '{}': {}".format(lib_dir, ", ".join(_CUDA_OPENCV_LIBS)))
 
 
 def opencv_library(name, visibility = None):
@@ -104,6 +164,9 @@ def opencv_library(name, visibility = None):
         "-l:libopencv_highgui.so",
         "-l:libopencv_video.so",
         "-l:libopencv_videoio.so",
+        "-l:libopencv_cudacodec.so",
+        "-l:libopencv_cudaimgproc.so",
+        "-l:libopencv_cudawarping.so",
     ]
 
     native.cc_library(
