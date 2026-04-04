@@ -3,7 +3,7 @@ _workspace_name = "hm-cupano"
 workspace(name = _workspace_name)
 
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
-load("//bazel:dependencies.bzl", "local_rocm_repository")
+load("//bazel:dependencies.bzl", "local_rocm_repository", "opencv_linux_repository")
 
 git_repository(
     name = "rules_cuda",
@@ -195,11 +195,8 @@ cc_library(
 """,
 )
 
-new_local_repository(
+opencv_linux_repository(
     name = "opencv_linux",
-    build_file = "@//buildfiles:third_party/opencv_linux.BUILD",
-    path = "/usr",
-    # path = "/usr/local/include",
 )
 
 new_git_repository(

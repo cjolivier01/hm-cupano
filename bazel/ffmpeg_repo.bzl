@@ -1,4 +1,4 @@
-"""Repository rule that builds FFmpeg with required CUDA/NVDEC/NVENC settings."""
+"""Repository rule that builds FFmpeg with a required GPU backend (CUDA or ROCm)."""
 
 _FFMPEG_BASE_CONFIGURE_FLAGS = [
     "--disable-doc",
@@ -42,6 +42,12 @@ _FFMPEG_CUDA_CONFIGURE_FLAGS = [
     "--enable-nvdec",
 ]
 
+_FFMPEG_ROCM_CONFIGURE_FLAGS = [
+    "--enable-amf",
+    "--enable-encoder=hevc_amf",
+    "--enable-decoder=hevc_amf",
+]
+
 
 def _shell_quote(value):
     value_str = str(value)
@@ -75,6 +81,26 @@ def _build_env(ctx, cuda_home):
     return env
 
 
+def _normalize_backend(raw_backend):
+    backend = (raw_backend or "auto").strip().lower()
+    if backend == "":
+        backend = "auto"
+    if backend not in ["auto", "cuda", "rocm"]:
+        fail("Invalid GPU_BACKEND '{}'; expected one of: auto, cuda, rocm".format(backend))
+    return backend
+
+
+def _has_nvcc(ctx, env):
+    return ctx.execute(["bash", "-lc", "command -v nvcc"], environment = env, quiet = True).return_code == 0
+
+
+def _has_rocm_tool(ctx, env):
+    return (
+        ctx.execute(["bash", "-lc", "command -v hipcc"], environment = env, quiet = True).return_code == 0 or
+        ctx.execute(["bash", "-lc", "command -v rocm-smi"], environment = env, quiet = True).return_code == 0
+    )
+
+
 def _detect_nvcc_arch(ctx, env):
     # CUDA 12+ may drop older default arches (e.g. compute_60). Pick the
     # lowest nvcc-supported arch so configure checks remain portable.
@@ -90,6 +116,24 @@ def _detect_nvcc_arch(ctx, env):
     return "75"
 
 
+def _select_backend(requested_backend, nvcc_available, rocm_available):
+    if requested_backend == "cuda":
+        if not nvcc_available:
+            fail("GPU_BACKEND=cuda was requested, but CUDA toolkit (nvcc) was not detected while preparing FFmpeg build.")
+        return "cuda"
+
+    if requested_backend == "rocm":
+        if not rocm_available:
+            fail("GPU_BACKEND=rocm was requested, but ROCm toolkit (hipcc/rocm-smi) was not detected while preparing FFmpeg build.")
+        return "rocm"
+
+    if nvcc_available:
+        return "cuda"
+    if rocm_available:
+        return "rocm"
+    fail("Could not find either CUDA (nvcc) or ROCm (hipcc/rocm-smi) while preparing FFmpeg build.")
+
+
 def _ffmpeg_linux_repo_impl(ctx):
     version = ctx.attr.version
     src_dir = "ffmpeg-src"
@@ -97,11 +141,10 @@ def _ffmpeg_linux_repo_impl(ctx):
     cuda_home = ctx.os.environ.get("CUDA_HOME", "") or ctx.os.environ.get("CUDA_PATH", "") or ctx.os.environ.get("CUDA_ROOT", "") or "/usr/local/cuda"
     env = _build_env(ctx, cuda_home)
 
-    nvcc_check = ctx.execute(["bash", "-lc", "command -v nvcc"], environment = env, quiet = True)
-    if nvcc_check.return_code:
-        fail("Could not find nvcc while preparing FFmpeg build (searched PATH with CUDA home {}).".format(cuda_home))
-
-    nvcc_arch = _detect_nvcc_arch(ctx, env)
+    requested_backend = _normalize_backend(ctx.os.environ.get("GPU_BACKEND", "auto"))
+    nvcc_available = _has_nvcc(ctx, env)
+    rocm_available = _has_rocm_tool(ctx, env)
+    selected_backend = _select_backend(requested_backend, nvcc_available, rocm_available)
 
     ctx.download_and_extract(
         url = "https://ffmpeg.org/releases/ffmpeg-{}.tar.xz".format(version),
@@ -113,23 +156,24 @@ def _ffmpeg_linux_repo_impl(ctx):
     configure_args = [
         "./configure",
         "--prefix={}".format(ctx.path(install_dir)),
-        "--extra-cflags=-I{}/include".format(cuda_home),
-        "--extra-ldflags=-L{}/lib64".format(cuda_home),
-        "--nvcc={}/bin/nvcc".format(cuda_home),
-        "--nvccflags=-gencode arch=compute_{0},code=sm_{0} -gencode arch=compute_{0},code=compute_{0}".format(nvcc_arch),
-    ] + _FFMPEG_BASE_CONFIGURE_FLAGS + _FFMPEG_CUDA_CONFIGURE_FLAGS
+    ] + _FFMPEG_BASE_CONFIGURE_FLAGS
 
-    if ctx.which("rocm-smi"):
+    if selected_backend == "cuda":
+        nvcc_arch = _detect_nvcc_arch(ctx, env)
         configure_args.extend([
-            "--enable-amf",
-            "--enable-encoder=hevc_amf",
-            "--enable-decoder=hevc_amf",
-        ])
+            "--extra-cflags=-I{}/include".format(cuda_home),
+            "--extra-ldflags=-L{}/lib64".format(cuda_home),
+            "--nvcc={}/bin/nvcc".format(cuda_home),
+            "--nvccflags=-gencode arch=compute_{0},code=sm_{0} -gencode arch=compute_{0},code=compute_{0}".format(nvcc_arch),
+        ] + _FFMPEG_CUDA_CONFIGURE_FLAGS)
+    else:
+        configure_args.extend(_FFMPEG_ROCM_CONFIGURE_FLAGS)
 
     jobs = _detect_jobs(ctx)
 
     build_script = [
         "set -euo pipefail",
+        "echo 'FFmpeg selected backend: {}'".format(selected_backend),
         "cd {}".format(_shell_quote(ctx.path(src_dir))),
         _join_shell_args(configure_args),
         "make -j{}".format(jobs),
@@ -253,6 +297,9 @@ ffmpeg_linux_repository = repository_rule(
         "CUDA_HOME",
         "CUDA_PATH",
         "CUDA_ROOT",
+        "GPU_BACKEND",
+        "HIP_PATH",
+        "ROCM_PATH",
         "LD",
         "NM",
         "PATH",
