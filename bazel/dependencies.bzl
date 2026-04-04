@@ -22,6 +22,90 @@ def _symlink_entries(ctx, root, entries):
         if ctx.path(path).exists:
             ctx.symlink(ctx.path(path), entry)
 
+def _normalize_backend(raw_backend):
+    backend = (raw_backend or "auto").strip().lower()
+    if backend == "":
+        backend = "auto"
+    if backend not in ["auto", "cuda", "rocm"]:
+        fail("Invalid GPU_BACKEND '{}'; expected one of: auto, cuda, rocm".format(backend))
+    return backend
+
+def _has_tool(ctx, tool):
+    return ctx.which(tool) != None
+
+def _cuda_available(ctx):
+    if _has_tool(ctx, "nvcc"):
+        return True
+
+    for env_var in ["CUDA_HOME", "CUDA_PATH", "CUDA_ROOT"]:
+        root = ctx.os.environ.get(env_var, "")
+        if root and ctx.path(root + "/bin/nvcc").exists:
+            return True
+    return False
+
+def _rocm_available(ctx):
+    if _has_tool(ctx, "hipcc") or _has_tool(ctx, "rocm-smi"):
+        return True
+
+    for env_var in ["ROCM_PATH", "HIP_PATH"]:
+        root = ctx.os.environ.get(env_var, "")
+        if not root:
+            continue
+        if ctx.path(root + "/bin/hipcc").exists or ctx.path(root + "/bin/rocm-smi").exists:
+            return True
+    return False
+
+def _select_backend(ctx):
+    requested = _normalize_backend(ctx.os.environ.get("GPU_BACKEND", "auto"))
+    cuda_ok = _cuda_available(ctx)
+    rocm_ok = _rocm_available(ctx)
+
+    if requested == "cuda":
+        if not cuda_ok:
+            fail("GPU_BACKEND=cuda was requested, but CUDA toolkit (nvcc) was not detected.")
+        return "cuda"
+
+    if requested == "rocm":
+        if not rocm_ok:
+            fail("GPU_BACKEND=rocm was requested, but ROCm toolkit (hipcc/rocm-smi) was not detected.")
+        return "rocm"
+
+    if cuda_ok:
+        return "cuda"
+    if rocm_ok:
+        return "rocm"
+    fail("No GPU backend detected. Install CUDA or ROCm, or set GPU_BACKEND=cuda|rocm with the matching toolkit available.")
+
+def _opencv_linux_repo_impl(ctx):
+    backend = _select_backend(ctx)
+
+    # Mirror enough of /usr and /opt so buildfiles/third_party/opencv_linux_defs.bzl
+    # can probe headers/libs and toolkit markers with stable relative paths.
+    symlinks = {
+        "include": "/usr/include",
+        "lib": "/usr/lib",
+        "lib64": "/usr/lib64",
+        "local": "/usr/local",
+        "bin": "/usr/bin",
+        "opt": "/opt",
+    }
+    for name, target in symlinks.items():
+        if ctx.path(target).exists:
+            ctx.symlink(ctx.path(target), name)
+
+    ctx.file("WORKSPACE", 'workspace(name = "%s")\n' % ctx.name)
+    ctx.file(
+        "BUILD.bazel",
+        """
+load("@//buildfiles/third_party:opencv_linux_defs.bzl", "opencv_library")
+
+opencv_library(
+    name = "opencv",
+    backend = "{backend}",
+)
+""".format(backend = backend),
+    )
+
 def _local_rocm_repo_impl(ctx):
     root = _discover_root(
         ctx,
@@ -81,4 +165,17 @@ exit 1
 local_rocm_repository = repository_rule(
     implementation = _local_rocm_repo_impl,
     environ = ["HIP_PATH", "ROCM_PATH"],
+)
+
+opencv_linux_repository = repository_rule(
+    implementation = _opencv_linux_repo_impl,
+    environ = [
+        "GPU_BACKEND",
+        "CUDA_HOME",
+        "CUDA_PATH",
+        "CUDA_ROOT",
+        "ROCM_PATH",
+        "HIP_PATH",
+        "PATH",
+    ],
 )

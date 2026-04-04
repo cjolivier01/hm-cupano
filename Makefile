@@ -15,10 +15,10 @@ source "$(TOPDIR)/toolchain_env.sh"; \
 if ensure_cuda_env >/dev/null 2>&1; then \
 	ensure_rocm_env >/dev/null 2>&1 || true; \
 	ensure_cuda_bazel_archs; \
-	exec $(BAZELISK) build --config=$(1) --cpu=$(BAZEL_CPU) --cuda_archs=$${CUDA_BAZEL_ARCHS} $(BAZEL_ARGS) $(BAZEL_TARGETS); \
+	exec $(BAZELISK) build --config=$(1) --cpu=$(BAZEL_CPU) --repo_env=GPU_BACKEND=cuda --cuda_archs=$${CUDA_BAZEL_ARCHS} $(BAZEL_ARGS) $(BAZEL_TARGETS); \
 elif ensure_rocm_env >/dev/null 2>&1; then \
 	ensure_cuda_env >/dev/null 2>&1 || true; \
-	exec $(BAZELISK) build --config=$(1) --config=rocm --cpu=$(BAZEL_CPU) $(BAZEL_ARGS) $(BAZEL_TARGETS); \
+	exec $(BAZELISK) build --config=$(1) --config=rocm --cpu=$(BAZEL_CPU) --repo_env=GPU_BACKEND=rocm $(BAZEL_ARGS) $(BAZEL_TARGETS); \
 else \
 	printf 'No CUDA or ROCm toolkit detected.\n' >&2; \
 	exit 1; \
@@ -30,10 +30,10 @@ source "$(TOPDIR)/toolchain_env.sh"; \
 if ensure_cuda_env >/dev/null 2>&1; then \
 	ensure_rocm_env >/dev/null 2>&1 || true; \
 	ensure_cuda_bazel_archs; \
-	exec $(BAZELISK) test --config=$(1) --cpu=$(BAZEL_CPU) --cuda_archs=$${CUDA_BAZEL_ARCHS} $(BAZEL_ARGS) $(BAZEL_TARGETS); \
+	exec $(BAZELISK) test --config=$(1) --cpu=$(BAZEL_CPU) --repo_env=GPU_BACKEND=cuda --cuda_archs=$${CUDA_BAZEL_ARCHS} $(BAZEL_ARGS) $(BAZEL_TARGETS); \
 elif ensure_rocm_env >/dev/null 2>&1; then \
 	ensure_cuda_env >/dev/null 2>&1 || true; \
-	exec $(BAZELISK) test --config=$(1) --config=rocm --cpu=$(BAZEL_CPU) $(BAZEL_ARGS) $(BAZEL_TARGETS); \
+	exec $(BAZELISK) test --config=$(1) --config=rocm --cpu=$(BAZEL_CPU) --repo_env=GPU_BACKEND=rocm $(BAZEL_ARGS) $(BAZEL_TARGETS); \
 else \
 	printf 'No CUDA or ROCm toolkit detected.\n' >&2; \
 	exit 1; \
@@ -53,19 +53,19 @@ debug:
 bld: debug
 
 cuda:
-	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env; ensure_rocm_env || true; ensure_cuda_bazel_archs; exec $(BAZELISK) build --config=opt --cpu=$(BAZEL_CPU) --cuda_archs=$${CUDA_BAZEL_ARCHS} $(BAZEL_ARGS) $(BAZEL_TARGETS)
+	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env; ensure_rocm_env || true; ensure_cuda_bazel_archs; exec $(BAZELISK) build --config=opt --cpu=$(BAZEL_CPU) --repo_env=GPU_BACKEND=cuda --cuda_archs=$${CUDA_BAZEL_ARCHS} $(BAZEL_ARGS) $(BAZEL_TARGETS)
 
 rocm:
-	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env || true; ensure_rocm_env; exec $(BAZELISK) build --config=opt --config=rocm --cpu=$(BAZEL_CPU) $(BAZEL_ARGS) $(BAZEL_TARGETS)
+	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env || true; ensure_rocm_env; exec $(BAZELISK) build --config=opt --config=rocm --cpu=$(BAZEL_CPU) --repo_env=GPU_BACKEND=rocm $(BAZEL_ARGS) $(BAZEL_TARGETS)
 
 test:
 	@$(call run_default_test,opt)
 
 test-cuda:
-	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env; ensure_rocm_env || true; ensure_cuda_bazel_archs; exec $(BAZELISK) test --config=opt --cpu=$(BAZEL_CPU) --cuda_archs=$${CUDA_BAZEL_ARCHS} $(BAZEL_ARGS) $(BAZEL_TARGETS)
+	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env; ensure_rocm_env || true; ensure_cuda_bazel_archs; exec $(BAZELISK) test --config=opt --cpu=$(BAZEL_CPU) --repo_env=GPU_BACKEND=cuda --cuda_archs=$${CUDA_BAZEL_ARCHS} $(BAZEL_ARGS) $(BAZEL_TARGETS)
 
 test-rocm:
-	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env || true; ensure_rocm_env; exec $(BAZELISK) test --config=opt --config=rocm --cpu=$(BAZEL_CPU) $(BAZEL_ARGS) $(BAZEL_TARGETS)
+	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env || true; ensure_rocm_env; exec $(BAZELISK) test --config=opt --config=rocm --cpu=$(BAZEL_CPU) --repo_env=GPU_BACKEND=rocm $(BAZEL_ARGS) $(BAZEL_TARGETS)
 
 clean:
 	$(BAZELISK) clean

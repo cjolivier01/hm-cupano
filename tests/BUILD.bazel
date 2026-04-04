@@ -23,12 +23,13 @@ cc_binary(
     linkopts = [
         "-ltiff",
         "-lopencv_imgproc",
-        "-lopencv_cudacodec",
-        "-lopencv_cudaimgproc",
-        "-lopencv_cudawarping",
     ],
     visibility = ["//visibility:public"],
-    deps = ["//src/pano:cuda_pano", "@opencv_linux//:opencv"]
+    target_compatible_with = select({
+        "@//:use_hip": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = ["//src/pano:cuda_pano", "@ffmpeg_linux//:ffmpeg_libs", "@opencv_linux//:opencv"]
         + select({
             "@//:use_hip": ["@local_rocm//:hip_runtime"],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
@@ -43,12 +44,13 @@ cc_binary(
     linkopts = [
         "-ltiff",
         "-lopencv_imgproc",
-        "-lopencv_cudacodec",
-        "-lopencv_cudaimgproc",
-        "-lopencv_cudawarping",
     ],
     visibility = ["//visibility:public"],
-    deps = ["//src/pano:cuda_pano", "@opencv_linux//:opencv"]
+    target_compatible_with = select({
+        "@//:use_hip": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = ["//src/pano:cuda_pano", "@ffmpeg_linux//:ffmpeg_libs", "@opencv_linux//:opencv"]
         + select({
             "@//:use_hip": ["@local_rocm//:hip_runtime"],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
@@ -87,4 +89,33 @@ cc_binary(
             "@//:use_hip": ["@local_rocm//:hip_runtime"],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         }),
+)
+
+sh_test(
+    name = "ffmpeg_cuda_runtime_test",
+    srcs = ["ffmpeg_cuda_runtime_test.sh"],
+    args = ["$(location @ffmpeg_linux//:ffmpeg)"],
+    data = [
+        "@ffmpeg_linux//:ffmpeg",
+        "@ffmpeg_linux//:runtime_libs",
+    ],
+    target_compatible_with = select({
+        "@//:use_hip": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "local",
+        "requires-gpu",
+    ],
+)
+
+sh_test(
+    name = "opencv_backend_runtime_test",
+    srcs = ["opencv_backend_runtime_test.sh"],
+    args = select({
+        "@//:use_hip": ["rocm", "$(location :test_cuda_blend)"],
+        "//conditions:default": ["cuda", "$(location :test_cuda_blend)"],
+    }),
+    data = [":test_cuda_blend"],
+    tags = ["local"],
 )

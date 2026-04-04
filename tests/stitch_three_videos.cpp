@@ -52,6 +52,8 @@
 #include <type_traits>
 #include <vector>
 
+extern "C" unsigned avcodec_version(void);
+
 namespace {
 
 /**
@@ -294,6 +296,8 @@ static void maybe_print_progress(
  * @brief Program entry point for 3-camera stitcher.
  */
 int main(int argc, char** argv) {
+  const volatile unsigned ffmpeg_link_probe = avcodec_version();
+  (void)ffmpeg_link_probe;
   std::string path0;
   std::string path1;
   std::string path2;
