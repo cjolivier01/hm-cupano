@@ -14,7 +14,8 @@ _FFMPEG_BASE_CONFIGURE_FLAGS = [
     "--enable-protocol=file",
     "--enable-protocol=https",
     "--enable-gnutls",
-    "--enable-shared",
+    "--disable-shared",
+    "--enable-static",
     "--enable-gpl",
     "--enable-nonfree",
     "--enable-libx264",
@@ -26,6 +27,17 @@ _FFMPEG_BASE_CONFIGURE_FLAGS = [
     "--enable-libharfbuzz",
     "--enable-libvidstab",
     "--enable-vaapi",
+]
+
+_FFMPEG_LIBS = [
+    "avdevice",
+    "avfilter",
+    "avformat",
+    "avcodec",
+    "swscale",
+    "swresample",
+    "postproc",
+    "avutil",
 ]
 
 _FFMPEG_CUDA_CONFIGURE_FLAGS = [
@@ -56,6 +68,60 @@ def _shell_quote(value):
 
 def _join_shell_args(args):
     return " ".join([_shell_quote(a) for a in args])
+
+
+def _starlark_string_list(values, indent = "        "):
+    if not values:
+        return "[]"
+    return "[\n" + "".join([
+        '{}"{}",\n'.format(indent, value.replace("\\", "\\\\").replace('"', '\\"'))
+        for value in values
+    ]) + "    ]"
+
+
+def _static_ffmpeg_linkopts(ctx, install_lib, env):
+    ffmpeg_pkg_config_path = "{}/pkgconfig".format(install_lib)
+    existing_pkg_config_path = env.get("PKG_CONFIG_PATH", "")
+    pkg_config_path = (
+        "{}:{}".format(ffmpeg_pkg_config_path, existing_pkg_config_path)
+        if existing_pkg_config_path
+        else ffmpeg_pkg_config_path
+    )
+    command = "PKG_CONFIG_PATH={} pkg-config --static --libs {}".format(
+        _shell_quote(pkg_config_path),
+        " ".join(["lib{}".format(lib) for lib in _FFMPEG_LIBS]),
+    )
+    result = ctx.execute(["bash", "-lc", command], environment = env, quiet = True)
+    if result.return_code:
+        fail("\n".join([
+            "Could not compute static FFmpeg link options.",
+            "command: {}".format(command),
+            "stdout:\n{}".format(result.stdout),
+            "stderr:\n{}".format(result.stderr),
+        ]))
+
+    ffmpeg_lib_flags = {("-l" + lib): True for lib in _FFMPEG_LIBS}
+    external_linkopts = []
+    install_lib_flag = "-L{}".format(install_lib)
+    install_lib_rpath_flag = "-Wl,-rpath,{}".format(install_lib)
+    for opt in result.stdout.strip().split(" "):
+        if not opt:
+            continue
+        if opt == install_lib_flag or opt == install_lib_rpath_flag or opt in ffmpeg_lib_flags:
+            continue
+        external_linkopts.append(opt)
+
+    # The FFmpeg archives have internal cycles; grouping keeps GNU ld from
+    # depending on a brittle one-pass archive order.
+    return [
+        install_lib_flag,
+        "-Wl,--start-group",
+    ] + [
+        "-l:lib{}.a".format(lib)
+        for lib in _FFMPEG_LIBS
+    ] + [
+        "-Wl,--end-group",
+    ] + external_linkopts
 
 
 def _detect_jobs(ctx):
@@ -189,6 +255,7 @@ def _ffmpeg_linux_repo_impl(ctx):
         ]))
 
     install_lib = str(ctx.path(install_dir + "/lib"))
+    ffmpeg_linkopts = _static_ffmpeg_linkopts(ctx, install_lib, env)
     ctx.file(
         "BUILD.bazel",
         """
@@ -198,62 +265,49 @@ licenses(["restricted"])
 
 cc_import(
     name = "avcodec",
-    shared_library = "install/lib/libavcodec.so",
+    static_library = "install/lib/libavcodec.a",
 )
 
 cc_import(
     name = "avdevice",
-    shared_library = "install/lib/libavdevice.so",
+    static_library = "install/lib/libavdevice.a",
 )
 
 cc_import(
     name = "avfilter",
-    shared_library = "install/lib/libavfilter.so",
+    static_library = "install/lib/libavfilter.a",
 )
 
 cc_import(
     name = "avformat",
-    shared_library = "install/lib/libavformat.so",
+    static_library = "install/lib/libavformat.a",
 )
 
 cc_import(
     name = "avutil",
-    shared_library = "install/lib/libavutil.so",
+    static_library = "install/lib/libavutil.a",
 )
 
 cc_import(
     name = "postproc",
-    shared_library = "install/lib/libpostproc.so",
+    static_library = "install/lib/libpostproc.a",
 )
 
 cc_import(
     name = "swresample",
-    shared_library = "install/lib/libswresample.so",
+    static_library = "install/lib/libswresample.a",
 )
 
 cc_import(
     name = "swscale",
-    shared_library = "install/lib/libswscale.so",
+    static_library = "install/lib/libswscale.a",
 )
 
 cc_library(
     name = "ffmpeg_libs",
     hdrs = glob(["install/include/**/*.h"]),
     includes = ["install/include"],
-    linkopts = [
-        "-L{install_lib}",
-        "-Wl,-rpath,{install_lib}",
-        "-Wl,--no-as-needed",
-        "-l:libavcodec.so",
-        "-l:libavdevice.so",
-        "-l:libavfilter.so",
-        "-l:libavformat.so",
-        "-l:libavutil.so",
-        "-l:libpostproc.so",
-        "-l:libswresample.so",
-        "-l:libswscale.so",
-        "-Wl,--as-needed",
-    ],
+    linkopts = {ffmpeg_linkopts},
     deps = [
         ":avcodec",
         ":avdevice",
@@ -280,7 +334,7 @@ filegroup(
     name = "runtime_libs",
     srcs = glob(["install/lib/*.so*"]),
 )
-""".format(install_lib = install_lib),
+""".format(ffmpeg_linkopts = _starlark_string_list(ffmpeg_linkopts)),
     )
 
 
