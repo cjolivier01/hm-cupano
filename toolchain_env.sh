@@ -114,15 +114,16 @@ normalize_cuda_arch_for_rules_cuda() {
 	local arch="$1"
 
 	case "$arch" in
-	30|32|35|37|50|52|53|60|61|62|70|72|75|80|86|87|89|90)
+	30|32|35|37|50|52|53|60|61|62|70|72|75|80|86|87|89|90|100|101|120)
 		printf 'sm_%s\n' "$arch"
 		return 0
 		;;
 	esac
 
-	# Older rules_cuda releases in this repo currently top out at sm_90.
-	if [ "$arch" -gt 90 ] 2>/dev/null; then
-		printf '%s\n' 'sm_90'
+	# Prefer native SASS for Blackwell when the exact reported variant is not
+	# recognized by rules_cuda yet.
+	if [ "$arch" -gt 120 ] 2>/dev/null; then
+		printf '%s\n' 'sm_120'
 		return 0
 	fi
 
