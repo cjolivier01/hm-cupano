@@ -28,10 +28,6 @@
 
 #include <opencv2/core/cuda.hpp>
 #include <opencv2/core/hal/interface.h>
-#include <opencv2/cudaarithm.hpp>
-#include <opencv2/cudacodec.hpp>
-#include <opencv2/cudaimgproc.hpp>
-#include <opencv2/cudawarping.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/opencv.hpp>
@@ -43,14 +39,29 @@
 #include <chrono>
 #include <cstdint>
 #include <iomanip>
-#include <sstream>
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <vector>
+
+#if defined(__has_include)
+#if __has_include(<opencv2/cudaarithm.hpp>) && __has_include(<opencv2/cudacodec.hpp>) && \
+    __has_include(<opencv2/cudaimgproc.hpp>) && __has_include(<opencv2/cudawarping.hpp>)
+#define HM_HAS_OPENCV_CUDACODEC 1
+#include <opencv2/cudaarithm.hpp>
+#include <opencv2/cudacodec.hpp>
+#include <opencv2/cudaimgproc.hpp>
+#include <opencv2/cudawarping.hpp>
+#else
+#define HM_HAS_OPENCV_CUDACODEC 0
+#endif
+#else
+#define HM_HAS_OPENCV_CUDACODEC 0
+#endif
 
 extern "C" unsigned avcodec_version(void);
 
@@ -60,17 +71,20 @@ namespace {
  * @brief Abstraction over a video input source (CPU or GPU path).
  */
 struct VideoInput {
-  bool useCuda = false;                                        ///< True if using GPU reader.
-  cv::VideoCapture cap;                                        ///< CPU reader.
-  cv::Ptr<cv::cudacodec::VideoReader> reader;                  ///< GPU reader.
-  double fps = 0.0;                                            ///< Frames per second (best-effort).
-  cv::Size size;                                               ///< Frame size, may be empty until first frame.
+  bool useCuda = false; ///< True if using GPU reader.
+  cv::VideoCapture cap; ///< CPU reader.
+#if HM_HAS_OPENCV_CUDACODEC
+  cv::Ptr<cv::cudacodec::VideoReader> reader; ///< GPU reader.
+#endif
+  double fps = 0.0; ///< Frames per second (best-effort).
+  cv::Size size; ///< Frame size, may be empty until first frame.
 };
 
 /**
  * @brief Read the next frame and convert to host BGRA.
  */
 bool readNextBGRA(VideoInput& in, cv::Mat& outBGRA, cv::cuda::Stream& s) {
+#if HM_HAS_OPENCV_CUDACODEC
   if (in.useCuda && in.reader) {
     cv::cuda::GpuMat d_bgr;
     if (!in.reader->nextFrame(d_bgr))
@@ -92,25 +106,25 @@ bool readNextBGRA(VideoInput& in, cv::Mat& outBGRA, cv::cuda::Stream& s) {
     if (in.size.empty())
       in.size = d_bgra.size();
     return true;
-  } else {
-    cv::Mat bgr;
-    if (!in.cap.read(bgr))
-      return false;
-    if (bgr.empty())
-      return false;
-    if (bgr.channels() == 3) {
-      cv::cvtColor(bgr, outBGRA, cv::COLOR_BGR2BGRA);
-    } else if (bgr.channels() == 4) {
-      outBGRA = bgr;
-    } else if (bgr.channels() == 1) {
-      cv::cvtColor(bgr, outBGRA, cv::COLOR_GRAY2BGRA);
-    } else {
-      return false;
-    }
-    if (in.size.empty())
-      in.size = outBGRA.size();
-    return true;
   }
+#endif
+  cv::Mat bgr;
+  if (!in.cap.read(bgr))
+    return false;
+  if (bgr.empty())
+    return false;
+  if (bgr.channels() == 3) {
+    cv::cvtColor(bgr, outBGRA, cv::COLOR_BGR2BGRA);
+  } else if (bgr.channels() == 4) {
+    outBGRA = bgr;
+  } else if (bgr.channels() == 1) {
+    cv::cvtColor(bgr, outBGRA, cv::COLOR_GRAY2BGRA);
+  } else {
+    return false;
+  }
+  if (in.size.empty())
+    in.size = outBGRA.size();
+  return true;
 }
 
 /**
@@ -120,6 +134,7 @@ VideoInput openVideoInput(const std::string& path, bool preferCuda) {
   VideoInput vi;
   vi.size = {};
   vi.fps = 0.0;
+#if HM_HAS_OPENCV_CUDACODEC
   if (preferCuda && cv::cuda::getCudaEnabledDeviceCount() > 0) {
     try {
       vi.reader = cv::cudacodec::createVideoReader(path);
@@ -134,6 +149,9 @@ VideoInput openVideoInput(const std::string& path, bool preferCuda) {
       std::cerr << "Falling back to CPU reader for: " << path << " due to: " << e.what() << std::endl;
     }
   }
+#else
+  (void)preferCuda;
+#endif
   if (!vi.cap.open(path)) {
     throw std::runtime_error("Failed to open video: " + path);
   }
@@ -147,11 +165,13 @@ VideoInput openVideoInput(const std::string& path, bool preferCuda) {
  * @brief Abstraction over the output encoder (CPU or GPU path).
  */
 struct VideoOutput {
-  bool useCuda = false;                                       ///< True if using GPU writer.
-  cv::VideoWriter cpu;                                        ///< CPU writer.
-  cv::Ptr<cv::cudacodec::VideoWriter> gpu;                    ///< GPU writer.
-  cv::Size size;                                              ///< Output frame size.
-  double fps = 0.0;                                           ///< Output frame rate.
+  bool useCuda = false; ///< True if using GPU writer.
+  cv::VideoWriter cpu; ///< CPU writer.
+#if HM_HAS_OPENCV_CUDACODEC
+  cv::Ptr<cv::cudacodec::VideoWriter> gpu; ///< GPU writer.
+#endif
+  cv::Size size; ///< Output frame size.
+  double fps = 0.0; ///< Output frame rate.
 };
 
 /**
@@ -167,6 +187,7 @@ VideoOutput openVideoOutput(
   VideoOutput vo;
   vo.size = size;
   vo.fps = fps;
+#if HM_HAS_OPENCV_CUDACODEC
   if (preferCuda && cv::cuda::getCudaEnabledDeviceCount() > 0) {
     try {
       auto codec = cv::cudacodec::Codec::H264;
@@ -179,6 +200,9 @@ VideoOutput openVideoOutput(
       std::cerr << "GPU VideoWriter unavailable, falling back to CPU: " << e.what() << std::endl;
     }
   }
+#else
+  (void)preferCuda;
+#endif
   int fourcc = 0;
   if (!fourcc_str.empty()) {
     if (fourcc_str.size() == 4) {
@@ -203,6 +227,7 @@ VideoOutput openVideoOutput(
  * @brief Write a BGR frame to the output using the selected path.
  */
 void writeFrame(VideoOutput& out, const cv::Mat& bgr, cv::cuda::Stream& s) {
+#if HM_HAS_OPENCV_CUDACODEC
   if (out.useCuda && out.gpu) {
     cv::cuda::GpuMat d;
     d.upload(bgr, s);
@@ -211,6 +236,10 @@ void writeFrame(VideoOutput& out, const cv::Mat& bgr, cv::cuda::Stream& s) {
   } else {
     out.cpu.write(bgr);
   }
+#else
+  (void)s;
+  out.cpu.write(bgr);
+#endif
 }
 
 /**
@@ -228,12 +257,14 @@ std::vector<cv::Mat> as_batch(const cv::Mat& mat, int batch_size) {
  * @brief Query total frame count from the underlying backend.
  */
 int64_t get_total_frames(const VideoInput& in) {
+#if HM_HAS_OPENCV_CUDACODEC
   if (in.useCuda && in.reader) {
     double v = 0.0;
     if (in.reader->get(cv::CAP_PROP_FRAME_COUNT, v))
       return v > 0.0 ? static_cast<int64_t>(v + 0.5) : -1;
     return -1;
   }
+#endif
   if (!in.useCuda) {
     double v = in.cap.get(cv::CAP_PROP_FRAME_COUNT);
     return v > 0.0 ? static_cast<int64_t>(v + 0.5) : -1;
@@ -418,6 +449,12 @@ int main(int argc, char** argv) {
     return 2;
   }
 
+#if !HM_HAS_OPENCV_CUDACODEC
+  if (prefer_gpu_decode || prefer_gpu_encode) {
+    std::cerr << "OpenCV CUDA video I/O modules not available; using CPU decode/encode." << std::endl;
+  }
+#endif
+
   // Select CUDA device and create streams.
   cudaSetDevice(device_id);
   cudaStream_t cu_stream;
@@ -517,8 +554,10 @@ int main(int argc, char** argv) {
   if (total_frames > 0)
     std::cout << "/" << total_frames;
   std::cout << ", total time " << fmt_hhmmss(total_elapsed) << std::endl;
+#if HM_HAS_OPENCV_CUDACODEC
   if (out.useCuda && out.gpu)
     out.gpu->release();
+#endif
   canvas.reset();
   cudaStreamDestroy(cu_stream);
   return 0;

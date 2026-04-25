@@ -5,7 +5,7 @@ backend="${1:-}"
 bin_path="${2:-}"
 
 if [[ -z "$backend" || -z "$bin_path" ]]; then
-  printf 'usage: %s <cuda|rocm> <binary>\n' "$0" >&2
+  printf 'usage: %s <cuda|rocm|vulkan> <binary>\n' "$0" >&2
   exit 1
 fi
 
@@ -36,18 +36,38 @@ check_has() {
 check_absent() {
   local needle="$1"
   if grep -q -- "$needle" <<<"$ldd_out"; then
-    printf 'unexpected CUDA OpenCV library linked in ROCm mode: %s\n' "$needle" >&2
+    printf 'unexpected CUDA OpenCV library linked in non-CUDA mode: %s\n' "$needle" >&2
     exit 1
   fi
 }
 
+count_linked_cuda_opencv_libs() {
+  local count=0
+  grep -q -- 'libopencv_cudacodec.so' <<<"$ldd_out" && count=$((count + 1))
+  grep -q -- 'libopencv_cudaimgproc.so' <<<"$ldd_out" && count=$((count + 1))
+  grep -q -- 'libopencv_cudawarping.so' <<<"$ldd_out" && count=$((count + 1))
+  printf '%s' "$count"
+}
+
 case "$backend" in
   cuda)
-    check_has 'libopencv_cudacodec.so'
-    check_has 'libopencv_cudaimgproc.so'
-    check_has 'libopencv_cudawarping.so'
+    linked_count="$(count_linked_cuda_opencv_libs)"
+    if [[ "$linked_count" -eq 3 ]]; then
+      exit 0
+    fi
+    if [[ "$linked_count" -eq 0 ]]; then
+      printf 'CUDA backend built without OpenCV CUDA video modules; CPU OpenCV I/O fallback is active.\n'
+      exit 0
+    fi
+    printf 'inconsistent OpenCV CUDA linkage for CUDA backend (%s/3 CUDA OpenCV libs linked)\n' "$linked_count" >&2
+    exit 1
     ;;
   rocm)
+    check_absent 'libopencv_cudacodec.so'
+    check_absent 'libopencv_cudaimgproc.so'
+    check_absent 'libopencv_cudawarping.so'
+    ;;
+  vulkan)
     check_absent 'libopencv_cudacodec.so'
     check_absent 'libopencv_cudaimgproc.so'
     check_absent 'libopencv_cudawarping.so'

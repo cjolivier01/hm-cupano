@@ -1,13 +1,19 @@
-// Lightweight CUDA/HIP runtime compatibility layer for this project.
-// Selects CUDA by default; define USE_HIP or compile under HIP to use ROCm.
+// Lightweight CUDA/HIP/Vulkan runtime compatibility layer for this project.
+// Selects CUDA by default; define USE_HIP or USE_VULKAN to select alternate backends.
 #pragma once
 
 // Backend detection
 #if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)
 #define GPU_BACKEND_HIP 1
+#define GPU_BACKEND_VULKAN 0
+#define GPU_BACKEND_CUDA 0
+#elif defined(USE_VULKAN)
+#define GPU_BACKEND_HIP 0
+#define GPU_BACKEND_VULKAN 1
 #define GPU_BACKEND_CUDA 0
 #else
 #define GPU_BACKEND_HIP 0
+#define GPU_BACKEND_VULKAN 0
 #define GPU_BACKEND_CUDA 1
 #endif
 
@@ -20,7 +26,6 @@
 #if __has_include(<hip/hip_bfloat16.h>)
 #include <hip/hip_bfloat16.h>
 #define GPU_HAS_BF16 1
-// Some ROCm versions use hip_bfloat16 (public type)
 using gpu_bfloat16 = hip_bfloat16;
 #else
 #define GPU_HAS_BF16 0
@@ -77,9 +82,18 @@ using gpu_bfloat16 = hip_bfloat16;
 #define cudaMemcpy2DFromArray hipMemcpy2DFromArray
 #define cudaMemcpy2DFromArrayAsync hipMemcpy2DFromArrayAsync
 
-// Optional: macro to launch kernels with hipLaunchKernelGGL if needed
 #define GPU_LAUNCH_KERNEL(func, grid, block, shared, stream, ...) \
   hipLaunchKernelGGL(func, grid, block, shared, stream, ##__VA_ARGS__)
+
+#elif GPU_BACKEND_VULKAN
+
+#include "cupano/gpu/vulkan_runtime_shim.h"
+
+#define GPU_HAS_BF16 0
+
+// Vulkan backend currently provides CPU-executed compatibility implementations
+// of CUDA APIs used by this codebase.
+#define GPU_LAUNCH_KERNEL(func, grid, block, shared, stream, ...) func(__VA_ARGS__)
 
 #else // GPU_BACKEND_CUDA
 

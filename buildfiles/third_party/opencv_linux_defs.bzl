@@ -162,8 +162,8 @@ def _normalize_backend(raw_backend):
     backend = (raw_backend or "auto").strip().lower()
     if backend == "":
         backend = "auto"
-    if backend not in ["auto", "cuda", "rocm"]:
-        fail("Invalid OpenCV backend '{}'; expected one of: auto, cuda, rocm".format(backend))
+    if backend not in ["auto", "cuda", "rocm", "vulkan"]:
+        fail("Invalid OpenCV backend '{}'; expected one of: auto, cuda, rocm, vulkan".format(backend))
     return backend
 
 
@@ -187,6 +187,9 @@ def _resolve_backend(requested_backend, availability):
             fail("OpenCV backend forced to ROCm, but ROCm toolkit markers (hipcc/rocm-smi) were not detected under /usr")
         return "rocm"
 
+    if backend == "vulkan":
+        return "vulkan"
+
     if availability.cuda_available:
         return "cuda"
     if availability.rocm_available:
@@ -194,23 +197,23 @@ def _resolve_backend(requested_backend, availability):
     fail("OpenCV build requires either CUDA or ROCm toolkit markers under /usr, but neither was detected")
 
 
-def _ensure_required_headers(prefix):
+def _missing_required_headers(prefix):
     missing = []
     for header in _REQUIRED_CUDA_HEADERS:
         header_path = "{}/opencv2/{}".format(prefix, header)
         if not native.glob([header_path], allow_empty = True):
             missing.append(header)
+    return missing
 
-    if missing:
-        fail("OpenCV CUDA headers are missing in '{}': {}".format(prefix, ", ".join(missing)))
-
-
-def _ensure_required_libs(lib_dir, libs, kind):
+def _missing_required_libs(lib_dir, libs):
     missing = []
     for lib in libs:
         if not native.glob(["{}/libopencv_{}.so*".format(lib_dir, lib)], allow_empty = True):
             missing.append(lib)
+    return missing
 
+def _ensure_required_libs(lib_dir, libs, kind):
+    missing = _missing_required_libs(lib_dir, libs)
     if missing:
         fail("OpenCV {} libs are missing in '{}': {}".format(kind, lib_dir, ", ".join(missing)))
 
@@ -233,18 +236,26 @@ def opencv_library(name, backend = "auto", visibility = None):
 
     cuda_linkopts = []
     if selected_backend == "cuda":
-        _ensure_required_headers(detected.prefix)
-        _ensure_required_libs(detected.lib_dir, _REQUIRED_OPENCV_CUDA_LIBS, "CUDA")
+        missing_headers = _missing_required_headers(detected.prefix)
+        missing_cuda_libs = _missing_required_libs(detected.lib_dir, _REQUIRED_OPENCV_CUDA_LIBS)
 
-        cuda_common = _find_common_suffixes(detected.lib_dir, _REQUIRED_OPENCV_CUDA_LIBS)
-        if not cuda_common:
-            fail("OpenCV CUDA libs are version-inconsistent in '{}': {}".format(detected.lib_dir, ", ".join(_REQUIRED_OPENCV_CUDA_LIBS)))
+        if missing_headers or missing_cuda_libs:
+            parts = []
+            if missing_headers:
+                parts.append("headers missing: {}".format(", ".join(missing_headers)))
+            if missing_cuda_libs:
+                parts.append("libs missing: {}".format(", ".join(missing_cuda_libs)))
+            print("WARNING: OpenCV CUDA modules unavailable in this environment ({}). Falling back to CPU-only OpenCV linkage for backend=cuda.".format("; ".join(parts)))
+        else:
+            cuda_common = _find_common_suffixes(detected.lib_dir, _REQUIRED_OPENCV_CUDA_LIBS)
+            if not cuda_common:
+                fail("OpenCV CUDA libs are version-inconsistent in '{}': {}".format(detected.lib_dir, ", ".join(_REQUIRED_OPENCV_CUDA_LIBS)))
 
-        cuda_linkopts = [
-            "-l:libopencv_cudacodec.so",
-            "-l:libopencv_cudaimgproc.so",
-            "-l:libopencv_cudawarping.so",
-        ]
+            cuda_linkopts = [
+                "-l:libopencv_cudacodec.so",
+                "-l:libopencv_cudaimgproc.so",
+                "-l:libopencv_cudawarping.so",
+            ]
 
     linkopts = [
         "-L{}".format(detected.lib_dir_abs),

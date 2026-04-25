@@ -15,6 +15,7 @@ build --repo_env=NM=/usr/bin/nm
 build --repo_env=RANLIB=/usr/bin/ranlib
 build --repo_env=HIP_PATH
 build --repo_env=ROCM_PATH
+build --repo_env=VULKAN_SDK
 build --repo_env=GPU_BACKEND
 build --flag_alias=cuda_archs=@rules_cuda//cuda:archs
 
@@ -51,6 +52,8 @@ build:jetson --action_env=target_platform="jetson"
 
 # CUDA backend config
 build:cuda --repo_env=GPU_BACKEND=cuda
+# Avoid PTX JIT/toolchain-version mismatches on modern NVIDIA drivers by emitting native cubins.
+build:cuda --@rules_cuda//cuda:archs=sm_120
 
 # ROCm/HIP backend config
 build:rocm --repo_env=GPU_BACKEND=rocm
@@ -59,5 +62,11 @@ build:rocm --cxxopt=-DUSE_HIP
 build:rocm --host_cxxopt=-DUSE_HIP
 build:rocm --cxxopt=-D__HIP_PLATFORM_AMD__
 build:rocm --host_cxxopt=-D__HIP_PLATFORM_AMD__
+
+# Vulkan backend config
+build:vulkan --repo_env=GPU_BACKEND=vulkan
+build:vulkan --define=backend=vulkan
+build:vulkan --cxxopt=-DUSE_VULKAN
+build:vulkan --host_cxxopt=-DUSE_VULKAN
 
 common --enable_bzlmod

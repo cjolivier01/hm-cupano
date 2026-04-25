@@ -26,8 +26,8 @@ def _normalize_backend(raw_backend):
     backend = (raw_backend or "auto").strip().lower()
     if backend == "":
         backend = "auto"
-    if backend not in ["auto", "cuda", "rocm"]:
-        fail("Invalid GPU_BACKEND '{}'; expected one of: auto, cuda, rocm".format(backend))
+    if backend not in ["auto", "cuda", "rocm", "vulkan"]:
+        fail("Invalid GPU_BACKEND '{}'; expected one of: auto, cuda, rocm, vulkan".format(backend))
     return backend
 
 def _has_tool(ctx, tool):
@@ -55,6 +55,83 @@ def _rocm_available(ctx):
             return True
     return False
 
+def _parent_dir(path):
+    parts = path.split("/")
+    if len(parts) <= 1:
+        return ""
+    return "/".join(parts[:-1])
+
+def _dedupe_non_empty(values):
+    seen = {}
+    out = []
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen[value] = True
+        out.append(value)
+    return out
+
+def _resolve_rocm_layout(ctx, root):
+    if not ctx.path(root + "/bin/hipcc").exists:
+        return None
+    if not ctx.path(root + "/include/hip/hip_runtime.h").exists:
+        return None
+
+    lib_rel = ""
+    for rel in [
+        "lib",
+        "lib64",
+        "lib/x86_64-linux-gnu",
+        "lib/aarch64-linux-gnu",
+    ]:
+        if ctx.path(root + "/" + rel + "/libamdhip64.so").exists:
+            lib_rel = rel
+            break
+
+    if not lib_rel:
+        return None
+
+    return struct(
+        root = root,
+        include_rel = "include",
+        lib_rel = lib_rel,
+    )
+
+def _find_rocm_layout(ctx):
+    roots = []
+    for env_var in ["ROCM_PATH", "HIP_PATH"]:
+        value = ctx.os.environ.get(env_var, "")
+        if value:
+            roots.append(value)
+
+    # Prefer canonical ROCm installs before generic /usr layouts.
+    roots.extend([
+        "/opt/rocm",
+        "/usr/local/rocm",
+    ])
+
+    hipcc = ctx.which("hipcc")
+    if hipcc != None:
+        hipcc_path = str(hipcc)
+        resolved = ctx.execute(
+            ["/bin/bash", "-lc", "readlink -f \"{}\"".format(hipcc_path)],
+            quiet = True,
+        )
+        if resolved.return_code == 0:
+            resolved_path = resolved.stdout.strip()
+            if resolved_path:
+                roots.append(_parent_dir(_parent_dir(resolved_path)))
+        roots.append(_parent_dir(_parent_dir(hipcc_path)))
+
+    roots.append("/usr")
+
+    for root in _dedupe_non_empty(roots):
+        layout = _resolve_rocm_layout(ctx, root)
+        if layout != None:
+            return layout
+
+    return None
+
 def _select_backend(ctx):
     requested = _normalize_backend(ctx.os.environ.get("GPU_BACKEND", "auto"))
     cuda_ok = _cuda_available(ctx)
@@ -70,11 +147,14 @@ def _select_backend(ctx):
             fail("GPU_BACKEND=rocm was requested, but ROCm toolkit (hipcc/rocm-smi) was not detected.")
         return "rocm"
 
+    if requested == "vulkan":
+        return "vulkan"
+
     if cuda_ok:
         return "cuda"
     if rocm_ok:
         return "rocm"
-    fail("No GPU backend detected. Install CUDA or ROCm, or set GPU_BACKEND=cuda|rocm with the matching toolkit available.")
+    fail("No GPU backend detected. Install CUDA/ROCm/Vulkan, or set GPU_BACKEND=cuda|rocm|vulkan with the matching toolkit available.")
 
 def _opencv_linux_repo_impl(ctx):
     backend = _select_backend(ctx)
@@ -107,32 +187,26 @@ opencv_library(
     )
 
 def _local_rocm_repo_impl(ctx):
-    root = _discover_root(
-        ctx,
-        ["ROCM_PATH", "HIP_PATH"],
-        """
-set -eu
-for d in /opt/rocm /opt/rocm-*; do
-    [ -x "$d/bin/hipcc" ] || continue
-    [ -f "$d/include/hip/hip_runtime.h" ] || continue
-    [ -f "$d/lib/libamdhip64.so" ] || continue
-    printf '%s' "$d"
-    exit 0
-done
-exit 1
-""",
-    )
+    layout = _find_rocm_layout(ctx)
 
     build = [
         'load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library")',
         'package(default_visibility = ["//visibility:public"])',
     ]
 
-    if root:
-        _symlink_entries(ctx, root, ["bin", "include", "lib"])
+    if layout:
+        root = layout.root
+        ctx.file(
+            "hipcc_wrapper.sh",
+            "#!/usr/bin/env bash\nexec \"{}/bin/hipcc\" \"$@\"\n".format(root),
+            executable = True,
+        )
+        ctx.symlink(ctx.path(root + "/bin"), "bin")
+        ctx.symlink(ctx.path(root + "/" + layout.include_rel), "include")
+        ctx.symlink(ctx.path(root + "/" + layout.lib_rel), "lib")
 
         build.extend([
-            'filegroup(name = "hipcc", srcs = ["bin/hipcc"])',
+            'filegroup(name = "hipcc", srcs = ["hipcc_wrapper.sh"])',
             'cc_import(',
             '    name = "amdhip64",',
             '    shared_library = "lib/libamdhip64.so",',
@@ -152,8 +226,13 @@ exit 1
             ')',
         ])
     else:
+        ctx.file(
+            "hipcc_wrapper.sh",
+            "#!/usr/bin/env bash\necho \"hipcc not found\" >&2\nexit 127\n",
+            executable = True,
+        )
         build.extend([
-            'filegroup(name = "hipcc", srcs = [])',
+            'filegroup(name = "hipcc", srcs = ["hipcc_wrapper.sh"])',
             'cc_library(name = "amdhip64", srcs = [], hdrs = [])',
             'cc_library(name = "rocm_sdk_core", srcs = [], hdrs = [], includes = [])',
             'cc_library(name = "hip_runtime", srcs = [], hdrs = [], includes = [])',

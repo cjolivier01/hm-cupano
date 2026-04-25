@@ -7,8 +7,8 @@ load("//bazel:dependencies.bzl", "local_rocm_repository", "opencv_linux_reposito
 
 git_repository(
     name = "rules_cuda",
-    # v0.2.3 breaks some lubcupti for our version of bazel
-    commit = "3f2429254ec956220557e79ea9d5f5e8871c2907",
+    # Keep a release tag with Blackwell arch support (sm_120+) and WORKSPACE compatibility.
+    commit = "32414222a7997ee66035d51404fc5427df94c699",
     remote = "https://github.com/bazel-contrib/rules_cuda",
 )
 

@@ -19,8 +19,10 @@ if ensure_cuda_env >/dev/null 2>&1; then \
 elif ensure_rocm_env >/dev/null 2>&1; then \
 	ensure_cuda_env >/dev/null 2>&1 || true; \
 	exec $(BAZELISK) build --config=$(1) --config=rocm --cpu=$(BAZEL_CPU) --repo_env=GPU_BACKEND=rocm $(BAZEL_ARGS) $(BAZEL_TARGETS); \
+elif ensure_vulkan_env >/dev/null 2>&1; then \
+	exec $(BAZELISK) build --config=$(1) --config=vulkan --cpu=$(BAZEL_CPU) --repo_env=GPU_BACKEND=vulkan $(BAZEL_ARGS) $(BAZEL_TARGETS); \
 else \
-	printf 'No CUDA or ROCm toolkit detected.\n' >&2; \
+	printf 'No CUDA, ROCm, or Vulkan toolkit detected.\n' >&2; \
 	exit 1; \
 fi
 endef
@@ -34,15 +36,17 @@ if ensure_cuda_env >/dev/null 2>&1; then \
 elif ensure_rocm_env >/dev/null 2>&1; then \
 	ensure_cuda_env >/dev/null 2>&1 || true; \
 	exec $(BAZELISK) test --config=$(1) --config=rocm --cpu=$(BAZEL_CPU) --repo_env=GPU_BACKEND=rocm $(BAZEL_ARGS) $(BAZEL_TARGETS); \
+elif ensure_vulkan_env >/dev/null 2>&1; then \
+	exec $(BAZELISK) test --config=$(1) --config=vulkan --cpu=$(BAZEL_CPU) --repo_env=GPU_BACKEND=vulkan $(BAZEL_ARGS) $(BAZEL_TARGETS); \
 else \
-	printf 'No CUDA or ROCm toolkit detected.\n' >&2; \
+	printf 'No CUDA, ROCm, or Vulkan toolkit detected.\n' >&2; \
 	exit 1; \
 fi
 endef
 
 all: print_targets
 
-.PHONY: all print_targets perf debug bld cuda rocm test test-cuda test-rocm clean distclean expunge
+.PHONY: all print_targets perf debug bld cuda rocm vulkan test test-cuda test-rocm test-vulkan clean distclean expunge
 
 perf:
 	@$(call run_default_build,opt)
@@ -58,6 +62,9 @@ cuda:
 rocm:
 	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env || true; ensure_rocm_env; exec $(BAZELISK) build --config=opt --config=rocm --cpu=$(BAZEL_CPU) --repo_env=GPU_BACKEND=rocm $(BAZEL_ARGS) $(BAZEL_TARGETS)
 
+vulkan:
+	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env || true; ensure_rocm_env || true; ensure_vulkan_env; exec $(BAZELISK) build --config=opt --config=vulkan --cpu=$(BAZEL_CPU) --repo_env=GPU_BACKEND=vulkan $(BAZEL_ARGS) $(BAZEL_TARGETS)
+
 test:
 	@$(call run_default_test,opt)
 
@@ -66,6 +73,9 @@ test-cuda:
 
 test-rocm:
 	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env || true; ensure_rocm_env; exec $(BAZELISK) test --config=opt --config=rocm --cpu=$(BAZEL_CPU) --repo_env=GPU_BACKEND=rocm $(BAZEL_ARGS) $(BAZEL_TARGETS)
+
+test-vulkan:
+	@source "$(TOPDIR)/toolchain_env.sh"; ensure_cuda_env || true; ensure_rocm_env || true; ensure_vulkan_env; exec $(BAZELISK) test --config=opt --config=vulkan --cpu=$(BAZEL_CPU) --repo_env=GPU_BACKEND=vulkan $(BAZEL_ARGS) $(BAZEL_TARGETS)
 
 clean:
 	$(BAZELISK) clean
@@ -83,6 +93,7 @@ print_targets:
 		'perf         Build with the preferred installed backend (CUDA first, then ROCm).' \
 		'cuda         Build with the CUDA backend.' \
 		'rocm         Build with the HIP/ROCm backend.' \
+		'vulkan      Build with the Vulkan backend.' \
 		'debug        Debug build with the preferred installed backend.' \
 		'bld          Alias for debug (matches legacy workflow).' \
 		'' \
@@ -91,6 +102,7 @@ print_targets:
 		'test         Run tests with the preferred installed backend.' \
 		'test-cuda    Run tests with the CUDA backend.' \
 		'test-rocm    Run tests with the HIP/ROCm backend.' \
+		'test-vulkan Run tests with the Vulkan backend.' \
 		'' \
 		'Maintenance & Cleanup' \
 		'---------------------' \

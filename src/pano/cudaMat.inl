@@ -48,12 +48,14 @@ inline int cudaPixelTypeChannels(CudaPixelType fmt) {
     case CUDA_PIXEL_HALF4:
       return 4;
     // BF16 (Brain Floating Point) pixel types.
+#if GPU_HAS_BF16
     case CUDA_PIXEL_BF16_1:
       return 1;
     case CUDA_PIXEL_BF16_3:
       return 3;
     case CUDA_PIXEL_BF16_4:
       return 4;
+#endif
     // If the pixel type is unrecognized, return 0.
     default:
       return 0;

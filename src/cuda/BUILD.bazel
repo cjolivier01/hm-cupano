@@ -56,6 +56,7 @@ cuda_library(
     visibility = ["//visibility:public"],
     target_compatible_with = select({
         "@//:use_hip": ["@platforms//:incompatible"],
+        "@//:use_vulkan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = (
@@ -68,6 +69,7 @@ cuda_library(
         ]
         + select({
             "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "@//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         })
     ),
@@ -107,6 +109,7 @@ cc_library(
         ["//src/gpu:gpu_runtime"]
         + select({
             "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "@//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         })
     ),
@@ -127,6 +130,7 @@ cc_test(
     deps = (
         select({
             "@//:use_hip": [":cuda_blend_cuda_lib_hip"],
+            "@//:use_vulkan": [":cuda_blend_vulkan_lib"],
             "//conditions:default": [":cuda_blend_cuda_lib"],
         })
         + [
@@ -152,6 +156,7 @@ cc_test(
     deps = (
         select({
             "@//:use_hip": [":cuda_blend_cuda_lib_hip"],
+            "@//:use_vulkan": [":cuda_blend_vulkan_lib"],
             "//conditions:default": [":cuda_blend_cuda_lib"],
         })
         + [
@@ -208,6 +213,37 @@ genrule(
     tags = ["manual"],
     tools = ["@local_rocm//:hipcc"],
     visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "cuda_blend_vulkan_lib",
+    srcs = [
+        "cudaVulkanKernels.cpp",
+    ],
+    hdrs = [
+        "cudaImageAdjust.cuh",
+        "cudaBlend.h",
+        "cudaBlend3.h",
+        "cudaFusedKernels3.h",
+        "cudaBlendN.h",
+        "cudaMakeFull.h",
+        "cudaRemap.h",
+        "cudaStatus.h",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    copts = ["-std=c++17"],
+    linkopts = ["-lvulkan"],
+    visibility = ["//visibility:public"],
+    target_compatible_with = select({
+        "@//:use_vulkan": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//src/gpu:gpu_runtime",
+        "//src/utils:show_image",
+        "//src/pano:canvas_manager",
+        "@opencv_linux//:opencv",
+    ],
 )
 
 cc_library(

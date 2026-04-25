@@ -168,12 +168,14 @@ int cudaPixelTypeToCvType(CudaPixelType fmt) {
     case CUDA_PIXEL_HALF4:
       return CV_16FC4;
     // For bfloat16 we also use 16-bit float codes (even though representation differs)
+#if GPU_HAS_BF16
     case CUDA_PIXEL_BF16_1:
       return CV_16FC1;
     case CUDA_PIXEL_BF16_3:
       return CV_16FC3;
     case CUDA_PIXEL_BF16_4:
       return CV_16FC4;
+#endif
     default:
       return -1;
   }
@@ -219,12 +221,14 @@ size_t cudaPixelElementSize(CudaPixelType fmt) {
       return 6;
     case CUDA_PIXEL_HALF4:
       return 8;
+#if GPU_HAS_BF16
     case CUDA_PIXEL_BF16_1:
       return 2;
     case CUDA_PIXEL_BF16_3:
       return 6;
     case CUDA_PIXEL_BF16_4:
       return 8;
+#endif
     default:
       return 0;
   }

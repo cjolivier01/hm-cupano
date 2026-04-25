@@ -36,6 +36,11 @@ config_setting(
     values = {"define": "backend=hip"},
 )
 
+config_setting(
+    name = "use_vulkan",
+    values = {"define": "backend=vulkan"},
+)
+
 filegroup(
     name = "fpga_stitch_assets",
     srcs = [
