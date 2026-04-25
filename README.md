@@ -198,36 +198,43 @@ Notes:
 - The apps attempt GPU decode/encode via OpenCV cudacodec if available; otherwise they fall back to CPU.
 - Output codec defaults to `mp4v` for broad compatibility; override with `--fourcc=avc1` or `--fourcc=hevc` if supported.
 
-## AMD ROCm/HIP Backend (Experimental)
+## C++ GPU Backend Ports
 
-This repository supports building against AMD GPUs via HIP/ROCm in addition to NVIDIA CUDA.
+The C++ stitcher supports three backend ports with a shared public pano/kernel API and shared test targets.
+
+### CUDA Port (Default)
+
+The CUDA port is the default backend on NVIDIA systems.
+
+- Build: `bazelisk build --config=cuda //src/... //tests/...`
+- Test: `bazelisk test --config=cuda //src/... //tests/...`
+- CUDA builds use NVCC and compile fatbins for all GPU architectures supported by the installed CUDA toolchain.
+
+### HIP/ROCm Port (Experimental)
+
+The HIP/ROCm port targets AMD GPUs using the same kernel and pano interfaces.
 
 - Prerequisites:
-  - a ROCm installation with `hipcc`, HIP headers, and `libamdhip64`
-  - either `ROCM_PATH` / `HIP_PATH` exported or the toolkit installed in a standard ROCm location
-
-- Build for HIP:
-  - Use the ROCm config: `bazelisk build --config=rocm //src/...`
-  - Run tests with: `bazelisk test --config=rocm //src/... //tests/...`
-  - This selects HIP-aware headers and links against `libamdhip64`. CUDA remains the default backend.
-
-- Notes:
-  - CUDA/HIP runtime differences are bridged via `cupano/gpu/gpu_runtime.h` and `cupano/gpu/gpu_gl_interop.h`.
-  - HIP compilation of kernels is provided via a `genrule` that calls `hipcc` and is tagged `manual`; it is not built by default on CUDA systems.
-  - To explicitly build the HIP kernel library: `bazelisk build --config=rocm //src/cuda:cuda_blend_cuda_lib_hip`.
-
-## Vulkan Backend (Experimental)
-
-This repository now also provides a Vulkan-selected backend:
-
-- Build for Vulkan:
-  - `bazelisk build --config=vulkan //src/... //tests/...`
-- Run tests with Vulkan:
-  - `bazelisk test --config=vulkan //src/... //tests/...`
+  - ROCm installation with `hipcc`, HIP headers, and `libamdhip64`
+  - either `ROCM_PATH` / `HIP_PATH` exported or a standard ROCm install path
+- Build: `bazelisk build --config=rocm //src/... //tests/...`
+- Test: `bazelisk test --config=rocm //src/... //tests/...`
 
 Notes:
-- The Vulkan backend keeps the same public CUDA-facing kernel APIs so the existing pano code and tests build/run unchanged.
-- Backend selection is via Bazel define/config (`--config=vulkan`, equivalent to `--define=backend=vulkan`).
+- CUDA/HIP runtime differences are bridged via `cupano/gpu/gpu_runtime.h` and `cupano/gpu/gpu_gl_interop.h`.
+- HIP kernel compilation is provided by a `genrule` that invokes `hipcc` (tagged `manual`).
+- Explicit HIP kernel build target: `bazelisk build --config=rocm //src/cuda:cuda_blend_cuda_lib_hip`.
+
+### Vulkan Port (Experimental)
+
+The Vulkan port keeps CUDA-facing kernel APIs stable so pano code and tests run unchanged under `--config=vulkan`.
+
+- Build: `bazelisk build --config=vulkan //src/... //tests/...`
+- Test: `bazelisk test --config=vulkan //src/... //tests/...`
+
+Backend selection:
+- `--config=cuda`, `--config=rocm`, and `--config=vulkan` set the corresponding backend port.
+- You can also set `GPU_BACKEND=cuda|rocm|vulkan` directly (for Vulkan this matches `--define=backend=vulkan`).
 
 ## Python/PyTorch Port
 
