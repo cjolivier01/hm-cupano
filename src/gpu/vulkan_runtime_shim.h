@@ -358,8 +358,15 @@ inline cudaError_t cudaMemcpy2DFromArray(
     std::size_t width,
     std::size_t height,
     cudaMemcpyKind kind) {
-  const auto* src_ptr = static_cast<const std::uint8_t*>(src) + hOffset * dpitch + wOffset;
-  return cudaMemcpy2D(dst, dpitch, src_ptr, dpitch, width, height, kind);
+  if (!dst || !src) {
+    cuda_set_last_error(cudaErrorInvalidValue);
+    return cudaErrorInvalidValue;
+  }
+  // This shim models cudaArray_t as linear memory without explicit stride metadata.
+  // Treat copied rows as tightly packed by width bytes.
+  const std::size_t array_pitch = width;
+  const auto* src_ptr = static_cast<const std::uint8_t*>(src) + hOffset * array_pitch + wOffset;
+  return cudaMemcpy2D(dst, dpitch, src_ptr, array_pitch, width, height, kind);
 }
 
 inline cudaError_t cudaMemcpy2DFromArrayAsync(
@@ -384,6 +391,13 @@ inline cudaError_t cudaMemcpy2DToArray(
     std::size_t width,
     std::size_t height,
     cudaMemcpyKind kind) {
-  auto* dst_ptr = static_cast<std::uint8_t*>(dst) + hOffset * spitch + wOffset;
-  return cudaMemcpy2D(dst_ptr, spitch, src, spitch, width, height, kind);
+  if (!dst || !src) {
+    cuda_set_last_error(cudaErrorInvalidValue);
+    return cudaErrorInvalidValue;
+  }
+  // This shim models cudaArray_t as linear memory without explicit stride metadata.
+  // Treat copied rows as tightly packed by width bytes.
+  const std::size_t array_pitch = width;
+  auto* dst_ptr = static_cast<std::uint8_t*>(dst) + hOffset * array_pitch + wOffset;
+  return cudaMemcpy2D(dst_ptr, array_pitch, src, spitch, width, height, kind);
 }

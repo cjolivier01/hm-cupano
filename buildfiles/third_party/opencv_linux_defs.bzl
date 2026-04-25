@@ -103,6 +103,21 @@ _ROCM_TOOL_GLOBS = [
     "opt/rocm-*/bin/hipcc",
 ]
 
+_VULKAN_HEADER_GLOBS = [
+    "include/vulkan/vulkan.h",
+    "local/include/vulkan/vulkan.h",
+    "opt/vulkan/include/vulkan/vulkan.h",
+]
+
+_VULKAN_LOADER_GLOBS = [
+    "lib/x86_64-linux-gnu/libvulkan.so*",
+    "lib/aarch64-linux-gnu/libvulkan.so*",
+    "lib/libvulkan.so*",
+    "lib64/libvulkan.so*",
+    "local/lib/libvulkan.so*",
+    "local/lib64/libvulkan.so*",
+]
+
 
 def _dedupe(values):
     seen = {}
@@ -171,6 +186,7 @@ def _detect_backend_availability():
     return struct(
         cuda_available = _has_any_glob(_CUDA_NVCC_GLOBS) and _has_any_glob(_CUDA_CUDART_GLOBS),
         rocm_available = _has_any_glob(_ROCM_TOOL_GLOBS),
+        vulkan_available = _has_any_glob(_VULKAN_HEADER_GLOBS) and _has_any_glob(_VULKAN_LOADER_GLOBS),
     )
 
 
@@ -188,13 +204,17 @@ def _resolve_backend(requested_backend, availability):
         return "rocm"
 
     if backend == "vulkan":
+        if not availability.vulkan_available:
+            fail("OpenCV backend forced to Vulkan, but Vulkan markers (headers/loader) were not detected under /usr")
         return "vulkan"
 
     if availability.cuda_available:
         return "cuda"
     if availability.rocm_available:
         return "rocm"
-    fail("OpenCV build requires either CUDA or ROCm toolkit markers under /usr, but neither was detected")
+    if availability.vulkan_available:
+        return "vulkan"
+    fail("OpenCV build requires CUDA, ROCm, or Vulkan markers under /usr, but none were detected")
 
 
 def _missing_required_headers(prefix):

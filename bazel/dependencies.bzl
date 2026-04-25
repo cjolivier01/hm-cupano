@@ -55,6 +55,35 @@ def _rocm_available(ctx):
             return True
     return False
 
+def _vulkan_available(ctx):
+    sdk_root = ctx.os.environ.get("VULKAN_SDK", "")
+    if sdk_root and (
+        ctx.path(sdk_root + "/include/vulkan/vulkan.h").exists or
+        ctx.path(sdk_root + "/Include/vulkan/vulkan.h").exists
+    ):
+        return True
+
+    if _has_tool(ctx, "vulkaninfo"):
+        return True
+
+    if ctx.path("/usr/include/vulkan/vulkan.h").exists:
+        return True
+    if ctx.path("/usr/local/include/vulkan/vulkan.h").exists:
+        return True
+    if ctx.path("/opt/vulkan/include/vulkan/vulkan.h").exists:
+        return True
+
+    if ctx.path("/usr/lib/x86_64-linux-gnu/libvulkan.so").exists:
+        return True
+    if ctx.path("/usr/lib/aarch64-linux-gnu/libvulkan.so").exists:
+        return True
+    if ctx.path("/usr/lib64/libvulkan.so").exists:
+        return True
+    if ctx.path("/usr/lib/libvulkan.so").exists:
+        return True
+
+    return False
+
 def _parent_dir(path):
     parts = path.split("/")
     if len(parts) <= 1:
@@ -136,6 +165,7 @@ def _select_backend(ctx):
     requested = _normalize_backend(ctx.os.environ.get("GPU_BACKEND", "auto"))
     cuda_ok = _cuda_available(ctx)
     rocm_ok = _rocm_available(ctx)
+    vulkan_ok = _vulkan_available(ctx)
 
     if requested == "cuda":
         if not cuda_ok:
@@ -148,12 +178,16 @@ def _select_backend(ctx):
         return "rocm"
 
     if requested == "vulkan":
+        if not vulkan_ok:
+            fail("GPU_BACKEND=vulkan was requested, but Vulkan markers (headers/loader) were not detected.")
         return "vulkan"
 
     if cuda_ok:
         return "cuda"
     if rocm_ok:
         return "rocm"
+    if vulkan_ok:
+        return "vulkan"
     fail("No GPU backend detected. Install CUDA/ROCm/Vulkan, or set GPU_BACKEND=cuda|rocm|vulkan with the matching toolkit available.")
 
 def _opencv_linux_repo_impl(ctx):

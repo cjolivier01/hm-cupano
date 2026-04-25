@@ -49,14 +49,42 @@ count_linked_cuda_opencv_libs() {
   printf '%s' "$count"
 }
 
+has_host_cuda_opencv_lib() {
+  local lib="$1"
+
+  if command -v ldconfig >/dev/null 2>&1; then
+    if ldconfig -p 2>/dev/null | grep -q -- "$lib"; then
+      return 0
+    fi
+  fi
+
+  local found
+  found="$(find /usr/lib /usr/local/lib /usr/lib64 /usr/local/lib64 -maxdepth 4 -name "${lib}*" -print -quit 2>/dev/null || true)"
+  [[ -n "$found" ]]
+}
+
+host_has_all_cuda_opencv_libs() {
+  has_host_cuda_opencv_lib 'libopencv_cudacodec.so' &&
+  has_host_cuda_opencv_lib 'libopencv_cudaimgproc.so' &&
+  has_host_cuda_opencv_lib 'libopencv_cudawarping.so'
+}
+
 case "$backend" in
   cuda)
     linked_count="$(count_linked_cuda_opencv_libs)"
+    if host_has_all_cuda_opencv_libs; then
+      if [[ "$linked_count" -ne 3 ]]; then
+        printf 'CUDA backend requires OpenCV CUDA libs when present on host (expected 3/3 linked, got %s/3)\n' "$linked_count" >&2
+        exit 1
+      fi
+      exit 0
+    fi
+
     if [[ "$linked_count" -eq 3 ]]; then
       exit 0
     fi
     if [[ "$linked_count" -eq 0 ]]; then
-      printf 'CUDA backend built without OpenCV CUDA video modules; CPU OpenCV I/O fallback is active.\n'
+      printf 'CUDA backend built without OpenCV CUDA video modules because host CUDA OpenCV libs are unavailable; CPU OpenCV I/O fallback is active.\n'
       exit 0
     fi
     printf 'inconsistent OpenCV CUDA linkage for CUDA backend (%s/3 CUDA OpenCV libs linked)\n' "$linked_count" >&2

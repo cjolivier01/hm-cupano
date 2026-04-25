@@ -25,6 +25,8 @@
 
 namespace {
 
+constexpr unsigned short kUnmappedPositionValue = std::numeric_limits<unsigned short>::max();
+
 template <typename T>
 struct PixelTraits;
 
@@ -422,6 +424,7 @@ cudaError_t remap_core(
 
       const unsigned short sx = mapX[y * remapW + x];
       const unsigned short sy = mapY[y * remapW + x];
+      const bool sentinel_unmapped = sx == kUnmappedPositionValue;
       const bool mapped = sx < src.width && sy < src.height;
 
       for (int b = 0; b < batchSize; ++b) {
@@ -433,7 +436,18 @@ cudaError_t remap_core(
             src_px = apply_adjustment(src_px, adjustment);
           }
           out_px = pixel_cast<T_out>(src_px);
-        } else if (no_unmapped_write) {
+        } else if (filter_by_dest_map) {
+          // Match CUDA dest-map kernels: for unmapped samples, write default as-is.
+        } else if (!no_unmapped_write || !sentinel_unmapped) {
+          if constexpr (PixelTraits<T_out>::kChannels == 4) {
+            if (sentinel_unmapped) {
+              PixelTraits<T_out>::set(out_px, 3, 0.0f);
+            } else if (!apply_adjust) {
+              PixelTraits<T_out>::set(out_px, 3, 255.0f);
+            }
+          }
+        } else {
+          // no_unmapped_write only skips writes for sentinel-marked unmapped pixels.
           do_write = false;
         }
 
@@ -643,6 +657,16 @@ cudaError_t batched_remap_kernel_ex_offset_roi(
     int roiH,
     bool no_unmapped_write,
     cudaStream_t) {
+  if (roiW <= 0 || roiH <= 0) {
+    return cudaSuccess;
+  }
+  if (roiX < 0 || roiY < 0 || roiW < 0 || roiH < 0) {
+    return cudaErrorInvalidValue;
+  }
+  if (roiX + roiW > remapW || roiY + roiH > remapH) {
+    return cudaErrorInvalidValue;
+  }
+
   return remap_core(
       src,
       dest,
