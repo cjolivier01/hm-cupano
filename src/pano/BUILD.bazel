@@ -34,6 +34,7 @@ cc_library(
         ]
         + select({
             "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "@//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         })
     ),
@@ -246,6 +247,7 @@ cc_library(
         ]
         + select({
             "@//:use_hip": ["//src/cuda:cuda_blend_cuda_lib_hip"],
+            "@//:use_vulkan": ["//src/cuda:cuda_blend_vulkan_lib"],
             "//conditions:default": ["//src/cuda:cuda_blend_cuda_lib"],
         })
     ),

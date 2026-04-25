@@ -216,6 +216,19 @@ This repository supports building against AMD GPUs via HIP/ROCm in addition to N
   - HIP compilation of kernels is provided via a `genrule` that calls `hipcc` and is tagged `manual`; it is not built by default on CUDA systems.
   - To explicitly build the HIP kernel library: `bazelisk build --config=rocm //src/cuda:cuda_blend_cuda_lib_hip`.
 
+## Vulkan Backend (Experimental)
+
+This repository now also provides a Vulkan-selected backend:
+
+- Build for Vulkan:
+  - `bazelisk build --config=vulkan //src/... //tests/...`
+- Run tests with Vulkan:
+  - `bazelisk test --config=vulkan //src/... //tests/...`
+
+Notes:
+- The Vulkan backend keeps the same public CUDA-facing kernel APIs so the existing pano code and tests build/run unchanged.
+- Backend selection is via Bazel define/config (`--config=vulkan`, equivalent to `--define=backend=vulkan`).
+
 ## Python/PyTorch Port
 
 A Python port of the two-image and generic N-image stitchers now lives under `cupano/`.

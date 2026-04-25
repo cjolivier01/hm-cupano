@@ -11,6 +11,7 @@ cc_binary(
     deps = ["//src/pano:cuda_pano", "@opencv_linux//:opencv"]
         + select({
             "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "@//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         }),
 )
@@ -27,11 +28,13 @@ cc_binary(
     visibility = ["//visibility:public"],
     target_compatible_with = select({
         "@//:use_hip": ["@platforms//:incompatible"],
+        "@//:use_vulkan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = ["//src/pano:cuda_pano", "@ffmpeg_linux//:ffmpeg_libs", "@opencv_linux//:opencv"]
         + select({
             "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "@//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         }),
 )
@@ -48,11 +51,13 @@ cc_binary(
     visibility = ["//visibility:public"],
     target_compatible_with = select({
         "@//:use_hip": ["@platforms//:incompatible"],
+        "@//:use_vulkan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = ["//src/pano:cuda_pano", "@ffmpeg_linux//:ffmpeg_libs", "@opencv_linux//:opencv"]
         + select({
             "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "@//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         }),
 )
@@ -70,6 +75,7 @@ cc_binary(
     deps = ["//src/pano:cuda_pano", "@opencv_linux//:opencv"]
         + select({
             "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "@//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         }),
 )
@@ -87,6 +93,7 @@ cc_binary(
     deps = ["//src/pano:cuda_pano_n", "@opencv_linux//:opencv"]
         + select({
             "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "@//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         }),
 )
@@ -101,6 +108,7 @@ sh_test(
     ],
     target_compatible_with = select({
         "@//:use_hip": ["@platforms//:incompatible"],
+        "@//:use_vulkan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     tags = [
@@ -114,6 +122,7 @@ sh_test(
     srcs = ["opencv_backend_runtime_test.sh"],
     args = select({
         "@//:use_hip": ["rocm", "$(location :test_cuda_blend)"],
+        "@//:use_vulkan": ["vulkan", "$(location :test_cuda_blend)"],
         "//conditions:default": ["cuda", "$(location :test_cuda_blend)"],
     }),
     data = [":test_cuda_blend"],

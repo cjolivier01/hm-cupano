@@ -40,6 +40,16 @@ valid_rocm_root() {
 	return 0
 }
 
+valid_vulkan_root() {
+	local root="$1"
+
+	[ -n "$root" ] || return 1
+	[ -f "$root/include/vulkan/vulkan.h" ] || return 1
+	[ -f "$root/lib/libvulkan.so" ] || [ -f "$root/lib64/libvulkan.so" ] || return 1
+
+	return 0
+}
+
 detect_cuda_path() {
 	local candidate=""
 
@@ -76,6 +86,26 @@ detect_rocm_path() {
 	for candidate in /opt/rocm /opt/rocm-*; do
 		valid_rocm_root "$candidate" && { printf '%s\n' "$candidate"; return 0; }
 	done
+
+	return 1
+}
+
+detect_vulkan_path() {
+	local candidate=""
+
+	for candidate in "${VULKAN_SDK:-}"; do
+		[ -n "$candidate" ] || continue
+		valid_vulkan_root "$candidate" && { printf '%s\n' "$candidate"; return 0; }
+	done
+
+	for candidate in /usr /usr/local /opt/vulkan-sdk /opt/vulkan; do
+		valid_vulkan_root "$candidate" && { printf '%s\n' "$candidate"; return 0; }
+	done
+
+	if [ -f /usr/include/vulkan/vulkan.h ]; then
+		printf '%s\n' '/usr'
+		return 0
+	fi
 
 	return 1
 }
@@ -155,6 +185,14 @@ ensure_rocm_env() {
 	export ROCM_PATH="$rocm_root"
 	export HIP_PATH="$rocm_root"
 	append_path_once "$rocm_root/bin"
+}
+
+ensure_vulkan_env() {
+	local vk_root=""
+
+	vk_root="$(detect_vulkan_path)" || return 1
+	export VULKAN_SDK="$vk_root"
+	append_path_once "$vk_root/bin"
 }
 
 ensure_cuda_bazel_archs() {
