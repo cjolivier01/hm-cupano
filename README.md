@@ -103,7 +103,7 @@ bazelisk run @multiblend//:multiblend -- --save-seams=seam_file.png -o panorama.
 ```
 Alternatively, you can use enblend (also available as Bazel external `@enblend`) and convert to a 3‑class paletted mask automatically:
 ```
-python3 scripts/generate_seam.py --directory=$(pwd) --num-images=3 --seam enblend
+python3 ../../scripts/generate_seam.py --directory=$(pwd) --num-images=3 --seam enblend
 ```
 
 Stitch using the 3-image path (6 levels) and view it:

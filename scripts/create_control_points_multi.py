@@ -529,15 +529,15 @@ def main() -> None:
         print("Need at least 2 inputs")
         exit(1)
 
-    # compute offsets to files[0]
-    offsets: List[float] = []
-    ref: str = files[0]
-    for tgt in files[1:]:
-        if is_video_file(ref) and is_video_file(tgt):
-            offsets.append(synchronize_by_audio(ref, tgt))
-    assert len(offsets) == len(files) - 1
-
-    final_offsets: List[float] = compute_global_offsets(offsets)
+    if all(is_video_file(path) for path in files):
+        ref: str = files[0]
+        offsets: List[Tuple[float, float]] = [
+            synchronize_by_audio(ref, tgt) for tgt in files[1:]
+        ]
+        assert len(offsets) == len(files) - 1
+        final_offsets: List[float] = compute_global_offsets(offsets)
+    else:
+        final_offsets = [0.0] * len(files)
 
     # extract frames
     frames: List[np.ndarray] = [
