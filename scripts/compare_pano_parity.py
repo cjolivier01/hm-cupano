@@ -21,7 +21,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from cupano import ControlMasks, ControlMasksN, CudaStitchPano, CudaStitchPanoN
+from cupano import (
+    ControlMasks,
+    ControlMasksN,
+    CudaStitchPano,
+    CudaStitchPanoN,
+)  # noqa: E402
 
 
 @dataclass
@@ -95,7 +100,9 @@ def ensure_two_image_seam(directory: Path) -> None:
     map0 = cv2.imread(str(directory / "mapping_0000_x.tif"), cv2.IMREAD_ANYDEPTH)
     map1 = cv2.imread(str(directory / "mapping_0001_x.tif"), cv2.IMREAD_ANYDEPTH)
     if map0 is None or map1 is None:
-        raise FileNotFoundError("Missing mapping_000{0,1}_x.tif for seam fallback generation")
+        raise FileNotFoundError(
+            "Missing mapping_000{0,1}_x.tif for seam fallback generation"
+        )
 
     pos0 = _tiff_position(directory / "mapping_0000.tif")
     pos1 = _tiff_position(directory / "mapping_0001.tif")
@@ -129,7 +136,13 @@ def ensure_two_image_seam(directory: Path) -> None:
         raise RuntimeError(f"Failed to write fallback seam to {seam_path}")
 
 
-def prepare_two_image_directory(left: Path, right: Path, directory: Path, max_control_points: int, scale: float | None) -> Path:
+def prepare_two_image_directory(
+    left: Path,
+    right: Path,
+    directory: Path,
+    max_control_points: int,
+    scale: float | None,
+) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     left_dst = directory / "left.png"
     right_dst = directory / "right.png"
@@ -155,7 +168,11 @@ def prepare_two_image_directory(left: Path, right: Path, directory: Path, max_co
 
 def load_input_images(directory: Path, num_images: int) -> list[np.ndarray]:
     images: list[np.ndarray] = []
-    if num_images == 2 and (directory / "left.png").exists() and (directory / "right.png").exists():
+    if (
+        num_images == 2
+        and (directory / "left.png").exists()
+        and (directory / "right.png").exists()
+    ):
         names = ["left.png", "right.png"]
     else:
         names = [f"image{i}.png" for i in range(num_images)]
@@ -165,16 +182,24 @@ def load_input_images(directory: Path, num_images: int) -> list[np.ndarray]:
         if image is None:
             raise FileNotFoundError(directory / name)
         if image.ndim != 3 or image.shape[2] != 3:
-            raise ValueError(f"Expected 3-channel BGR input for {name}, got shape {image.shape}")
+            raise ValueError(
+                f"Expected 3-channel BGR input for {name}, got shape {image.shape}"
+            )
         image = cv2.cvtColor(image, cv2.COLOR_BGR2BGRA)
         images.append(image)
     return images
 
 
-def to_tensor_batch(images: Sequence[np.ndarray], device: torch.device) -> list[torch.Tensor]:
+def to_tensor_batch(
+    images: Sequence[np.ndarray], device: torch.device
+) -> list[torch.Tensor]:
     tensors: list[torch.Tensor] = []
     for image in images:
-        tensor = torch.from_numpy(np.ascontiguousarray(image)).to(device=device, dtype=torch.uint8).unsqueeze(0)
+        tensor = (
+            torch.from_numpy(np.ascontiguousarray(image))
+            .to(device=device, dtype=torch.uint8)
+            .unsqueeze(0)
+        )
         tensors.append(tensor)
     return tensors
 
@@ -200,7 +225,6 @@ def run_python_stitch(
     directory: Path,
     num_images: int,
     levels: int,
-    adjust: bool,
     device: torch.device,
     output_path: Path,
     backend: str,
@@ -212,7 +236,6 @@ def run_python_stitch(
             batch_size=1,
             num_levels=levels,
             control_masks=masks,
-            match_exposure=adjust,
             quiet=True,
             backend=backend,
         )
@@ -223,7 +246,6 @@ def run_python_stitch(
             batch_size=1,
             num_levels=levels,
             control_masks=masks,
-            match_exposure=adjust,
             quiet=True,
             minimize_blend=True,
             backend=backend,
@@ -233,13 +255,14 @@ def run_python_stitch(
     return output
 
 
-def run_cpp_stitch(binary: Path, directory: Path, num_images: int, levels: int, adjust: bool, output_path: Path) -> None:
+def run_cpp_stitch(
+    binary: Path, directory: Path, num_images: int, levels: int, output_path: Path
+) -> None:
     cmd = [
         str(binary),
         f"--directory={directory}",
         f"--output={output_path}",
         f"--levels={levels}",
-        f"--adjust={1 if adjust else 0}",
     ]
     if num_images != 2:
         cmd.append(f"--num-images={num_images}")
@@ -253,9 +276,13 @@ def read_output(path: Path) -> np.ndarray:
     return image
 
 
-def compute_diff_metrics(cpp_image: np.ndarray, python_image: np.ndarray) -> DiffMetrics:
+def compute_diff_metrics(
+    cpp_image: np.ndarray, python_image: np.ndarray
+) -> DiffMetrics:
     if cpp_image.shape != python_image.shape:
-        raise ValueError(f"Shape mismatch: C++ {cpp_image.shape}, Python {python_image.shape}")
+        raise ValueError(
+            f"Shape mismatch: C++ {cpp_image.shape}, Python {python_image.shape}"
+        )
     diff = cpp_image.astype(np.float32) - python_image.astype(np.float32)
     abs_diff = np.abs(diff)
     mse = float(np.mean(diff * diff))
@@ -272,8 +299,12 @@ def compute_diff_metrics(cpp_image: np.ndarray, python_image: np.ndarray) -> Dif
     )
 
 
-def save_diff_image(cpp_image: np.ndarray, python_image: np.ndarray, path: Path) -> None:
-    diff = np.abs(cpp_image.astype(np.int16) - python_image.astype(np.int16)).astype(np.uint8)
+def save_diff_image(
+    cpp_image: np.ndarray, python_image: np.ndarray, path: Path
+) -> None:
+    diff = np.abs(cpp_image.astype(np.int16) - python_image.astype(np.int16)).astype(
+        np.uint8
+    )
     if diff.ndim == 3:
         if diff.shape[2] == 4:
             diff_vis = diff[..., :3].max(axis=2)
@@ -288,23 +319,83 @@ def save_diff_image(cpp_image: np.ndarray, python_image: np.ndarray, path: Path)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Compare Python cupano output against the existing C++/CUDA stitchers")
-    parser.add_argument("--directory", default=None, help="Prepared stitching directory containing images, mappings, and seam_file.png")
-    parser.add_argument("--left", default=None, help="Left/source image for auto-generating a two-image parity directory")
-    parser.add_argument("--right", default=None, help="Right/source image for auto-generating a two-image parity directory")
-    parser.add_argument("--num-images", type=int, default=2, help="Number of images for the parity run")
-    parser.add_argument("--levels", type=int, default=0, help="Number of Laplacian levels to compare")
-    parser.add_argument("--adjust", action="store_true", help="Enable exposure adjustment when supported")
-    parser.add_argument("--device", default=("cuda" if torch.cuda.is_available() else "cpu"), help="Torch device to use for the Python path")
-    parser.add_argument("--backend", choices=("auto", "triton"), default="auto", help="Python backend to use for the cupano path")
-    parser.add_argument("--build-if-needed", action="store_true", help="Build the C++ parity binary with bazelisk if missing")
-    parser.add_argument("--binary", default=None, help="Path to the C++ parity binary to run")
-    parser.add_argument("--work-dir", default=None, help="Working directory for generated inputs and outputs")
-    parser.add_argument("--max-control-points", type=int, default=120, help="Control points used when auto-generating a two-image directory")
-    parser.add_argument("--scale", type=float, default=None, help="Optional scale passed through to create_control_points.py")
-    parser.add_argument("--tolerance-max", type=float, default=0.0, help="Maximum allowed absolute channel difference")
-    parser.add_argument("--tolerance-mean", type=float, default=0.0, help="Maximum allowed mean absolute channel difference")
-    parser.add_argument("--keep-work-dir", action="store_true", help="Do not delete an auto-created temporary work directory")
+    parser = argparse.ArgumentParser(
+        description="Compare Python cupano output against the existing C++/CUDA stitchers"
+    )
+    parser.add_argument(
+        "--directory",
+        default=None,
+        help="Prepared stitching directory containing images, mappings, and seam_file.png",
+    )
+    parser.add_argument(
+        "--left",
+        default=None,
+        help="Left/source image for auto-generating a two-image parity directory",
+    )
+    parser.add_argument(
+        "--right",
+        default=None,
+        help="Right/source image for auto-generating a two-image parity directory",
+    )
+    parser.add_argument(
+        "--num-images", type=int, default=2, help="Number of images for the parity run"
+    )
+    parser.add_argument(
+        "--levels", type=int, default=0, help="Number of Laplacian levels to compare"
+    )
+    parser.add_argument(
+        "--device",
+        default=("cuda" if torch.cuda.is_available() else "cpu"),
+        help="Torch device to use for the Python path",
+    )
+    parser.add_argument(
+        "--backend",
+        choices=("auto", "triton"),
+        default="auto",
+        help="Python backend to use for the cupano path",
+    )
+    parser.add_argument(
+        "--build-if-needed",
+        action="store_true",
+        help="Build the C++ parity binary with bazelisk if missing",
+    )
+    parser.add_argument(
+        "--binary", default=None, help="Path to the C++ parity binary to run"
+    )
+    parser.add_argument(
+        "--work-dir",
+        default=None,
+        help="Working directory for generated inputs and outputs",
+    )
+    parser.add_argument(
+        "--max-control-points",
+        type=int,
+        default=120,
+        help="Control points used when auto-generating a two-image directory",
+    )
+    parser.add_argument(
+        "--scale",
+        type=float,
+        default=None,
+        help="Optional scale passed through to create_control_points.py",
+    )
+    parser.add_argument(
+        "--tolerance-max",
+        type=float,
+        default=0.0,
+        help="Maximum allowed absolute channel difference",
+    )
+    parser.add_argument(
+        "--tolerance-mean",
+        type=float,
+        default=0.0,
+        help="Maximum allowed mean absolute channel difference",
+    )
+    parser.add_argument(
+        "--keep-work-dir",
+        action="store_true",
+        help="Do not delete an auto-created temporary work directory",
+    )
     return parser.parse_args()
 
 
@@ -325,7 +416,9 @@ def main() -> int:
 
         if args.left and args.right:
             if num_images != 2:
-                raise ValueError("Auto-generation from --left/--right currently supports only two-image parity runs")
+                raise ValueError(
+                    "Auto-generation from --left/--right currently supports only two-image parity runs"
+                )
             prepare_two_image_directory(
                 Path(args.left).resolve(),
                 Path(args.right).resolve(),
@@ -336,20 +429,39 @@ def main() -> int:
         elif not args.directory:
             raise ValueError("Provide either --directory or both --left and --right")
 
-        default_binary = REPO_ROOT / "bazel-bin" / "tests" / ("test_cuda_blend" if num_images == 2 else "test_cuda_blend_n")
-        default_target = "//tests:test_cuda_blend" if num_images == 2 else "//tests:test_cuda_blend_n"
+        default_binary = (
+            REPO_ROOT
+            / "bazel-bin"
+            / "tests"
+            / ("test_cuda_blend" if num_images == 2 else "test_cuda_blend_n")
+        )
+        default_target = (
+            "//tests:test_cuda_blend"
+            if num_images == 2
+            else "//tests:test_cuda_blend_n"
+        )
         binary = Path(args.binary).resolve() if args.binary else default_binary
-        binary = ensure_binary(binary, default_target, build_if_needed=args.build_if_needed)
+        binary = ensure_binary(
+            binary, default_target, build_if_needed=args.build_if_needed
+        )
 
         backend_suffix = f"_{args.backend}"
         cpp_out = work_dir / f"cpp_levels{args.levels}_n{num_images}.png"
-        py_out = work_dir / f"python_levels{args.levels}_n{num_images}{backend_suffix}.png"
-        diff_out = work_dir / f"diff_levels{args.levels}_n{num_images}{backend_suffix}.png"
-        metrics_out = work_dir / f"metrics_levels{args.levels}_n{num_images}{backend_suffix}.json"
+        py_out = (
+            work_dir / f"python_levels{args.levels}_n{num_images}{backend_suffix}.png"
+        )
+        diff_out = (
+            work_dir / f"diff_levels{args.levels}_n{num_images}{backend_suffix}.png"
+        )
+        metrics_out = (
+            work_dir / f"metrics_levels{args.levels}_n{num_images}{backend_suffix}.json"
+        )
 
         device = torch.device(args.device)
-        run_python_stitch(work_dir, num_images, args.levels, args.adjust, device, py_out, args.backend)
-        run_cpp_stitch(binary, work_dir, num_images, args.levels, args.adjust, cpp_out)
+        run_python_stitch(
+            work_dir, num_images, args.levels, device, py_out, args.backend
+        )
+        run_cpp_stitch(binary, work_dir, num_images, args.levels, cpp_out)
 
         cpp_image = read_output(cpp_out)
         python_image = read_output(py_out)
@@ -363,7 +475,10 @@ def main() -> int:
         print(f"Diff heatmap:  {diff_out}")
         print(f"Metrics JSON:  {metrics_out}")
 
-        if metrics.max_abs > args.tolerance_max or metrics.mean_abs > args.tolerance_mean:
+        if (
+            metrics.max_abs > args.tolerance_max
+            or metrics.mean_abs > args.tolerance_mean
+        ):
             print(
                 f"Parity thresholds failed: max_abs={metrics.max_abs} (limit {args.tolerance_max}), "
                 f"mean_abs={metrics.mean_abs:.6f} (limit {args.tolerance_mean})",

@@ -17,7 +17,6 @@
  *  - --output: output video path
  *  - --gpu-decode/--gpu-encode: prefer GPU reader/writer (0|1)
  *  - --levels: number of pyramid levels for the stitcher
- *  - --adjust: exposure matching (0|1)
  *  - --cuda-device: CUDA device id
  *  - --max-frames: limit processed frames (useful for smoke tests)
  *  - --show / --show-scaled: optional display
@@ -409,7 +408,6 @@ int main(int argc, char** argv) {
   bool prefer_gpu_encode = true; // Prefer NVENC when available.
   bool show = false;
   double show_scale = 0.0; // 0 = no scaled show
-  bool adjust_images = false;
   int device_id = 0;
   int num_levels =
 #ifdef __aarch64__
@@ -427,7 +425,6 @@ int main(int argc, char** argv) {
       {"output", required_argument, 0, 'o'},
       {"control", required_argument, 0, 'c'},
       {"levels", required_argument, 0, 'l'},
-      {"adjust", required_argument, 0, 'a'},
       {"cuda-device", required_argument, 0, 'd'},
       {"gpu-decode", required_argument, 0, 'G'}, // 0/1
       {"gpu-encode", required_argument, 0, 'E'}, // 0/1
@@ -438,7 +435,7 @@ int main(int argc, char** argv) {
       {"show-scaled", required_argument, 0, 'S'},
       {0, 0, 0, 0}};
 
-  const char* short_opts = "L:R:o:c:l:a:d:G:E:f:b:m:sS:";
+  const char* short_opts = "L:R:o:c:l:d:G:E:f:b:m:sS:";
   int opt, option_index = 0;
   while ((opt = getopt_long(argc, argv, short_opts, long_options, &option_index)) != -1) {
     switch (opt) {
@@ -456,9 +453,6 @@ int main(int argc, char** argv) {
         break;
       case 'l':
         num_levels = std::atoi(optarg);
-        break;
-      case 'a':
-        adjust_images = !!std::atoi(optarg);
         break;
       case 'd':
         device_id = std::atoi(optarg);
@@ -492,7 +486,7 @@ int main(int argc, char** argv) {
   // Basic argument validation; control masks are required for stitching.
   if (left_path.empty() || right_path.empty()) {
     std::cerr << "Usage: " << argv[0] << " --left <left.mp4> --right <right.mp4> [--output <out.mp4>] --control <dir>"
-              << " [--levels N] [--adjust 0|1] [--cuda-device K] [--gpu-decode 0|1] [--gpu-encode 0|1]"
+              << " [--levels N] [--cuda-device K] [--gpu-decode 0|1] [--gpu-encode 0|1]"
               << " [--fourcc mp4v|avc1|hevc] [--bitrate-kbps N] [--max-frames N] [--show] [--show-scaled F]"
               << std::endl;
     return 2;
@@ -524,8 +518,7 @@ int main(int argc, char** argv) {
 
   using T_pipeline = uchar4;
   using T_compute = float4;
-  hm::pano::cuda::CudaStitchPano<T_pipeline, T_compute> pano(
-      /*batch_size=*/1, num_levels, control_masks, /*match_exposure=*/adjust_images);
+  hm::pano::cuda::CudaStitchPano<T_pipeline, T_compute> pano(/*batch_size=*/1, num_levels, control_masks);
 
   std::cout << "Canvas: " << pano.canvas_width() << "x" << pano.canvas_height() << std::endl;
 

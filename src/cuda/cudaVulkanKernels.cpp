@@ -2,7 +2,6 @@
 #include "cudaBlend3.h"
 #include "cudaBlendN.h"
 #include "cudaFusedKernels3.h"
-#include "cudaImageAdjust.cuh"
 #include "cudaMakeFull.h"
 #include "cudaRemap.h"
 
@@ -33,7 +32,9 @@ struct PixelTraits;
 template <>
 struct PixelTraits<unsigned char> {
   static constexpr int kChannels = 1;
-  static float get(const unsigned char& p, int) { return static_cast<float>(p); }
+  static float get(const unsigned char& p, int) {
+    return static_cast<float>(p);
+  }
   static void set(unsigned char& p, int, float v) {
     p = static_cast<unsigned char>(std::clamp(v, 0.0f, 255.0f));
   }
@@ -42,7 +43,9 @@ struct PixelTraits<unsigned char> {
 template <>
 struct PixelTraits<uchar1> {
   static constexpr int kChannels = 1;
-  static float get(const uchar1& p, int) { return static_cast<float>(p.x); }
+  static float get(const uchar1& p, int) {
+    return static_cast<float>(p.x);
+  }
   static void set(uchar1& p, int, float v) {
     p.x = static_cast<unsigned char>(std::clamp(v, 0.0f, 255.0f));
   }
@@ -53,17 +56,26 @@ struct PixelTraits<uchar3> {
   static constexpr int kChannels = 3;
   static float get(const uchar3& p, int c) {
     switch (c) {
-      case 0: return static_cast<float>(p.x);
-      case 1: return static_cast<float>(p.y);
-      default: return static_cast<float>(p.z);
+      case 0:
+        return static_cast<float>(p.x);
+      case 1:
+        return static_cast<float>(p.y);
+      default:
+        return static_cast<float>(p.z);
     }
   }
   static void set(uchar3& p, int c, float v) {
     const auto cv = static_cast<unsigned char>(std::clamp(v, 0.0f, 255.0f));
     switch (c) {
-      case 0: p.x = cv; break;
-      case 1: p.y = cv; break;
-      default: p.z = cv; break;
+      case 0:
+        p.x = cv;
+        break;
+      case 1:
+        p.y = cv;
+        break;
+      default:
+        p.z = cv;
+        break;
     }
   }
 };
@@ -73,19 +85,31 @@ struct PixelTraits<uchar4> {
   static constexpr int kChannels = 4;
   static float get(const uchar4& p, int c) {
     switch (c) {
-      case 0: return static_cast<float>(p.x);
-      case 1: return static_cast<float>(p.y);
-      case 2: return static_cast<float>(p.z);
-      default: return static_cast<float>(p.w);
+      case 0:
+        return static_cast<float>(p.x);
+      case 1:
+        return static_cast<float>(p.y);
+      case 2:
+        return static_cast<float>(p.z);
+      default:
+        return static_cast<float>(p.w);
     }
   }
   static void set(uchar4& p, int c, float v) {
     const auto cv = static_cast<unsigned char>(std::clamp(v, 0.0f, 255.0f));
     switch (c) {
-      case 0: p.x = cv; break;
-      case 1: p.y = cv; break;
-      case 2: p.z = cv; break;
-      default: p.w = cv; break;
+      case 0:
+        p.x = cv;
+        break;
+      case 1:
+        p.y = cv;
+        break;
+      case 2:
+        p.z = cv;
+        break;
+      default:
+        p.w = cv;
+        break;
     }
   }
 };
@@ -93,15 +117,23 @@ struct PixelTraits<uchar4> {
 template <>
 struct PixelTraits<float> {
   static constexpr int kChannels = 1;
-  static float get(const float& p, int) { return p; }
-  static void set(float& p, int, float v) { p = v; }
+  static float get(const float& p, int) {
+    return p;
+  }
+  static void set(float& p, int, float v) {
+    p = v;
+  }
 };
 
 template <>
 struct PixelTraits<float1> {
   static constexpr int kChannels = 1;
-  static float get(const float1& p, int) { return p.x; }
-  static void set(float1& p, int, float v) { p.x = v; }
+  static float get(const float1& p, int) {
+    return p.x;
+  }
+  static void set(float1& p, int, float v) {
+    p.x = v;
+  }
 };
 
 template <>
@@ -109,16 +141,25 @@ struct PixelTraits<float3> {
   static constexpr int kChannels = 3;
   static float get(const float3& p, int c) {
     switch (c) {
-      case 0: return p.x;
-      case 1: return p.y;
-      default: return p.z;
+      case 0:
+        return p.x;
+      case 1:
+        return p.y;
+      default:
+        return p.z;
     }
   }
   static void set(float3& p, int c, float v) {
     switch (c) {
-      case 0: p.x = v; break;
-      case 1: p.y = v; break;
-      default: p.z = v; break;
+      case 0:
+        p.x = v;
+        break;
+      case 1:
+        p.y = v;
+        break;
+      default:
+        p.z = v;
+        break;
     }
   }
 };
@@ -128,18 +169,30 @@ struct PixelTraits<float4> {
   static constexpr int kChannels = 4;
   static float get(const float4& p, int c) {
     switch (c) {
-      case 0: return p.x;
-      case 1: return p.y;
-      case 2: return p.z;
-      default: return p.w;
+      case 0:
+        return p.x;
+      case 1:
+        return p.y;
+      case 2:
+        return p.z;
+      default:
+        return p.w;
     }
   }
   static void set(float4& p, int c, float v) {
     switch (c) {
-      case 0: p.x = v; break;
-      case 1: p.y = v; break;
-      case 2: p.z = v; break;
-      default: p.w = v; break;
+      case 0:
+        p.x = v;
+        break;
+      case 1:
+        p.y = v;
+        break;
+      case 2:
+        p.z = v;
+        break;
+      default:
+        p.w = v;
+        break;
     }
   }
 };
@@ -164,21 +217,6 @@ T_out pixel_cast(const T_in& in) {
       fill = 255.0f;
     }
     PixelTraits<T_out>::set(out, c, fill);
-  }
-  return out;
-}
-
-template <typename T>
-T apply_adjustment(const T& in, const float3& adj) {
-  T out = in;
-  if constexpr (PixelTraits<T>::kChannels >= 1) {
-    PixelTraits<T>::set(out, 0, PixelTraits<T>::get(in, 0) + adj.x);
-  }
-  if constexpr (PixelTraits<T>::kChannels >= 2) {
-    PixelTraits<T>::set(out, 1, PixelTraits<T>::get(in, 1) + adj.y);
-  }
-  if constexpr (PixelTraits<T>::kChannels >= 3) {
-    PixelTraits<T>::set(out, 2, PixelTraits<T>::get(in, 2) + adj.z);
   }
   return out;
 }
@@ -227,8 +265,10 @@ void blend_two_images(
       if (channels == 4) {
         const float a0 = static_cast<float>(img1[pix_off + 3]);
         const float a1 = static_cast<float>(img2[pix_off + 3]);
-        if (a0 <= 0.0f) w0 = 0.0f;
-        if (a1 <= 0.0f) w1 = 0.0f;
+        if (a0 <= 0.0f)
+          w0 = 0.0f;
+        if (a1 <= 0.0f)
+          w1 = 0.0f;
         const float s = w0 + w1;
         if (s > 1e-8f) {
           w0 /= s;
@@ -268,7 +308,10 @@ void blend_three_images(
     for (int i = 0; i < pixels; ++i) {
       const int pix_off = ((b * pixels) + i) * channels;
       const int moff = i * 3;
-      float w[3] = {static_cast<float>(mask3[moff + 0]), static_cast<float>(mask3[moff + 1]), static_cast<float>(mask3[moff + 2])};
+      float w[3] = {
+          static_cast<float>(mask3[moff + 0]),
+          static_cast<float>(mask3[moff + 1]),
+          static_cast<float>(mask3[moff + 2])};
 
       const T* imgs[3] = {img0, img1, img2};
 
@@ -289,15 +332,16 @@ void blend_three_images(
           w[1] /= s;
           w[2] /= s;
           for (int c = 0; c < 3; ++c) {
-            const float v =
-                w[0] * img0[pix_off + c] + w[1] * img1[pix_off + c] + w[2] * img2[pix_off + c];
+            const float v = w[0] * img0[pix_off + c] + w[1] * img1[pix_off + c] + w[2] * img2[pix_off + c];
             out[pix_off + c] = static_cast<T>(v);
           }
           out[pix_off + 3] = static_cast<T>(std::max({a[0], a[1], a[2]}));
         } else {
           int best = 0;
-          if (a[1] > a[best]) best = 1;
-          if (a[2] > a[best]) best = 2;
+          if (a[1] > a[best])
+            best = 1;
+          if (a[2] > a[best])
+            best = 2;
           for (int c = 0; c < 4; ++c) {
             out[pix_off + c] = imgs[best][pix_off + c];
           }
@@ -313,13 +357,7 @@ void blend_three_images(
 }
 
 template <typename T, int N_IMAGES, int CHANNELS>
-void blend_n_images(
-    const std::vector<const T*>& imgs,
-    const T* mask,
-    T* out,
-    int width,
-    int height,
-    int batch) {
+void blend_n_images(const std::vector<const T*>& imgs, const T* mask, T* out, int width, int height, int batch) {
   const int pixels = width * height;
   for (int b = 0; b < batch; ++b) {
     for (int i = 0; i < pixels; ++i) {
@@ -338,9 +376,11 @@ void blend_n_images(
           }
         }
         float s = 0.0f;
-        for (int k = 0; k < N_IMAGES; ++k) s += w[k];
+        for (int k = 0; k < N_IMAGES; ++k)
+          s += w[k];
         if (s > 1e-8f) {
-          for (int k = 0; k < N_IMAGES; ++k) w[k] /= s;
+          for (int k = 0; k < N_IMAGES; ++k)
+            w[k] /= s;
           for (int c = 0; c < 3; ++c) {
             float v = 0.0f;
             for (int k = 0; k < N_IMAGES; ++k) {
@@ -349,7 +389,8 @@ void blend_n_images(
             out[pix_off + c] = static_cast<T>(v);
           }
           float amax = a[0];
-          for (int k = 1; k < N_IMAGES; ++k) amax = std::max(amax, a[k]);
+          for (int k = 1; k < N_IMAGES; ++k)
+            amax = std::max(amax, a[k]);
           out[pix_off + 3] = static_cast<T>(amax);
         } else {
           int best = 0;
@@ -396,9 +437,7 @@ cudaError_t remap_core(
     bool no_unmapped_write,
     bool filter_by_dest_map,
     int this_image_index,
-    const unsigned char* dest_image_map,
-    bool apply_adjust,
-    const float3& adjustment) {
+    const unsigned char* dest_image_map) {
   if (!src.d_ptr || !dest.d_ptr || !mapX || !mapY) {
     return cudaErrorInvalidDevicePointer;
   }
@@ -432,9 +471,6 @@ cudaError_t remap_core(
         bool do_write = true;
         if (mapped) {
           T_in src_px = *surface_ptr_const(src, b, static_cast<int>(sx), static_cast<int>(sy));
-          if (apply_adjust) {
-            src_px = apply_adjustment(src_px, adjustment);
-          }
           out_px = pixel_cast<T_out>(src_px);
         } else if (filter_by_dest_map) {
           // Match CUDA dest-map kernels: for unmapped samples, write default as-is.
@@ -442,7 +478,7 @@ cudaError_t remap_core(
           if constexpr (PixelTraits<T_out>::kChannels == 4) {
             if (sentinel_unmapped) {
               PixelTraits<T_out>::set(out_px, 3, 0.0f);
-            } else if (!apply_adjust) {
+            } else {
               PixelTraits<T_out>::set(out_px, 3, 255.0f);
             }
           }
@@ -462,23 +498,6 @@ cudaError_t remap_core(
 }
 
 } // namespace
-
-// -----------------------------------------------------------------------------
-// Image adjustment
-// -----------------------------------------------------------------------------
-
-template <typename T>
-void adjustImageCudaBatch(T* d_image, int batchSize, int width, int height, const float3& adjustment) {
-  if (!d_image) {
-    return;
-  }
-  constexpr int kChannels = PixelTraits<T>::kChannels;
-  const int pixels = batchSize * width * height;
-  for (int i = 0; i < pixels; ++i) {
-    d_image[i] = apply_adjustment(d_image[i], adjustment);
-  }
-  (void)kChannels;
-}
 
 // -----------------------------------------------------------------------------
 // Make full / ROI copy
@@ -565,16 +584,7 @@ cudaError_t simple_make_full_batch(
     return cuerr;
   }
   return copy_roi_batched(
-      src,
-      region_width,
-      region_height,
-      src_roi_x,
-      src_roi_y,
-      dest,
-      destOffsetX,
-      destOffsetY,
-      batchSize,
-      stream);
+      src, region_width, region_height, src_roi_x, src_roi_y, dest, destOffsetX, destOffsetY, batchSize, stream);
 }
 
 // -----------------------------------------------------------------------------
@@ -594,12 +604,17 @@ cudaError_t batched_remap_kernel_ex(
     T_in dflt,
     int batchSize,
     cudaStream_t stream) {
-  CudaSurface<T_in> src{const_cast<T_in*>(d_src), static_cast<std::uint32_t>(srcW), static_cast<std::uint32_t>(srcH),
-                        static_cast<std::uint32_t>(srcW * sizeof(T_in))};
-  CudaSurface<T_out> dest{d_dest, static_cast<std::uint32_t>(destW), static_cast<std::uint32_t>(destH),
-                          static_cast<std::uint32_t>(destW * sizeof(T_out))};
-  return batched_remap_kernel_ex_offset(
-      src, dest, d_mapX, d_mapY, dflt, batchSize, destW, destH, 0, 0, false, stream);
+  CudaSurface<T_in> src{
+      const_cast<T_in*>(d_src),
+      static_cast<std::uint32_t>(srcW),
+      static_cast<std::uint32_t>(srcH),
+      static_cast<std::uint32_t>(srcW * sizeof(T_in))};
+  CudaSurface<T_out> dest{
+      d_dest,
+      static_cast<std::uint32_t>(destW),
+      static_cast<std::uint32_t>(destH),
+      static_cast<std::uint32_t>(destW * sizeof(T_out))};
+  return batched_remap_kernel_ex_offset(src, dest, d_mapX, d_mapY, dflt, batchSize, destW, destH, 0, 0, false, stream);
 }
 
 template <typename T_in, typename T_out>
@@ -634,9 +649,7 @@ cudaError_t batched_remap_kernel_ex_offset(
       no_unmapped_write,
       false,
       0,
-      nullptr,
-      false,
-      make_float3(0.0f, 0.0f, 0.0f));
+      nullptr);
 }
 
 template <typename T_in, typename T_out>
@@ -685,47 +698,7 @@ cudaError_t batched_remap_kernel_ex_offset_roi(
       no_unmapped_write,
       false,
       0,
-      nullptr,
-      false,
-      make_float3(0.0f, 0.0f, 0.0f));
-}
-
-template <typename T_in, typename T_out>
-cudaError_t batched_remap_kernel_ex_offset_adjust(
-    const CudaSurface<T_in>& src,
-    const CudaSurface<T_out>& dest,
-    const unsigned short* d_mapX,
-    const unsigned short* d_mapY,
-    T_in deflt,
-    int batchSize,
-    int remapW,
-    int remapH,
-    int offsetX,
-    int offsetY,
-    bool no_unmapped_write,
-    float3 adjustment,
-    cudaStream_t) {
-  return remap_core(
-      src,
-      dest,
-      d_mapX,
-      d_mapY,
-      deflt,
-      batchSize,
-      remapW,
-      remapH,
-      offsetX,
-      offsetY,
-      0,
-      0,
-      remapW,
-      remapH,
-      no_unmapped_write,
-      false,
-      0,
-      nullptr,
-      true,
-      adjustment);
+      nullptr);
 }
 
 template <typename T_in, typename T_out>
@@ -761,48 +734,7 @@ cudaError_t batched_remap_kernel_ex_offset_with_dest_map(
       false,
       true,
       this_image_index,
-      dest_image_map,
-      false,
-      make_float3(0.0f, 0.0f, 0.0f));
-}
-
-template <typename T_in, typename T_out>
-cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust(
-    const CudaSurface<T_in>& src,
-    const CudaSurface<T_out>& dest,
-    const unsigned short* d_mapX,
-    const unsigned short* d_mapY,
-    T_in deflt,
-    int this_image_index,
-    const unsigned char* dest_image_map,
-    int batchSize,
-    int remapW,
-    int remapH,
-    int offsetX,
-    int offsetY,
-    float3 adjustment,
-    cudaStream_t) {
-  return remap_core(
-      src,
-      dest,
-      d_mapX,
-      d_mapY,
-      deflt,
-      batchSize,
-      remapW,
-      remapH,
-      offsetX,
-      offsetY,
-      0,
-      0,
-      remapW,
-      remapH,
-      false,
-      true,
-      this_image_index,
-      dest_image_map,
-      true,
-      adjustment);
+      dest_image_map);
 }
 
 template <typename T>
@@ -867,7 +799,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
   }
   init_level_dims(context.widths, context.heights, context.imageWidth, context.imageHeight);
   context.initialized = true;
-  blend_two_images(d_image1, d_image2, d_mask, d_output, context.imageWidth, context.imageHeight, channels, context.batchSize);
+  blend_two_images(
+      d_image1, d_image2, d_mask, d_output, context.imageWidth, context.imageHeight, channels, context.batchSize);
   return cudaSuccess;
 }
 
@@ -884,8 +817,7 @@ cudaError_t cudaBatchedLaplacianBlend(
     int batchSize,
     cudaStream_t stream) {
   CudaBatchLaplacianBlendContext<T> context(imageWidth, imageHeight, numLevels, batchSize);
-  return cudaBatchedLaplacianBlendWithContext<T, F_T>(
-      h_image1, h_image2, h_mask, h_output, context, channels, stream);
+  return cudaBatchedLaplacianBlendWithContext<T, F_T>(h_image1, h_image2, h_mask, h_output, context, channels, stream);
 }
 
 template <typename T, typename F_T>
@@ -965,7 +897,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
   }
   init_level_dims(context.widths, context.heights, context.imageWidth, context.imageHeight);
   context.initialized = true;
-  blend_n_images<T, N_IMAGES, CHANNELS>(d_imagePtrs, d_mask, d_output, context.imageWidth, context.imageHeight, context.batchSize);
+  blend_n_images<T, N_IMAGES, CHANNELS>(
+      d_imagePtrs, d_mask, d_output, context.imageWidth, context.imageHeight, context.batchSize);
   return cudaSuccess;
 }
 
@@ -1007,10 +940,6 @@ CudaStatus launchFusedRemapToFullKernel3(
     CudaMat<T_compute>& cudaFull1,
     CudaMat<T_compute>& cudaFull2,
     const CanvasManager3& canvas_manager,
-    float3 adjustment0,
-    float3 adjustment1,
-    float3 adjustment2,
-    bool apply_adjustment,
     cudaStream_t stream) {
   const T_pipeline dflt{};
   const auto remap_one = [&](const CudaMat<T_pipeline>& input,
@@ -1018,14 +947,20 @@ CudaStatus launchFusedRemapToFullKernel3(
                              const CudaMat<uint16_t>& my,
                              CudaMat<T_compute>& out,
                              int ox,
-                             int oy,
-                             float3 adj) -> cudaError_t {
-    if (apply_adjustment) {
-      return batched_remap_kernel_ex_offset_adjust(
-          input.surface(), out.surface(), mx.data(), my.data(), dflt, input.batch_size(), mx.width(), mx.height(), ox, oy, false, adj, stream);
-    }
+                             int oy) -> cudaError_t {
     return batched_remap_kernel_ex_offset(
-        input.surface(), out.surface(), mx.data(), my.data(), dflt, input.batch_size(), mx.width(), mx.height(), ox, oy, false, stream);
+        input.surface(),
+        out.surface(),
+        mx.data(),
+        my.data(),
+        dflt,
+        input.batch_size(),
+        mx.width(),
+        mx.height(),
+        ox,
+        oy,
+        false,
+        stream);
   };
 
   cudaError_t cuerr = remap_one(
@@ -1034,9 +969,9 @@ CudaStatus launchFusedRemapToFullKernel3(
       remap_0_y,
       cudaFull0,
       canvas_manager.canvas_positions()[0].x,
-      canvas_manager.canvas_positions()[0].y,
-      adjustment0);
-  if (cuerr != cudaSuccess) return CudaStatus(cuerr);
+      canvas_manager.canvas_positions()[0].y);
+  if (cuerr != cudaSuccess)
+    return CudaStatus(cuerr);
 
   cuerr = remap_one(
       inputImage1,
@@ -1044,9 +979,9 @@ CudaStatus launchFusedRemapToFullKernel3(
       remap_1_y,
       cudaFull1,
       canvas_manager.canvas_positions()[1].x,
-      canvas_manager.canvas_positions()[1].y,
-      adjustment1);
-  if (cuerr != cudaSuccess) return CudaStatus(cuerr);
+      canvas_manager.canvas_positions()[1].y);
+  if (cuerr != cudaSuccess)
+    return CudaStatus(cuerr);
 
   cuerr = remap_one(
       inputImage2,
@@ -1054,9 +989,9 @@ CudaStatus launchFusedRemapToFullKernel3(
       remap_2_y,
       cudaFull2,
       canvas_manager.canvas_positions()[2].x,
-      canvas_manager.canvas_positions()[2].y,
-      adjustment2);
-  if (cuerr != cudaSuccess) return CudaStatus(cuerr);
+      canvas_manager.canvas_positions()[2].y);
+  if (cuerr != cudaSuccess)
+    return CudaStatus(cuerr);
 
   return CudaStatus::OkStatus();
 }
@@ -1075,10 +1010,6 @@ CudaStatus launchFusedRemapHardSeam3(
     const CudaMat<unsigned char>& hardSeamMask,
     CudaMat<T_pipeline>& canvas,
     const CanvasManager3& canvas_manager,
-    float3 adjustment0,
-    float3 adjustment1,
-    float3 adjustment2,
-    bool apply_adjustment,
     cudaStream_t stream) {
   const T_pipeline dflt{};
   const auto remap_one = [&](const CudaMat<T_pipeline>& input,
@@ -1086,25 +1017,7 @@ CudaStatus launchFusedRemapHardSeam3(
                              const CudaMat<uint16_t>& my,
                              int image_index,
                              int ox,
-                             int oy,
-                             float3 adj) -> cudaError_t {
-    if (apply_adjustment) {
-      return batched_remap_kernel_ex_offset_with_dest_map_adjust(
-          input.surface(),
-          canvas.surface(),
-          mx.data(),
-          my.data(),
-          dflt,
-          image_index,
-          hardSeamMask.data(),
-          input.batch_size(),
-          mx.width(),
-          mx.height(),
-          ox,
-          oy,
-          adj,
-          stream);
-    }
+                             int oy) -> cudaError_t {
     return batched_remap_kernel_ex_offset_with_dest_map(
         input.surface(),
         canvas.surface(),
@@ -1127,9 +1040,9 @@ CudaStatus launchFusedRemapHardSeam3(
       remap_0_y,
       0,
       canvas_manager.canvas_positions()[0].x,
-      canvas_manager.canvas_positions()[0].y,
-      adjustment0);
-  if (cuerr != cudaSuccess) return CudaStatus(cuerr);
+      canvas_manager.canvas_positions()[0].y);
+  if (cuerr != cudaSuccess)
+    return CudaStatus(cuerr);
 
   cuerr = remap_one(
       inputImage1,
@@ -1137,9 +1050,9 @@ CudaStatus launchFusedRemapHardSeam3(
       remap_1_y,
       1,
       canvas_manager.canvas_positions()[1].x,
-      canvas_manager.canvas_positions()[1].y,
-      adjustment1);
-  if (cuerr != cudaSuccess) return CudaStatus(cuerr);
+      canvas_manager.canvas_positions()[1].y);
+  if (cuerr != cudaSuccess)
+    return CudaStatus(cuerr);
 
   cuerr = remap_one(
       inputImage2,
@@ -1147,9 +1060,9 @@ CudaStatus launchFusedRemapHardSeam3(
       remap_2_y,
       2,
       canvas_manager.canvas_positions()[2].x,
-      canvas_manager.canvas_positions()[2].y,
-      adjustment2);
-  if (cuerr != cudaSuccess) return CudaStatus(cuerr);
+      canvas_manager.canvas_positions()[2].y);
+  if (cuerr != cudaSuccess)
+    return CudaStatus(cuerr);
 
   return CudaStatus::OkStatus();
 }
@@ -1162,56 +1075,241 @@ CudaStatus launchFusedRemapHardSeam3(
 // Explicit instantiations
 // -----------------------------------------------------------------------------
 
-template void adjustImageCudaBatch<uchar3>(uchar3*, int, int, int, const float3&);
-template void adjustImageCudaBatch<uchar4>(uchar4*, int, int, int, const float3&);
-template void adjustImageCudaBatch<float3>(float3*, int, int, int, const float3&);
-template void adjustImageCudaBatch<float4>(float4*, int, int, int, const float3&);
-
 template cudaError_t AlphaConditionalCopy<uchar4>(CudaSurface<uchar4>&, CudaSurface<uchar4>&, int, cudaStream_t);
 template cudaError_t AlphaConditionalCopy<float4>(CudaSurface<float4>&, CudaSurface<float4>&, int, cudaStream_t);
 
 template cudaError_t simple_make_full_batch<uchar3, float3>(
-    const CudaSurface<uchar3>&, int, int, int, int, int, int, bool, int, CudaSurface<float3>, cudaStream_t);
+    const CudaSurface<uchar3>&,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    bool,
+    int,
+    CudaSurface<float3>,
+    cudaStream_t);
 template cudaError_t simple_make_full_batch<uchar4, float4>(
-    const CudaSurface<uchar4>&, int, int, int, int, int, int, bool, int, CudaSurface<float4>, cudaStream_t);
+    const CudaSurface<uchar4>&,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    bool,
+    int,
+    CudaSurface<float4>,
+    cudaStream_t);
 template cudaError_t simple_make_full_batch<float3, float3>(
-    const CudaSurface<float3>&, int, int, int, int, int, int, bool, int, CudaSurface<float3>, cudaStream_t);
+    const CudaSurface<float3>&,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    bool,
+    int,
+    CudaSurface<float3>,
+    cudaStream_t);
 template cudaError_t simple_make_full_batch<float4, float4>(
-    const CudaSurface<float4>&, int, int, int, int, int, int, bool, int, CudaSurface<float4>, cudaStream_t);
+    const CudaSurface<float4>&,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    bool,
+    int,
+    CudaSurface<float4>,
+    cudaStream_t);
 template cudaError_t simple_make_full_batch<float3, float4>(
-    const CudaSurface<float3>&, int, int, int, int, int, int, bool, int, CudaSurface<float4>, cudaStream_t);
+    const CudaSurface<float3>&,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    bool,
+    int,
+    CudaSurface<float4>,
+    cudaStream_t);
 template cudaError_t simple_make_full_batch<float4, float3>(
-    const CudaSurface<float4>&, int, int, int, int, int, int, bool, int, CudaSurface<float3>, cudaStream_t);
+    const CudaSurface<float4>&,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    bool,
+    int,
+    CudaSurface<float3>,
+    cudaStream_t);
 template cudaError_t simple_make_full_batch<uchar4, float3>(
-    const CudaSurface<uchar4>&, int, int, int, int, int, int, bool, int, CudaSurface<float3>, cudaStream_t);
+    const CudaSurface<uchar4>&,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    bool,
+    int,
+    CudaSurface<float3>,
+    cudaStream_t);
 template cudaError_t simple_make_full_batch<uchar3, float4>(
-    const CudaSurface<uchar3>&, int, int, int, int, int, int, bool, int, CudaSurface<float4>, cudaStream_t);
+    const CudaSurface<uchar3>&,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    bool,
+    int,
+    CudaSurface<float4>,
+    cudaStream_t);
 
 template cudaError_t copy_roi_batched<float3, float3>(
-    const CudaSurface<float3>&, int, int, int, int, CudaSurface<float3>, int, int, int, cudaStream_t);
+    const CudaSurface<float3>&,
+    int,
+    int,
+    int,
+    int,
+    CudaSurface<float3>,
+    int,
+    int,
+    int,
+    cudaStream_t);
 template cudaError_t copy_roi_batched<float4, float4>(
-    const CudaSurface<float4>&, int, int, int, int, CudaSurface<float4>, int, int, int, cudaStream_t);
+    const CudaSurface<float4>&,
+    int,
+    int,
+    int,
+    int,
+    CudaSurface<float4>,
+    int,
+    int,
+    int,
+    cudaStream_t);
 template cudaError_t copy_roi_batched<float3, uchar3>(
-    const CudaSurface<float3>&, int, int, int, int, CudaSurface<uchar3>, int, int, int, cudaStream_t);
+    const CudaSurface<float3>&,
+    int,
+    int,
+    int,
+    int,
+    CudaSurface<uchar3>,
+    int,
+    int,
+    int,
+    cudaStream_t);
 template cudaError_t copy_roi_batched<float4, uchar4>(
-    const CudaSurface<float4>&, int, int, int, int, CudaSurface<uchar4>, int, int, int, cudaStream_t);
+    const CudaSurface<float4>&,
+    int,
+    int,
+    int,
+    int,
+    CudaSurface<uchar4>,
+    int,
+    int,
+    int,
+    cudaStream_t);
 template cudaError_t copy_roi_batched<float4, uchar3>(
-    const CudaSurface<float4>&, int, int, int, int, CudaSurface<uchar3>, int, int, int, cudaStream_t);
+    const CudaSurface<float4>&,
+    int,
+    int,
+    int,
+    int,
+    CudaSurface<uchar3>,
+    int,
+    int,
+    int,
+    cudaStream_t);
 template cudaError_t copy_roi_batched<float3, uchar4>(
-    const CudaSurface<float3>&, int, int, int, int, CudaSurface<uchar4>, int, int, int, cudaStream_t);
+    const CudaSurface<float3>&,
+    int,
+    int,
+    int,
+    int,
+    CudaSurface<uchar4>,
+    int,
+    int,
+    int,
+    cudaStream_t);
 template cudaError_t copy_roi_batched<uchar3, uchar3>(
-    const CudaSurface<uchar3>&, int, int, int, int, CudaSurface<uchar3>, int, int, int, cudaStream_t);
+    const CudaSurface<uchar3>&,
+    int,
+    int,
+    int,
+    int,
+    CudaSurface<uchar3>,
+    int,
+    int,
+    int,
+    cudaStream_t);
 template cudaError_t copy_roi_batched<uchar4, uchar4>(
-    const CudaSurface<uchar4>&, int, int, int, int, CudaSurface<uchar4>, int, int, int, cudaStream_t);
+    const CudaSurface<uchar4>&,
+    int,
+    int,
+    int,
+    int,
+    CudaSurface<uchar4>,
+    int,
+    int,
+    int,
+    cudaStream_t);
 template cudaError_t copy_roi_batched<uchar3, float3>(
-    const CudaSurface<uchar3>&, int, int, int, int, CudaSurface<float3>, int, int, int, cudaStream_t);
+    const CudaSurface<uchar3>&,
+    int,
+    int,
+    int,
+    int,
+    CudaSurface<float3>,
+    int,
+    int,
+    int,
+    cudaStream_t);
 template cudaError_t copy_roi_batched<uchar4, float4>(
-    const CudaSurface<uchar4>&, int, int, int, int, CudaSurface<float4>, int, int, int, cudaStream_t);
+    const CudaSurface<uchar4>&,
+    int,
+    int,
+    int,
+    int,
+    CudaSurface<float4>,
+    int,
+    int,
+    int,
+    cudaStream_t);
 
 template cudaError_t batched_remap_kernel_ex<float3, float3>(
-    const float3*, int, int, float3*, int, int, const unsigned short*, const unsigned short*, float3, int, cudaStream_t);
+    const float3*,
+    int,
+    int,
+    float3*,
+    int,
+    int,
+    const unsigned short*,
+    const unsigned short*,
+    float3,
+    int,
+    cudaStream_t);
 template cudaError_t batched_remap_kernel_ex<float4, float4>(
-    const float4*, int, int, float4*, int, int, const unsigned short*, const unsigned short*, float4, int, cudaStream_t);
+    const float4*,
+    int,
+    int,
+    float4*,
+    int,
+    int,
+    const unsigned short*,
+    const unsigned short*,
+    float4,
+    int,
+    cudaStream_t);
 
 template cudaError_t batched_remap_kernel_ex_offset<float3, float3>(
     const CudaSurface<float3>&,
@@ -1425,77 +1523,6 @@ template cudaError_t batched_remap_kernel_ex_offset_roi<uchar4, uchar4>(
     bool,
     cudaStream_t);
 
-template cudaError_t batched_remap_kernel_ex_offset_adjust<float3, float3>(
-    const CudaSurface<float3>&,
-    const CudaSurface<float3>&,
-    const unsigned short*,
-    const unsigned short*,
-    float3,
-    int,
-    int,
-    int,
-    int,
-    int,
-    bool,
-    float3,
-    cudaStream_t);
-template cudaError_t batched_remap_kernel_ex_offset_adjust<uchar3, uchar3>(
-    const CudaSurface<uchar3>&,
-    const CudaSurface<uchar3>&,
-    const unsigned short*,
-    const unsigned short*,
-    uchar3,
-    int,
-    int,
-    int,
-    int,
-    int,
-    bool,
-    float3,
-    cudaStream_t);
-template cudaError_t batched_remap_kernel_ex_offset_adjust<float4, float4>(
-    const CudaSurface<float4>&,
-    const CudaSurface<float4>&,
-    const unsigned short*,
-    const unsigned short*,
-    float4,
-    int,
-    int,
-    int,
-    int,
-    int,
-    bool,
-    float3,
-    cudaStream_t);
-template cudaError_t batched_remap_kernel_ex_offset_adjust<uchar4, float4>(
-    const CudaSurface<uchar4>&,
-    const CudaSurface<float4>&,
-    const unsigned short*,
-    const unsigned short*,
-    uchar4,
-    int,
-    int,
-    int,
-    int,
-    int,
-    bool,
-    float3,
-    cudaStream_t);
-template cudaError_t batched_remap_kernel_ex_offset_adjust<uchar4, uchar4>(
-    const CudaSurface<uchar4>&,
-    const CudaSurface<uchar4>&,
-    const unsigned short*,
-    const unsigned short*,
-    uchar4,
-    int,
-    int,
-    int,
-    int,
-    int,
-    bool,
-    float3,
-    cudaStream_t);
-
 template cudaError_t batched_remap_kernel_ex_offset_with_dest_map<float1, float1>(
     const CudaSurface<float1>&,
     const CudaSurface<float1>&,
@@ -1581,82 +1608,81 @@ template cudaError_t batched_remap_kernel_ex_offset_with_dest_map<uchar4, uchar4
     int,
     cudaStream_t);
 
-template cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust<float3, float3>(
-    const CudaSurface<float3>&,
-    const CudaSurface<float3>&,
-    const unsigned short*,
-    const unsigned short*,
-    float3,
-    int,
-    const unsigned char*,
-    int,
-    int,
-    int,
-    int,
-    int,
-    float3,
-    cudaStream_t);
-template cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust<uchar3, uchar3>(
-    const CudaSurface<uchar3>&,
-    const CudaSurface<uchar3>&,
-    const unsigned short*,
-    const unsigned short*,
-    uchar3,
-    int,
-    const unsigned char*,
-    int,
-    int,
-    int,
-    int,
-    int,
-    float3,
-    cudaStream_t);
-template cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust<float4, float4>(
-    const CudaSurface<float4>&,
-    const CudaSurface<float4>&,
-    const unsigned short*,
-    const unsigned short*,
-    float4,
-    int,
-    const unsigned char*,
-    int,
-    int,
-    int,
-    int,
-    int,
-    float3,
-    cudaStream_t);
-template cudaError_t batched_remap_kernel_ex_offset_with_dest_map_adjust<uchar4, uchar4>(
-    const CudaSurface<uchar4>&,
-    const CudaSurface<uchar4>&,
-    const unsigned short*,
-    const unsigned short*,
-    uchar4,
-    int,
-    const unsigned char*,
-    int,
-    int,
-    int,
-    int,
-    int,
-    float3,
-    cudaStream_t);
-
 template cudaError_t batched_remap_hard_seam_kernel_n<uchar3>(
-    const CudaSurface<uchar3>*, const unsigned short* const*, const unsigned short* const*, const int2*, const int2*, int, const unsigned char*, CudaSurface<uchar3>, int, cudaStream_t);
+    const CudaSurface<uchar3>*,
+    const unsigned short* const*,
+    const unsigned short* const*,
+    const int2*,
+    const int2*,
+    int,
+    const unsigned char*,
+    CudaSurface<uchar3>,
+    int,
+    cudaStream_t);
 template cudaError_t batched_remap_hard_seam_kernel_n<uchar4>(
-    const CudaSurface<uchar4>*, const unsigned short* const*, const unsigned short* const*, const int2*, const int2*, int, const unsigned char*, CudaSurface<uchar4>, int, cudaStream_t);
+    const CudaSurface<uchar4>*,
+    const unsigned short* const*,
+    const unsigned short* const*,
+    const int2*,
+    const int2*,
+    int,
+    const unsigned char*,
+    CudaSurface<uchar4>,
+    int,
+    cudaStream_t);
 template cudaError_t batched_remap_hard_seam_kernel_n<float3>(
-    const CudaSurface<float3>*, const unsigned short* const*, const unsigned short* const*, const int2*, const int2*, int, const unsigned char*, CudaSurface<float3>, int, cudaStream_t);
+    const CudaSurface<float3>*,
+    const unsigned short* const*,
+    const unsigned short* const*,
+    const int2*,
+    const int2*,
+    int,
+    const unsigned char*,
+    CudaSurface<float3>,
+    int,
+    cudaStream_t);
 template cudaError_t batched_remap_hard_seam_kernel_n<float4>(
-    const CudaSurface<float4>*, const unsigned short* const*, const unsigned short* const*, const int2*, const int2*, int, const unsigned char*, CudaSurface<float4>, int, cudaStream_t);
+    const CudaSurface<float4>*,
+    const unsigned short* const*,
+    const unsigned short* const*,
+    const int2*,
+    const int2*,
+    int,
+    const unsigned char*,
+    CudaSurface<float4>,
+    int,
+    cudaStream_t);
 
 template cudaError_t cudaBatchedLaplacianBlend<float, float>(
-    const float*, const float*, const float*, float*, int, int, int, int, int, cudaStream_t);
+    const float*,
+    const float*,
+    const float*,
+    float*,
+    int,
+    int,
+    int,
+    int,
+    int,
+    cudaStream_t);
 template cudaError_t cudaBatchedLaplacianBlend<unsigned char, float>(
-    const unsigned char*, const unsigned char*, const unsigned char*, unsigned char*, int, int, int, int, int, cudaStream_t);
+    const unsigned char*,
+    const unsigned char*,
+    const unsigned char*,
+    unsigned char*,
+    int,
+    int,
+    int,
+    int,
+    int,
+    cudaStream_t);
 template cudaError_t cudaBatchedLaplacianBlendWithContext<float, float>(
-    const float*, const float*, const float*, float*, CudaBatchLaplacianBlendContext<float>&, int, cudaStream_t);
+    const float*,
+    const float*,
+    const float*,
+    float*,
+    CudaBatchLaplacianBlendContext<float>&,
+    int,
+    cudaStream_t);
 template cudaError_t cudaBatchedLaplacianBlendWithContext<unsigned char, float>(
     const unsigned char*,
     const unsigned char*,
@@ -1667,7 +1693,17 @@ template cudaError_t cudaBatchedLaplacianBlendWithContext<unsigned char, float>(
     cudaStream_t);
 
 template cudaError_t cudaBatchedLaplacianBlend3<float, float>(
-    const float*, const float*, const float*, const float*, float*, int, int, int, int, int, cudaStream_t);
+    const float*,
+    const float*,
+    const float*,
+    const float*,
+    float*,
+    int,
+    int,
+    int,
+    int,
+    int,
+    cudaStream_t);
 template cudaError_t cudaBatchedLaplacianBlend3<unsigned char, float>(
     const unsigned char*,
     const unsigned char*,
@@ -1681,7 +1717,14 @@ template cudaError_t cudaBatchedLaplacianBlend3<unsigned char, float>(
     int,
     cudaStream_t);
 template cudaError_t cudaBatchedLaplacianBlendWithContext3<float, float>(
-    const float*, const float*, const float*, const float*, float*, CudaBatchLaplacianBlendContext3<float>&, int, cudaStream_t);
+    const float*,
+    const float*,
+    const float*,
+    const float*,
+    float*,
+    CudaBatchLaplacianBlendContext3<float>&,
+    int,
+    cudaStream_t);
 template cudaError_t cudaBatchedLaplacianBlendWithContext3<unsigned char, float>(
     const unsigned char*,
     const unsigned char*,
@@ -1692,7 +1735,14 @@ template cudaError_t cudaBatchedLaplacianBlendWithContext3<unsigned char, float>
     int,
     cudaStream_t);
 template cudaError_t cudaBatchedLaplacianBlendOptimized3<float, float>(
-    const float*, const float*, const float*, const float*, float*, CudaBatchLaplacianBlendContext3<float>&, int, cudaStream_t);
+    const float*,
+    const float*,
+    const float*,
+    const float*,
+    float*,
+    CudaBatchLaplacianBlendContext3<float>&,
+    int,
+    cudaStream_t);
 template cudaError_t cudaBatchedLaplacianBlendOptimized3<unsigned char, float>(
     const unsigned char*,
     const unsigned char*,
@@ -1703,10 +1753,14 @@ template cudaError_t cudaBatchedLaplacianBlendOptimized3<unsigned char, float>(
     int,
     cudaStream_t);
 
-#define INSTANTIATE_BLEND_N(N, C)                                                                                 \
-  template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, N, C>(                                \
-      const std::vector<const float*>&, const float*, float*, CudaBatchLaplacianBlendContextN<float, N>&, cudaStream_t); \
-  template cudaError_t cudaBatchedLaplacianBlendN<float, float, N, C>(                                            \
+#define INSTANTIATE_BLEND_N(N, C)                                                 \
+  template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, N, C>( \
+      const std::vector<const float*>&,                                           \
+      const float*,                                                               \
+      float*,                                                                     \
+      CudaBatchLaplacianBlendContextN<float, N>&,                                 \
+      cudaStream_t);                                                              \
+  template cudaError_t cudaBatchedLaplacianBlendN<float, float, N, C>(            \
       const std::vector<const float*>&, const float*, float*, int, int, int, int, cudaStream_t);
 
 INSTANTIATE_BLEND_N(2, 3)
@@ -1744,10 +1798,6 @@ template CudaStatus launchFusedRemapToFullKernel3<uchar3, float3>(
     CudaMat<float3>&,
     CudaMat<float3>&,
     const CanvasManager3&,
-    float3,
-    float3,
-    float3,
-    bool,
     cudaStream_t);
 
 template CudaStatus launchFusedRemapToFullKernel3<uchar3, float4>(
@@ -1764,10 +1814,6 @@ template CudaStatus launchFusedRemapToFullKernel3<uchar3, float4>(
     CudaMat<float4>&,
     CudaMat<float4>&,
     const CanvasManager3&,
-    float3,
-    float3,
-    float3,
-    bool,
     cudaStream_t);
 
 template CudaStatus launchFusedRemapToFullKernel3<uchar4, float4>(
@@ -1784,10 +1830,6 @@ template CudaStatus launchFusedRemapToFullKernel3<uchar4, float4>(
     CudaMat<float4>&,
     CudaMat<float4>&,
     const CanvasManager3&,
-    float3,
-    float3,
-    float3,
-    bool,
     cudaStream_t);
 
 template CudaStatus launchFusedRemapToFullKernel3<float3, float3>(
@@ -1804,10 +1846,6 @@ template CudaStatus launchFusedRemapToFullKernel3<float3, float3>(
     CudaMat<float3>&,
     CudaMat<float3>&,
     const CanvasManager3&,
-    float3,
-    float3,
-    float3,
-    bool,
     cudaStream_t);
 
 template CudaStatus launchFusedRemapToFullKernel3<float4, float4>(
@@ -1824,10 +1862,6 @@ template CudaStatus launchFusedRemapToFullKernel3<float4, float4>(
     CudaMat<float4>&,
     CudaMat<float4>&,
     const CanvasManager3&,
-    float3,
-    float3,
-    float3,
-    bool,
     cudaStream_t);
 
 template CudaStatus launchFusedRemapHardSeam3<uchar3>(
@@ -1843,10 +1877,6 @@ template CudaStatus launchFusedRemapHardSeam3<uchar3>(
     const CudaMat<unsigned char>&,
     CudaMat<uchar3>&,
     const CanvasManager3&,
-    float3,
-    float3,
-    float3,
-    bool,
     cudaStream_t);
 
 template CudaStatus launchFusedRemapHardSeam3<uchar4>(
@@ -1862,10 +1892,6 @@ template CudaStatus launchFusedRemapHardSeam3<uchar4>(
     const CudaMat<unsigned char>&,
     CudaMat<uchar4>&,
     const CanvasManager3&,
-    float3,
-    float3,
-    float3,
-    bool,
     cudaStream_t);
 
 template CudaStatus launchFusedRemapHardSeam3<float3>(
@@ -1881,10 +1907,6 @@ template CudaStatus launchFusedRemapHardSeam3<float3>(
     const CudaMat<unsigned char>&,
     CudaMat<float3>&,
     const CanvasManager3&,
-    float3,
-    float3,
-    float3,
-    bool,
     cudaStream_t);
 
 template CudaStatus launchFusedRemapHardSeam3<float4>(
@@ -1900,10 +1922,6 @@ template CudaStatus launchFusedRemapHardSeam3<float4>(
     const CudaMat<unsigned char>&,
     CudaMat<float4>&,
     const CanvasManager3&,
-    float3,
-    float3,
-    float3,
-    bool,
     cudaStream_t);
 
 } // namespace cuda

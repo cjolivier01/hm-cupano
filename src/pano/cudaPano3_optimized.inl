@@ -1,6 +1,5 @@
 #pragma once
 #include <csignal>
-#include <optional>
 #include "cupano/cuda/cudaFusedKernels3.h"
 #include "cupano/cuda/cudaMakeFull.h"
 #include "cupano/cuda/cudaRemap.h"
@@ -24,7 +23,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     const CudaMat<T_pipeline>& inputImage2,
     StitchingContext3<T_pipeline, T_compute>& stitch_context,
     const CanvasManager3& canvas_manager,
-    const std::optional<ImageAdjust3>& image_adjustment,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
   CudaStatus cuerr;
@@ -38,16 +36,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
   if constexpr (sizeof(T_pipeline) / sizeof(BaseScalar_t<T_pipeline>) == 4) {
     cuerr = cudaMemsetAsync(canvas->data(), 0, canvas->size(), stream);
     CUDA_RETURN_IF_ERROR(cuerr);
-  }
-
-  // Prepare per-image adjustments
-  float3 adj0 = make_float3(0.0f, 0.0f, 0.0f);
-  float3 adj1 = make_float3(0.0f, 0.0f, 0.0f);
-  float3 adj2 = make_float3(0.0f, 0.0f, 0.0f);
-  if (image_adjustment.has_value()) {
-    adj0 = image_adjustment->adj0;
-    adj1 = image_adjustment->adj1;
-    adj2 = image_adjustment->adj2;
   }
 
   if (!stitch_context.is_hard_seam()) {
@@ -77,10 +65,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         *stitch_context.cudaFull1,
         *stitch_context.cudaFull2,
         canvas_manager,
-        adj0,
-        adj1,
-        adj2,
-        image_adjustment.has_value(),
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
 
@@ -148,10 +132,6 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
         *stitch_context.cudaBlendHardSeam,
         *canvas,
         canvas_manager,
-        adj0,
-        adj1,
-        adj2,
-        image_adjustment.has_value(),
         stream);
     CUDA_RETURN_IF_ERROR(cuerr);
   }
@@ -171,23 +151,9 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
   CUDA_RETURN_IF_ERROR(status_);
 
-  if (match_exposure_ && !image_adjustment_.has_value()) {
-    image_adjustment_ = compute_image_adjustment(inputImage0, inputImage1, inputImage2);
-    if (!image_adjustment_.has_value()) {
-      return CudaStatus(cudaError_t::cudaErrorAssert, "Unable to compute 3-image adjustment");
-    }
-  }
-
   // Use optimized implementation by default
   auto result = process_impl_optimized(
-      inputImage0,
-      inputImage1,
-      inputImage2,
-      *stitch_context_,
-      *canvas_manager_,
-      image_adjustment_,
-      stream,
-      std::move(canvas));
+      inputImage0, inputImage1, inputImage2, *stitch_context_, *canvas_manager_, stream, std::move(canvas));
 
   if (!result.ok()) {
     status_.Update(result.status());

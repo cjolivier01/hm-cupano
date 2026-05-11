@@ -45,8 +45,6 @@ constexpr uint32_t kMapYAddrHi = 0xac;
 constexpr uint32_t kRemapExtent = 0xb0;
 constexpr uint32_t kRemapOffset = 0xb4;
 constexpr uint32_t kRemapFlags = 0xb8;
-constexpr uint32_t kAdjust01 = 0xbc;
-constexpr uint32_t kAdjust2 = 0xc0;
 
 constexpr uint32_t kCopySrcXY = 0xc4;
 constexpr uint32_t kCopyDestXY = 0xc8;
@@ -81,10 +79,6 @@ inline constexpr uint32_t pack_xy(uint32_t x, uint32_t y) {
 
 inline constexpr uint32_t pack_signed_xy(int32_t x, int32_t y) {
   return ((static_cast<uint32_t>(y) & 0xffffu) << 16) | (static_cast<uint32_t>(x) & 0xffffu);
-}
-
-inline constexpr uint32_t pack_adjust01(int16_t x, int16_t y) {
-  return ((static_cast<uint32_t>(static_cast<uint16_t>(y))) << 16) | static_cast<uint32_t>(static_cast<uint16_t>(x));
 }
 
 inline constexpr uint32_t pack_format(PixelFormat format) {

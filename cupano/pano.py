@@ -130,7 +130,6 @@ class CudaStitchPano:
         batch_size: int,
         num_levels: int,
         control_masks: ControlMasks,
-        match_exposure: bool = False,
         quiet: bool = False,
         minimize_blend: bool = True,
         max_output_width: int = 0,
@@ -140,13 +139,9 @@ class CudaStitchPano:
         del max_output_width
         self._status = CudaStatus()
         self._num_levels = num_levels
-        self._match_exposure = match_exposure
         self._minimize_blend = bool(minimize_blend and num_levels > 0)
         self._backend = backend
         self._enable_cuda_graphs = enable_cuda_graphs
-        self._image_adjustment: torch.Tensor | None = None
-        self._neg_image_adjustment: torch.Tensor | None = None
-        self._whole_seam_mask_image: np.ndarray | None = None
         self._cache = _DeviceCache()
         self._soft_scratch: dict[tuple[str, int], _TwoImageSoftScratch] = {}
         self._graph_state: _GraphState | None = None
@@ -205,8 +200,6 @@ class CudaStitchPano:
             blend_mask[..., 0] = self._context.blend_seam
             blend_mask[..., 1] = 1.0 - self._context.blend_seam
             self._context.blend_mask = blend_mask
-        if match_exposure:
-            self._whole_seam_mask_image = control_masks.whole_seam_mask_image.copy()
 
     @property
     def status(self) -> CudaStatus:
@@ -225,30 +218,6 @@ class CudaStitchPano:
         self, array: np.ndarray, device: torch.device, dtype: torch.dtype | None = None
     ) -> torch.Tensor:
         return self._cache.tensor(array, device=device, dtype=dtype)
-
-    def _compute_image_adjustment(
-        self, image1: torch.Tensor, image2: torch.Tensor
-    ) -> torch.Tensor | None:
-        if self._whole_seam_mask_image is None:
-            return None
-        seam = self._whole_seam_mask_image
-        img1 = ensure_batched(image1)[0].detach().cpu().numpy().astype(np.float32)
-        img2 = ensure_batched(image2)[0].detach().cpu().numpy().astype(np.float32)
-        top_left_1 = self._canvas_manager.canvas_positions()[0]
-        top_left_2 = self._canvas_manager.canvas_positions()[1]
-        offset = match_seam_images(img1, img2, seam, 100, top_left_1, top_left_2)
-        if offset is None:
-            return None
-        return torch.tensor(offset, device=image1.device, dtype=torch.float32)
-
-    def _prepare_adjustment(self, image1: torch.Tensor, image2: torch.Tensor) -> None:
-        if not self._match_exposure or self._image_adjustment is not None:
-            return
-        self._image_adjustment = self._compute_image_adjustment(image1, image2)
-        if self._image_adjustment is None:
-            self._status = CudaStatus(2, "Unable to compute image adjustment")
-            _status_or_raise(self._status)
-        self._neg_image_adjustment = -self._image_adjustment
 
     def _soft_scratch_for(
         self, device: torch.device, channels: int
@@ -286,12 +255,6 @@ class CudaStitchPano:
         device = input_image_1.device
         channels = input_image_1.shape[-1]
         canvas.zero_()
-        adjustment = self._image_adjustment
-        neg_adjustment = (
-            self._neg_image_adjustment
-            if self._neg_image_adjustment is not None
-            else (adjustment.neg() if adjustment is not None else None)
-        )
 
         if self._context.is_hard_seam:
             seam = self._tensor(self._context.hard_seam, device, torch.uint8)
@@ -304,7 +267,6 @@ class CudaStitchPano:
                 seam,
                 self._canvas_manager._x1,
                 self._canvas_manager._y1,
-                adjustment=neg_adjustment,
                 backend=self._backend,
             )
             remap_to_canvas_with_dest_map(
@@ -316,7 +278,6 @@ class CudaStitchPano:
                 seam,
                 self._canvas_manager._x2,
                 self._canvas_manager._y2,
-                adjustment=adjustment,
                 backend=self._backend,
             )
             return canvas
@@ -334,7 +295,6 @@ class CudaStitchPano:
             self._tensor(self._context.remap_1_y, device, torch.int32),
             self._canvas_manager._x1,
             self._canvas_manager._y1,
-            adjustment=neg_adjustment,
             fill_invalid_alpha=True,
             backend=self._backend,
         )
@@ -347,7 +307,6 @@ class CudaStitchPano:
                 self._canvas_manager._remapper_1.xpos
                 - self._canvas_manager.remapped_image_roi_blend_1.x,
                 self._canvas_manager._y1,
-                adjustment=neg_adjustment,
                 roi=self._canvas_manager.remapped_image_roi_blend_1,
                 fill_invalid_alpha=True,
                 backend=self._backend,
@@ -360,7 +319,6 @@ class CudaStitchPano:
             self._tensor(self._context.remap_2_y, device, torch.int32),
             self._canvas_manager._x2,
             self._canvas_manager._y2,
-            adjustment=adjustment,
             fill_invalid_alpha=True,
             backend=self._backend,
         )
@@ -373,7 +331,6 @@ class CudaStitchPano:
                 self._canvas_manager._remapper_2.xpos
                 - self._canvas_manager.remapped_image_roi_blend_2.x,
                 self._canvas_manager._y2,
-                adjustment=adjustment,
                 roi=self._canvas_manager.remapped_image_roi_blend_2,
                 fill_invalid_alpha=True,
                 backend=self._backend,
@@ -445,7 +402,6 @@ class CudaStitchPano:
         if (
             self._graph_disabled
             or not self._enable_cuda_graphs
-            or self._match_exposure
             or not _cuda_graphs_supported(input_image_1.device)
         ):
             return None
@@ -486,8 +442,6 @@ class CudaStitchPano:
             raise ValueError("Input batch size does not match stitcher batch size")
         if input_image_1.shape[-1] not in (3, 4):
             raise ValueError("Only 3- and 4-channel inputs are supported")
-
-        self._prepare_adjustment(input_image_1, input_image_2)
 
         if canvas is not None:
             canvas = ensure_batched(canvas)
@@ -602,7 +556,6 @@ class CudaStitchPanoN:
         batch_size: int,
         num_levels: int,
         control_masks: ControlMasksN,
-        match_exposure: bool = False,
         quiet: bool = False,
         minimize_blend: bool = True,
         backend: Backend = "auto",
@@ -610,7 +563,6 @@ class CudaStitchPanoN:
     ) -> None:
         self._status = CudaStatus()
         self._num_levels = num_levels
-        self._match_exposure = match_exposure
         self._minimize_blend = bool(minimize_blend and num_levels > 0)
         self._backend = backend
         self._enable_cuda_graphs = enable_cuda_graphs
@@ -903,7 +855,6 @@ class CudaStitchPanoN:
         if (
             self._graph_disabled
             or not self._enable_cuda_graphs
-            or self._match_exposure
             or not _cuda_graphs_supported(inputs[0].device)
         ):
             return None
@@ -958,97 +909,6 @@ class CudaStitchPanoN:
                 dtype=batched_inputs[0].dtype,
             )
         return self._process_impl(batched_inputs, canvas)
-
-
-def match_seam_images(
-    image1: np.ndarray,
-    image2: np.ndarray,
-    seam: np.ndarray,
-    n: int,
-    top_left_1: tuple[int, int],
-    top_left_2: tuple[int, int],
-    verbose: bool = False,
-) -> tuple[float, float, float] | None:
-    if seam.dtype != np.uint8:
-        raise ValueError("Seam mask must be uint8")
-
-    sum_left = np.zeros(3, dtype=np.float64)
-    sum_right = np.zeros(3, dtype=np.float64)
-    count_left = 0
-    count_right = 0
-    seam_column = np.full(image1.shape[0], -1, dtype=np.int32)
-    top_divisor = 4
-    bottom_divisor = 10
-
-    def _sample_left(
-        img: np.ndarray, top_left: tuple[int, int]
-    ) -> tuple[np.ndarray, int]:
-        total = np.zeros(3, dtype=np.float64)
-        count = 0
-        start_row = img.shape[0] // top_divisor
-        end_row = ((bottom_divisor - 1) * img.shape[0]) // bottom_divisor
-        for r in range(start_row, end_row):
-            global_row = top_left[1] + r
-            if global_row < 0 or global_row >= seam.shape[0]:
-                continue
-            col_start = top_left[0]
-            col_end = top_left[0] + img.shape[1]
-            seam_global_col = -1
-            for c in range(col_start, col_end):
-                if 0 <= c < seam.shape[1] and seam[global_row, c] == 0:
-                    seam_global_col = c
-                    seam_column[r] = c
-                    break
-            if seam_global_col == -1:
-                continue
-            seam_local_col = seam_global_col - top_left[0]
-            sample_start = max(0, seam_local_col - n)
-            pixels = img[r, sample_start:seam_local_col, :3]
-            if pixels.size:
-                total += pixels.reshape(-1, 3).sum(axis=0)
-                count += pixels.shape[0]
-        return total, count
-
-    def _sample_right(
-        img: np.ndarray, top_left: tuple[int, int]
-    ) -> tuple[np.ndarray, int]:
-        total = np.zeros(3, dtype=np.float64)
-        count = 0
-        start_row = img.shape[0] // top_divisor
-        end_row = ((bottom_divisor - 1) * img.shape[0]) // bottom_divisor
-        for r in range(start_row, end_row):
-            global_row = top_left[1] + r
-            if global_row < 0 or global_row >= seam.shape[0]:
-                continue
-            col_start = top_left[0]
-            col_end = top_left[0] + img.shape[1]
-            seam_global_col = -1
-            for c in range(col_start, col_end):
-                if 0 <= c < seam.shape[1] and seam[global_row, c] == 0:
-                    seam_global_col = c
-                    break
-            if seam_global_col == -1:
-                continue
-            seam_local_col = seam_global_col - top_left[0]
-            sample_end = min(img.shape[1], seam_local_col + n)
-            pixels = img[r, seam_local_col:sample_end, :3]
-            if pixels.size:
-                total += pixels.reshape(-1, 3).sum(axis=0)
-                count += pixels.shape[0]
-        return total, count
-
-    sum_left, count_left = _sample_left(image1, top_left_1)
-    sum_right, count_right = _sample_right(image2, top_left_2)
-    if count_left == 0 or count_right == 0:
-        return None
-    avg_left = sum_left / count_left
-    avg_right = sum_right / count_right
-    offset = (avg_left - avg_right) * 0.5
-    if verbose:
-        print(f"Average values (Image1, left side): {avg_left}")
-        print(f"Average values (Image2, right side): {avg_right}")
-        print(f"Offset: {offset}")
-    return float(offset[0]), float(offset[1]), float(offset[2])
 
 
 def pyramid_margin(num_levels: int) -> int:

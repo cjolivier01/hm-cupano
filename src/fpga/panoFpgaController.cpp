@@ -127,8 +127,6 @@ void PanoFpgaController::program(const PanoOperation& operation) {
   regs_->write32(reg::kRemapExtent, reg::pack_extent(operation.remap.map_width, operation.remap.map_height));
   regs_->write32(reg::kRemapOffset, reg::pack_signed_xy(operation.remap.offset_x, operation.remap.offset_y));
   regs_->write32(reg::kRemapFlags, operation.remap.no_unmapped_write ? 1u : 0u);
-  regs_->write32(reg::kAdjust01, reg::pack_adjust01(operation.remap.adjust_r_q8_8, operation.remap.adjust_g_q8_8));
-  regs_->write32(reg::kAdjust2, static_cast<uint16_t>(operation.remap.adjust_b_q8_8));
 
   regs_->write32(reg::kCopySrcXY, reg::pack_xy(operation.copy.src_x, operation.copy.src_y));
   regs_->write32(reg::kCopyDestXY, reg::pack_xy(operation.copy.dest_x, operation.copy.dest_y));

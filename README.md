@@ -52,7 +52,7 @@ Key points (SuperPoint)
 Matches (LightGlue)
 ![alt text](./assets/matches.png)
 
-Stitched Panorama (CUDA Kernels, hard seam or laplacian blending + color correction)
+Stitched Panorama (CUDA Kernels, hard seam or laplacian blending)
 ![alt text](./assets/s.png)
 
 ## Working Examples
@@ -67,7 +67,7 @@ python3 scripts/create_control_points.py --left assets/left.png --right assets/r
 ```
 - Run the CUDA stitcher (0 levels = hard seam, fastest):
 ```
-./bazel-bin/tests/test_cuda_blend --levels=6 --adjust=1 --directory=assets --output=assets/pano_left_right.png
+./bazel-bin/tests/test_cuda_blend --levels=6 --directory=assets --output=assets/pano_left_right.png
 ```
 - View the result:
 ```
@@ -109,16 +109,16 @@ Alternatively, you can use enblend (also available as Bazel external `@enblend`)
 python3 scripts/generate_seam.py --directory=$(pwd) --num-images=3 --seam enblend
 ```
 
-Stitch using the 3-image path (6 levels + exposure adjust) and view it:
+Stitch using the 3-image path (6 levels) and view it:
 ```
 cd -
-./bazel-bin/tests/test_cuda_blend3 --levels=6 --adjust=1 --directory=assets/three --output=assets/three/pano_three_3way.png
+./bazel-bin/tests/test_cuda_blend3 --levels=6 --directory=assets/three --output=assets/three/pano_three_3way.png
 viewnior assets/three/pano_three_3way.png &
 ```
 
 Alternatively, the generic N-image path works with the same folder (num-images=3):
 ```
-./bazel-bin/tests/test_cuda_blend_n --levels=6 --adjust=1 --num-images=3 --directory=assets/three --output=assets/three/pano_three_n.png
+./bazel-bin/tests/test_cuda_blend_n --levels=6 --num-images=3 --directory=assets/three --output=assets/three/pano_three_n.png
 ```
 
 Input previews:
@@ -142,7 +142,7 @@ bazelisk build //tests:test_cuda_blend_n
 Run (soft seam example with 4 inputs):
 ```
 ./bazel-bin/tests/test_cuda_blend_n \
-  --num-images=4 --levels=6 --adjust=1 \
+  --num-images=4 --levels=6 \
   --directory=<data_dir> \
   --output=out.png --show
 ```
@@ -179,7 +179,7 @@ Usage (two videos):
   --left=<left.mp4> --right=<right.mp4> \
   --control=<dir_with_mapping_and_seam> \
   --output=stitched_two.mp4 \
-  --levels=6 --adjust=1 --gpu-decode=1 --gpu-encode=1 \
+  --levels=6 --gpu-decode=1 --gpu-encode=1 \
   --show \
   --show-scaled=0.5
 ```
@@ -190,7 +190,7 @@ Usage (three videos):
   --left=<video0.mp4> --middle=<video1.mp4> --right=<video2.mp4> \
   --control=<dir_with_mapping_and_seam> \
   --output=stitched_three.mp4 \
-  --levels=6 --adjust=1 --gpu-decode=1 --gpu-encode=1
+  --levels=6 --gpu-decode=1 --gpu-encode=1
 ```
 
 Notes:

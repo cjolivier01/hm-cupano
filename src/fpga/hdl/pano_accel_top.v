@@ -27,7 +27,7 @@ module pano_accel_top (
     output wire [159:0] src1_desc,
     output wire [159:0] src2_desc,
     output wire [159:0] dest_desc,
-    output wire [287:0] remap_desc,
+    output wire [223:0] remap_desc,
     output wire [95:0] copy_desc,
     output wire [127:0] blend_desc,
     output wire [95:0] pyramid_desc

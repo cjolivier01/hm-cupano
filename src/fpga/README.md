@@ -53,7 +53,6 @@ The HDL now includes a first-pass Zybo wrapper around the compute blocks, but it
 
 - Pyramid datapath samples default to signed `Q9.8` in 18 bits.
 - Blend-mask weights default to unsigned `U0.16`.
-- Exposure/color adjustments default to signed `Q8.8`.
 
 ## Simulation
 

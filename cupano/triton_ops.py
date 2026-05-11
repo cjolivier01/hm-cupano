@@ -30,7 +30,12 @@ def _gpu_tensor(tensor: torch.Tensor) -> bool:
 
 
 def _supported_tensor(tensor: torch.Tensor) -> bool:
-    return tensor.dtype in _SUPPORTED_DTYPES and tensor.ndim == 4 and tensor.shape[-1] in _SUPPORTED_CHANNELS and tensor.is_contiguous()
+    return (
+        tensor.dtype in _SUPPORTED_DTYPES
+        and tensor.ndim == 4
+        and tensor.shape[-1] in _SUPPORTED_CHANNELS
+        and tensor.is_contiguous()
+    )
 
 
 def can_use_triton_backend(*tensors: torch.Tensor) -> bool:
@@ -40,7 +45,12 @@ def can_use_triton_backend(*tensors: torch.Tensor) -> bool:
 
 
 def _supported_blend_image_tensor(tensor: torch.Tensor) -> bool:
-    return tensor.dtype == torch.float32 and tensor.ndim == 4 and tensor.shape[-1] in _SUPPORTED_CHANNELS and tensor.is_contiguous()
+    return (
+        tensor.dtype == torch.float32
+        and tensor.ndim == 4
+        and tensor.shape[-1] in _SUPPORTED_CHANNELS
+        and tensor.is_contiguous()
+    )
 
 
 def _supported_blend_mask_tensor(mask: torch.Tensor, n_inputs: int) -> bool:
@@ -53,7 +63,9 @@ def _supported_blend_mask_tensor(mask: torch.Tensor, n_inputs: int) -> bool:
     )
 
 
-def can_use_triton_blend_backend(images: Sequence[torch.Tensor], mask: torch.Tensor) -> bool:
+def can_use_triton_blend_backend(
+    images: Sequence[torch.Tensor], mask: torch.Tensor
+) -> bool:
     if not _HAS_TRITON or not images:
         return False
     n_inputs = len(images)
@@ -63,10 +75,14 @@ def can_use_triton_blend_backend(images: Sequence[torch.Tensor], mask: torch.Ten
     if not ref.is_cuda or not _supported_blend_image_tensor(ref):
         return False
     shape = tuple(ref.shape)
-    return all(img.is_cuda and _supported_blend_image_tensor(img) and tuple(img.shape) == shape for img in images)
+    return all(
+        img.is_cuda and _supported_blend_image_tensor(img) and tuple(img.shape) == shape
+        for img in images
+    )
 
 
 if _HAS_TRITON:
+
     @triton.jit
     def _copy_roi_kernel(
         src_ptr,
@@ -144,7 +160,6 @@ if _HAS_TRITON:
         )
         tl.store(dest_ptrs, out, mask=mask)
 
-
     @triton.jit
     def _remap_kernel(
         src_ptr,
@@ -174,14 +189,10 @@ if _HAS_TRITON:
         roi_width,
         roi_height,
         unmapped_value,
-        adj0,
-        adj1,
-        adj2,
         BLOCK_W: tl.constexpr,
         BLOCK_H: tl.constexpr,
         CHANNELS: tl.constexpr,
         OUT_IS_FLOAT: tl.constexpr,
-        HAS_ADJUSTMENT: tl.constexpr,
         NO_UNMAPPED_WRITE: tl.constexpr,
         FILL_INVALID_ALPHA: tl.constexpr,
     ):
@@ -217,9 +228,20 @@ if _HAS_TRITON:
         my = tl.load(map_y_ptrs, mask=base_mask, other=unmapped_value).to(tl.int32)
 
         unmapped = (mx == unmapped_value) | (my == unmapped_value)
-        valid_xy = base_mask & (~unmapped) & (mx >= 0) & (mx < src_width) & (my >= 0) & (my < src_height)
+        valid_xy = (
+            base_mask
+            & (~unmapped)
+            & (mx >= 0)
+            & (mx < src_width)
+            & (my >= 0)
+            & (my < src_height)
+        )
         valid_src = valid_xy[:, :, None]
-        store_mask = (base_mask & (~unmapped))[:, :, None] if NO_UNMAPPED_WRITE else base_mask[:, :, None]
+        store_mask = (
+            (base_mask & (~unmapped))[:, :, None]
+            if NO_UNMAPPED_WRITE
+            else base_mask[:, :, None]
+        )
 
         src_ptrs = (
             src_ptr
@@ -230,14 +252,6 @@ if _HAS_TRITON:
         )
         vals = tl.load(src_ptrs, mask=valid_src, other=0)
         vals_f = vals.to(tl.float32)
-
-        if HAS_ADJUSTMENT:
-            adj = tl.where(
-                offs_c[None, None, :] == 0,
-                adj0,
-                tl.where(offs_c[None, None, :] == 1, adj1, tl.where(offs_c[None, None, :] == 2, adj2, 0.0)),
-            )
-            vals_f = vals_f + adj
 
         vals_f = tl.where(valid_src, vals_f, 0.0)
         if CHANNELS == 4 and FILL_INVALID_ALPHA:
@@ -259,7 +273,6 @@ if _HAS_TRITON:
             + offs_c[None, None, :] * dest_stride_c
         )
         tl.store(dest_ptrs, out, mask=store_mask)
-
 
     @triton.jit
     def _remap_with_dest_map_kernel(
@@ -294,14 +307,10 @@ if _HAS_TRITON:
         roi_height,
         image_index,
         unmapped_value,
-        adj0,
-        adj1,
-        adj2,
         BLOCK_W: tl.constexpr,
         BLOCK_H: tl.constexpr,
         CHANNELS: tl.constexpr,
         OUT_IS_FLOAT: tl.constexpr,
-        HAS_ADJUSTMENT: tl.constexpr,
     ):
         pid_x = tl.program_id(0)
         pid_y = tl.program_id(1)
@@ -329,15 +338,27 @@ if _HAS_TRITON:
             & (dest_y < dest_height)
         )
 
-        dest_map_ptrs = dest_map_ptr + dest_y * dest_map_stride_h + dest_x * dest_map_stride_w
-        class_mask = tl.load(dest_map_ptrs, mask=base_mask, other=-1).to(tl.int32) == image_index
+        dest_map_ptrs = (
+            dest_map_ptr + dest_y * dest_map_stride_h + dest_x * dest_map_stride_w
+        )
+        class_mask = (
+            tl.load(dest_map_ptrs, mask=base_mask, other=-1).to(tl.int32) == image_index
+        )
         active_xy = base_mask & class_mask
 
         map_x_ptrs = map_x_ptr + map_ypos * map_stride_h + map_xpos * map_stride_w
         map_y_ptrs = map_y_ptr + map_ypos * map_stride_h + map_xpos * map_stride_w
         mx = tl.load(map_x_ptrs, mask=active_xy, other=unmapped_value).to(tl.int32)
         my = tl.load(map_y_ptrs, mask=active_xy, other=unmapped_value).to(tl.int32)
-        valid_xy = active_xy & (mx != unmapped_value) & (my != unmapped_value) & (mx >= 0) & (mx < src_width) & (my >= 0) & (my < src_height)
+        valid_xy = (
+            active_xy
+            & (mx != unmapped_value)
+            & (my != unmapped_value)
+            & (mx >= 0)
+            & (mx < src_width)
+            & (my >= 0)
+            & (my < src_height)
+        )
         valid_src = valid_xy[:, :, None]
 
         src_ptrs = (
@@ -349,14 +370,6 @@ if _HAS_TRITON:
         )
         vals = tl.load(src_ptrs, mask=valid_src, other=0)
         vals_f = tl.where(valid_src, vals.to(tl.float32), 0.0)
-
-        if HAS_ADJUSTMENT:
-            adj = tl.where(
-                offs_c[None, None, :] == 0,
-                adj0,
-                tl.where(offs_c[None, None, :] == 1, adj1, tl.where(offs_c[None, None, :] == 2, adj2, 0.0)),
-            )
-            vals_f = vals_f + adj
 
         if OUT_IS_FLOAT:
             out = vals_f
@@ -372,7 +385,6 @@ if _HAS_TRITON:
             + offs_c[None, None, :] * dest_stride_c
         )
         tl.store(dest_ptrs, out, mask=active_xy[:, :, None])
-
 
     @triton.jit
     def _downsample_mask_kernel(
@@ -401,7 +413,9 @@ if _HAS_TRITON:
 
         out_x = offs_x[None, :, None]
         out_y = offs_y[:, None, None]
-        out_mask = (offs_x[None, :, None] < out_width) & (offs_y[:, None, None] < out_height)
+        out_mask = (offs_x[None, :, None] < out_width) & (
+            offs_y[:, None, None] < out_height
+        )
         base_in_x = 2 * out_x
         base_in_y = 2 * out_y
 
@@ -413,15 +427,24 @@ if _HAS_TRITON:
                 in_x = base_in_x + dx
                 in_y = base_in_y + dy
                 tap_mask = out_mask & (in_x < in_width) & (in_y < in_height)
-                ptrs = mask_ptr + in_y * mask_stride_h + in_x * mask_stride_w + offs_c[None, None, :] * mask_stride_c
+                ptrs = (
+                    mask_ptr
+                    + in_y * mask_stride_h
+                    + in_x * mask_stride_w
+                    + offs_c[None, None, :] * mask_stride_c
+                )
                 vals = tl.load(ptrs, mask=tap_mask, other=0.0)
                 acc += vals
                 count += tl.where(tap_mask, 1.0, 0.0)
 
-        out_ptrs = out_ptr + out_y * out_stride_h + out_x * out_stride_w + offs_c[None, None, :] * out_stride_c
+        out_ptrs = (
+            out_ptr
+            + out_y * out_stride_h
+            + out_x * out_stride_w
+            + offs_c[None, None, :] * out_stride_c
+        )
         out_vals = acc / tl.maximum(count, 1.0)
         tl.store(out_ptrs, out_vals, mask=out_mask)
-
 
     @triton.jit
     def _downsample_image_kernel(
@@ -480,10 +503,14 @@ if _HAS_TRITON:
                         + in_x * image_stride_w
                         + 3 * image_stride_c
                     )
-                    rgb = tl.load(rgb_ptrs, mask=tap_mask[:, :, None] & rgb_mask, other=0.0)
+                    rgb = tl.load(
+                        rgb_ptrs, mask=tap_mask[:, :, None] & rgb_mask, other=0.0
+                    )
                     alpha = tl.load(alpha_ptrs, mask=tap_mask, other=0.0)
                     keep = tap_mask & (alpha != 0.0)
-                    sum_rgb += tl.where(rgb_mask, tl.where(keep[:, :, None], rgb, 0.0), 0.0)
+                    sum_rgb += tl.where(
+                        rgb_mask, tl.where(keep[:, :, None], rgb, 0.0), 0.0
+                    )
                     count += tl.where(keep, 1.0, 0.0)
                     alpha_max = tl.maximum(alpha_max, tl.where(tap_mask, alpha, 0.0))
 
@@ -494,7 +521,13 @@ if _HAS_TRITON:
                 + out_x[:, :, None] * out_stride_w
                 + offs_rgb[None, None, :] * out_stride_c
             )
-            out_alpha_ptrs = out_ptr + pid_b * out_stride_b + out_y * out_stride_h + out_x * out_stride_w + 3 * out_stride_c
+            out_alpha_ptrs = (
+                out_ptr
+                + pid_b * out_stride_b
+                + out_y * out_stride_h
+                + out_x * out_stride_w
+                + 3 * out_stride_c
+            )
             out_rgb = sum_rgb / tl.maximum(count[:, :, None], 1.0)
             tl.store(out_rgb_ptrs, out_rgb, mask=out_mask[:, :, None] & rgb_mask)
             tl.store(out_alpha_ptrs, alpha_max, mask=out_mask)
@@ -526,7 +559,6 @@ if _HAS_TRITON:
             + offs_c[None, None, :] * out_stride_c
         )
         tl.store(out_ptrs, acc / tl.maximum(count, 1.0), mask=out_mask[:, :, None])
-
 
     @triton.jit
     def _compute_laplacian_kernel(
@@ -573,7 +605,9 @@ if _HAS_TRITON:
         w00 = (1.0 - w10) * (1.0 - w01)
         w10 = w10 * (1.0 - w01)
         w01 = (1.0 - tl.where((out_x & 1) != 0, 0.5, 0.0)) * w01
-        w11 = tl.where((out_x & 1) != 0, 0.5, 0.0) * tl.where((out_y & 1) != 0, 0.5, 0.0)
+        w11 = tl.where((out_x & 1) != 0, 0.5, 0.0) * tl.where(
+            (out_y & 1) != 0, 0.5, 0.0
+        )
 
         if CHANNELS == 4:
             offs_rgba = tl.arange(0, 4)
@@ -586,7 +620,13 @@ if _HAS_TRITON:
                 + offs_rgba[None, None, :] * high_stride_c
             )
             high_vals = tl.load(high_ptrs, mask=out_mask[:, :, None], other=0.0)
-            high_alpha_ptrs = high_ptr + pid_b * high_stride_b + out_y * high_stride_h + out_x * high_stride_w + 3 * high_stride_c
+            high_alpha_ptrs = (
+                high_ptr
+                + pid_b * high_stride_b
+                + out_y * high_stride_h
+                + out_x * high_stride_w
+                + 3 * high_stride_c
+            )
             high_alpha = tl.load(high_alpha_ptrs, mask=out_mask, other=0.0)
 
             sum_rgb = tl.zeros((BLOCK_H, BLOCK_W, 4), dtype=tl.float32)
@@ -600,7 +640,13 @@ if _HAS_TRITON:
                 + offs_rgba[None, None, :] * low_stride_c
             )
             p00 = tl.load(p00_ptrs, mask=out_mask[:, :, None], other=0.0)
-            p00_alpha_ptrs = low_ptr + pid_b * low_stride_b + y0 * low_stride_h + x0 * low_stride_w + 3 * low_stride_c
+            p00_alpha_ptrs = (
+                low_ptr
+                + pid_b * low_stride_b
+                + y0 * low_stride_h
+                + x0 * low_stride_w
+                + 3 * low_stride_c
+            )
             p00_alpha = tl.load(p00_alpha_ptrs, mask=out_mask, other=0.0)
             p00_valid = out_mask & (p00_alpha != 0.0)
             p00_weight = w00 * tl.where(p00_valid, 1.0, 0.0)
@@ -615,7 +661,13 @@ if _HAS_TRITON:
                 + offs_rgba[None, None, :] * low_stride_c
             )
             p10 = tl.load(p10_ptrs, mask=out_mask[:, :, None], other=0.0)
-            p10_alpha_ptrs = low_ptr + pid_b * low_stride_b + y0 * low_stride_h + x1 * low_stride_w + 3 * low_stride_c
+            p10_alpha_ptrs = (
+                low_ptr
+                + pid_b * low_stride_b
+                + y0 * low_stride_h
+                + x1 * low_stride_w
+                + 3 * low_stride_c
+            )
             p10_alpha = tl.load(p10_alpha_ptrs, mask=out_mask, other=0.0)
             p10_valid = out_mask & (p10_alpha != 0.0)
             p10_weight = w10 * tl.where(p10_valid, 1.0, 0.0)
@@ -630,7 +682,13 @@ if _HAS_TRITON:
                 + offs_rgba[None, None, :] * low_stride_c
             )
             p01 = tl.load(p01_ptrs, mask=out_mask[:, :, None], other=0.0)
-            p01_alpha_ptrs = low_ptr + pid_b * low_stride_b + y1 * low_stride_h + x0 * low_stride_w + 3 * low_stride_c
+            p01_alpha_ptrs = (
+                low_ptr
+                + pid_b * low_stride_b
+                + y1 * low_stride_h
+                + x0 * low_stride_w
+                + 3 * low_stride_c
+            )
             p01_alpha = tl.load(p01_alpha_ptrs, mask=out_mask, other=0.0)
             p01_valid = out_mask & (p01_alpha != 0.0)
             p01_weight = w01 * tl.where(p01_valid, 1.0, 0.0)
@@ -645,7 +703,13 @@ if _HAS_TRITON:
                 + offs_rgba[None, None, :] * low_stride_c
             )
             p11 = tl.load(p11_ptrs, mask=out_mask[:, :, None], other=0.0)
-            p11_alpha_ptrs = low_ptr + pid_b * low_stride_b + y1 * low_stride_h + x1 * low_stride_w + 3 * low_stride_c
+            p11_alpha_ptrs = (
+                low_ptr
+                + pid_b * low_stride_b
+                + y1 * low_stride_h
+                + x1 * low_stride_w
+                + 3 * low_stride_c
+            )
             p11_alpha = tl.load(p11_alpha_ptrs, mask=out_mask, other=0.0)
             p11_valid = out_mask & (p11_alpha != 0.0)
             p11_weight = w11 * tl.where(p11_valid, 1.0, 0.0)
@@ -654,7 +718,9 @@ if _HAS_TRITON:
 
             up_rgb = tl.where(sum_w[:, :, None] > 0.0, sum_rgb / sum_w[:, :, None], 0.0)
             out_vals = tl.where(rgb_mask, high_vals - up_rgb, 0.0)
-            out_vals = tl.where(offs_rgba[None, None, :] == 3, high_alpha[:, :, None], out_vals)
+            out_vals = tl.where(
+                offs_rgba[None, None, :] == 3, high_alpha[:, :, None], out_vals
+            )
             out_ptrs = (
                 out_ptr
                 + pid_b * out_stride_b
@@ -674,7 +740,9 @@ if _HAS_TRITON:
             + out_x[:, :, None] * high_stride_w
             + offs_c[None, None, :] * high_stride_c
         )
-        high_vals = tl.load(high_ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0)
+        high_vals = tl.load(
+            high_ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0
+        )
         up = tl.zeros((BLOCK_H, BLOCK_W, 4), dtype=tl.float32)
 
         p00_ptrs = (
@@ -724,7 +792,6 @@ if _HAS_TRITON:
             + offs_c[None, None, :] * out_stride_c
         )
         tl.store(out_ptrs, high_vals - up, mask=out_mask[:, :, None] & channel_mask)
-
 
     @triton.jit
     def _reconstruct_level_kernel(
@@ -787,7 +854,13 @@ if _HAS_TRITON:
                 + offs_rgba[None, None, :] * low_stride_c
             )
             p00 = tl.load(p00_ptrs, mask=out_mask[:, :, None], other=0.0)
-            p00_alpha_ptrs = low_ptr + pid_b * low_stride_b + y0 * low_stride_h + x0 * low_stride_w + 3 * low_stride_c
+            p00_alpha_ptrs = (
+                low_ptr
+                + pid_b * low_stride_b
+                + y0 * low_stride_h
+                + x0 * low_stride_w
+                + 3 * low_stride_c
+            )
             p00_alpha = tl.load(p00_alpha_ptrs, mask=out_mask, other=0.0)
             p00_valid = out_mask & (p00_alpha != 0.0)
             p00_weight = w00 * tl.where(p00_valid, 1.0, 0.0)
@@ -802,7 +875,13 @@ if _HAS_TRITON:
                 + offs_rgba[None, None, :] * low_stride_c
             )
             p10 = tl.load(p10_ptrs, mask=out_mask[:, :, None], other=0.0)
-            p10_alpha_ptrs = low_ptr + pid_b * low_stride_b + y0 * low_stride_h + x1 * low_stride_w + 3 * low_stride_c
+            p10_alpha_ptrs = (
+                low_ptr
+                + pid_b * low_stride_b
+                + y0 * low_stride_h
+                + x1 * low_stride_w
+                + 3 * low_stride_c
+            )
             p10_alpha = tl.load(p10_alpha_ptrs, mask=out_mask, other=0.0)
             p10_valid = out_mask & (p10_alpha != 0.0)
             p10_weight = w10 * tl.where(p10_valid, 1.0, 0.0)
@@ -817,7 +896,13 @@ if _HAS_TRITON:
                 + offs_rgba[None, None, :] * low_stride_c
             )
             p01 = tl.load(p01_ptrs, mask=out_mask[:, :, None], other=0.0)
-            p01_alpha_ptrs = low_ptr + pid_b * low_stride_b + y1 * low_stride_h + x0 * low_stride_w + 3 * low_stride_c
+            p01_alpha_ptrs = (
+                low_ptr
+                + pid_b * low_stride_b
+                + y1 * low_stride_h
+                + x0 * low_stride_w
+                + 3 * low_stride_c
+            )
             p01_alpha = tl.load(p01_alpha_ptrs, mask=out_mask, other=0.0)
             p01_valid = out_mask & (p01_alpha != 0.0)
             p01_weight = w01 * tl.where(p01_valid, 1.0, 0.0)
@@ -832,7 +917,13 @@ if _HAS_TRITON:
                 + offs_rgba[None, None, :] * low_stride_c
             )
             p11 = tl.load(p11_ptrs, mask=out_mask[:, :, None], other=0.0)
-            p11_alpha_ptrs = low_ptr + pid_b * low_stride_b + y1 * low_stride_h + x1 * low_stride_w + 3 * low_stride_c
+            p11_alpha_ptrs = (
+                low_ptr
+                + pid_b * low_stride_b
+                + y1 * low_stride_h
+                + x1 * low_stride_w
+                + 3 * low_stride_c
+            )
             p11_alpha = tl.load(p11_alpha_ptrs, mask=out_mask, other=0.0)
             p11_valid = out_mask & (p11_alpha != 0.0)
             p11_weight = w11 * tl.where(p11_valid, 1.0, 0.0)
@@ -847,11 +938,19 @@ if _HAS_TRITON:
                 + offs_rgba[None, None, :] * lap_stride_c
             )
             lap_vals = tl.load(lap_ptrs, mask=out_mask[:, :, None], other=0.0)
-            lap_alpha_ptrs = lap_ptr + pid_b * lap_stride_b + out_y * lap_stride_h + out_x * lap_stride_w + 3 * lap_stride_c
+            lap_alpha_ptrs = (
+                lap_ptr
+                + pid_b * lap_stride_b
+                + out_y * lap_stride_h
+                + out_x * lap_stride_w
+                + 3 * lap_stride_c
+            )
             lap_alpha = tl.load(lap_alpha_ptrs, mask=out_mask, other=0.0)
             up_rgb = tl.where(sum_w[:, :, None] > 0.0, sum_rgb / sum_w[:, :, None], 0.0)
             out_vals = tl.where(rgb_mask, up_rgb + lap_vals, 0.0)
-            out_vals = tl.where(offs_rgba[None, None, :] == 3, lap_alpha[:, :, None], out_vals)
+            out_vals = tl.where(
+                offs_rgba[None, None, :] == 3, lap_alpha[:, :, None], out_vals
+            )
             out_ptrs = (
                 out_ptr
                 + pid_b * out_stride_b
@@ -912,7 +1011,9 @@ if _HAS_TRITON:
             + out_x[:, :, None] * lap_stride_w
             + offs_c[None, None, :] * lap_stride_c
         )
-        lap_vals = tl.load(lap_ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0)
+        lap_vals = tl.load(
+            lap_ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0
+        )
         out_ptrs = (
             out_ptr
             + pid_b * out_stride_b
@@ -921,7 +1022,6 @@ if _HAS_TRITON:
             + offs_c[None, None, :] * out_stride_c
         )
         tl.store(out_ptrs, up + lap_vals, mask=out_mask[:, :, None] & channel_mask)
-
 
     @triton.jit
     def _blend_laplacians_n_kernel(
@@ -963,7 +1063,16 @@ if _HAS_TRITON:
         out_y = offs_y[:, None]
         out_mask = (offs_x[None, :] < width) & (offs_y[:, None] < height)
 
-        src_ptrs = (src0_ptr, src1_ptr, src2_ptr, src3_ptr, src4_ptr, src5_ptr, src6_ptr, src7_ptr)
+        src_ptrs = (
+            src0_ptr,
+            src1_ptr,
+            src2_ptr,
+            src3_ptr,
+            src4_ptr,
+            src5_ptr,
+            src6_ptr,
+            src7_ptr,
+        )
 
         if CHANNELS == 4:
             offs_rgb = tl.arange(0, 4)
@@ -982,33 +1091,109 @@ if _HAS_TRITON:
             w6 = tl.zeros((BLOCK_H, BLOCK_W), dtype=tl.float32)
             w7 = tl.zeros((BLOCK_H, BLOCK_W), dtype=tl.float32)
             if N_INPUTS > 0:
-                w0 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 0 * mask_stride_c, mask=out_mask, other=0.0)
+                w0 = tl.load(
+                    mask_ptr
+                    + out_y * mask_stride_h
+                    + out_x * mask_stride_w
+                    + 0 * mask_stride_c,
+                    mask=out_mask,
+                    other=0.0,
+                )
                 raw_sum += w0
             if N_INPUTS > 1:
-                w1 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 1 * mask_stride_c, mask=out_mask, other=0.0)
+                w1 = tl.load(
+                    mask_ptr
+                    + out_y * mask_stride_h
+                    + out_x * mask_stride_w
+                    + 1 * mask_stride_c,
+                    mask=out_mask,
+                    other=0.0,
+                )
                 raw_sum += w1
             if N_INPUTS > 2:
-                w2 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 2 * mask_stride_c, mask=out_mask, other=0.0)
+                w2 = tl.load(
+                    mask_ptr
+                    + out_y * mask_stride_h
+                    + out_x * mask_stride_w
+                    + 2 * mask_stride_c,
+                    mask=out_mask,
+                    other=0.0,
+                )
                 raw_sum += w2
             if N_INPUTS > 3:
-                w3 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 3 * mask_stride_c, mask=out_mask, other=0.0)
+                w3 = tl.load(
+                    mask_ptr
+                    + out_y * mask_stride_h
+                    + out_x * mask_stride_w
+                    + 3 * mask_stride_c,
+                    mask=out_mask,
+                    other=0.0,
+                )
                 raw_sum += w3
             if N_INPUTS > 4:
-                w4 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 4 * mask_stride_c, mask=out_mask, other=0.0)
+                w4 = tl.load(
+                    mask_ptr
+                    + out_y * mask_stride_h
+                    + out_x * mask_stride_w
+                    + 4 * mask_stride_c,
+                    mask=out_mask,
+                    other=0.0,
+                )
                 raw_sum += w4
             if N_INPUTS > 5:
-                w5 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 5 * mask_stride_c, mask=out_mask, other=0.0)
+                w5 = tl.load(
+                    mask_ptr
+                    + out_y * mask_stride_h
+                    + out_x * mask_stride_w
+                    + 5 * mask_stride_c,
+                    mask=out_mask,
+                    other=0.0,
+                )
                 raw_sum += w5
             if N_INPUTS > 6:
-                w6 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 6 * mask_stride_c, mask=out_mask, other=0.0)
+                w6 = tl.load(
+                    mask_ptr
+                    + out_y * mask_stride_h
+                    + out_x * mask_stride_w
+                    + 6 * mask_stride_c,
+                    mask=out_mask,
+                    other=0.0,
+                )
                 raw_sum += w6
             if N_INPUTS > 7:
-                w7 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 7 * mask_stride_c, mask=out_mask, other=0.0)
+                w7 = tl.load(
+                    mask_ptr
+                    + out_y * mask_stride_h
+                    + out_x * mask_stride_w
+                    + 7 * mask_stride_c,
+                    mask=out_mask,
+                    other=0.0,
+                )
                 raw_sum += w7
 
             for i in range(8):
                 if i < N_INPUTS:
-                    weight_src = w0 if i == 0 else w1 if i == 1 else w2 if i == 2 else w3 if i == 3 else w4 if i == 4 else w5 if i == 5 else w6 if i == 6 else w7
+                    weight_src = (
+                        w0
+                        if i == 0
+                        else (
+                            w1
+                            if i == 1
+                            else (
+                                w2
+                                if i == 2
+                                else (
+                                    w3
+                                    if i == 3
+                                    else (
+                                        w4
+                                        if i == 4
+                                        else w5 if i == 5 else w6 if i == 6 else w7
+                                    )
+                                )
+                            )
+                        )
+                    )
                     weight = tl.where(raw_sum > 0.0, weight_src / raw_sum, 0.0)
                     rgb_ptrs = (
                         src_ptrs[i]
@@ -1024,7 +1209,9 @@ if _HAS_TRITON:
                         + out_x * src_stride_w
                         + 3 * src_stride_c
                     )
-                    rgb = tl.load(rgb_ptrs, mask=out_mask[:, :, None] & rgb_mask, other=0.0)
+                    rgb = tl.load(
+                        rgb_ptrs, mask=out_mask[:, :, None] & rgb_mask, other=0.0
+                    )
                     alpha = tl.load(alpha_ptrs, mask=out_mask, other=0.0)
                     valid = out_mask & (alpha != 0.0)
                     blend_weight = weight * tl.where(valid, 1.0, 0.0)
@@ -1032,7 +1219,9 @@ if _HAS_TRITON:
                     valid_sum += blend_weight
 
                     take_fallback = alpha > fallback_alpha
-                    fallback_rgb = tl.where(take_fallback[:, :, None] & rgb_mask, rgb, fallback_rgb)
+                    fallback_rgb = tl.where(
+                        take_fallback[:, :, None] & rgb_mask, rgb, fallback_rgb
+                    )
                     fallback_alpha = tl.where(take_fallback, alpha, fallback_alpha)
 
             out_rgb = rgb_acc / tl.maximum(valid_sum[:, :, None], 1.0)
@@ -1048,14 +1237,22 @@ if _HAS_TRITON:
             )
             zeros = tl.zeros((BLOCK_H, BLOCK_W, 4), dtype=tl.float32)
             fallback = tl.zeros((BLOCK_H, BLOCK_W, 4), dtype=tl.float32)
-            fallback = tl.where(offs_all[None, None, :] == 3, fallback_alpha[:, :, None], fallback)
+            fallback = tl.where(
+                offs_all[None, None, :] == 3, fallback_alpha[:, :, None], fallback
+            )
             fallback = tl.where(offs_all[None, None, :] < 3, fallback_rgb, fallback)
             blended = tl.zeros((BLOCK_H, BLOCK_W, 4), dtype=tl.float32)
-            blended = tl.where(offs_all[None, None, :] == 3, out_alpha[:, :, None], blended)
+            blended = tl.where(
+                offs_all[None, None, :] == 3, out_alpha[:, :, None], blended
+            )
             blended = tl.where(offs_all[None, None, :] < 3, out_rgb, blended)
             use_blend = valid_sum > 0.0
             has_fallback = fallback_alpha > 0.0
-            out_vals = tl.where(use_blend[:, :, None], blended, tl.where(has_fallback[:, :, None], fallback, zeros))
+            out_vals = tl.where(
+                use_blend[:, :, None],
+                blended,
+                tl.where(has_fallback[:, :, None], fallback, zeros),
+            )
             tl.store(out_ptrs, out_vals, mask=out_mask[:, :, None])
             return
 
@@ -1072,33 +1269,109 @@ if _HAS_TRITON:
         w6 = tl.zeros((BLOCK_H, BLOCK_W), dtype=tl.float32)
         w7 = tl.zeros((BLOCK_H, BLOCK_W), dtype=tl.float32)
         if N_INPUTS > 0:
-            w0 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 0 * mask_stride_c, mask=out_mask, other=0.0)
+            w0 = tl.load(
+                mask_ptr
+                + out_y * mask_stride_h
+                + out_x * mask_stride_w
+                + 0 * mask_stride_c,
+                mask=out_mask,
+                other=0.0,
+            )
             raw_sum += w0
         if N_INPUTS > 1:
-            w1 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 1 * mask_stride_c, mask=out_mask, other=0.0)
+            w1 = tl.load(
+                mask_ptr
+                + out_y * mask_stride_h
+                + out_x * mask_stride_w
+                + 1 * mask_stride_c,
+                mask=out_mask,
+                other=0.0,
+            )
             raw_sum += w1
         if N_INPUTS > 2:
-            w2 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 2 * mask_stride_c, mask=out_mask, other=0.0)
+            w2 = tl.load(
+                mask_ptr
+                + out_y * mask_stride_h
+                + out_x * mask_stride_w
+                + 2 * mask_stride_c,
+                mask=out_mask,
+                other=0.0,
+            )
             raw_sum += w2
         if N_INPUTS > 3:
-            w3 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 3 * mask_stride_c, mask=out_mask, other=0.0)
+            w3 = tl.load(
+                mask_ptr
+                + out_y * mask_stride_h
+                + out_x * mask_stride_w
+                + 3 * mask_stride_c,
+                mask=out_mask,
+                other=0.0,
+            )
             raw_sum += w3
         if N_INPUTS > 4:
-            w4 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 4 * mask_stride_c, mask=out_mask, other=0.0)
+            w4 = tl.load(
+                mask_ptr
+                + out_y * mask_stride_h
+                + out_x * mask_stride_w
+                + 4 * mask_stride_c,
+                mask=out_mask,
+                other=0.0,
+            )
             raw_sum += w4
         if N_INPUTS > 5:
-            w5 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 5 * mask_stride_c, mask=out_mask, other=0.0)
+            w5 = tl.load(
+                mask_ptr
+                + out_y * mask_stride_h
+                + out_x * mask_stride_w
+                + 5 * mask_stride_c,
+                mask=out_mask,
+                other=0.0,
+            )
             raw_sum += w5
         if N_INPUTS > 6:
-            w6 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 6 * mask_stride_c, mask=out_mask, other=0.0)
+            w6 = tl.load(
+                mask_ptr
+                + out_y * mask_stride_h
+                + out_x * mask_stride_w
+                + 6 * mask_stride_c,
+                mask=out_mask,
+                other=0.0,
+            )
             raw_sum += w6
         if N_INPUTS > 7:
-            w7 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 7 * mask_stride_c, mask=out_mask, other=0.0)
+            w7 = tl.load(
+                mask_ptr
+                + out_y * mask_stride_h
+                + out_x * mask_stride_w
+                + 7 * mask_stride_c,
+                mask=out_mask,
+                other=0.0,
+            )
             raw_sum += w7
 
         for i in range(8):
             if i < N_INPUTS:
-                weight_src = w0 if i == 0 else w1 if i == 1 else w2 if i == 2 else w3 if i == 3 else w4 if i == 4 else w5 if i == 5 else w6 if i == 6 else w7
+                weight_src = (
+                    w0
+                    if i == 0
+                    else (
+                        w1
+                        if i == 1
+                        else (
+                            w2
+                            if i == 2
+                            else (
+                                w3
+                                if i == 3
+                                else (
+                                    w4
+                                    if i == 4
+                                    else w5 if i == 5 else w6 if i == 6 else w7
+                                )
+                            )
+                        )
+                    )
+                )
                 weight = tl.where(raw_sum > 0.0, weight_src / raw_sum, 0.0)
                 src_ptrs_i = (
                     src_ptrs[i]
@@ -1107,7 +1380,9 @@ if _HAS_TRITON:
                     + out_x[:, :, None] * src_stride_w
                     + offs_c[None, None, :] * src_stride_c
                 )
-                vals = tl.load(src_ptrs_i, mask=out_mask[:, :, None] & channel_mask, other=0.0)
+                vals = tl.load(
+                    src_ptrs_i, mask=out_mask[:, :, None] & channel_mask, other=0.0
+                )
                 out_vals += vals * weight[:, :, None]
 
         dest_ptrs = (
@@ -1118,7 +1393,6 @@ if _HAS_TRITON:
             + offs_c[None, None, :] * out_stride_c
         )
         tl.store(dest_ptrs, out_vals, mask=out_mask[:, :, None] & channel_mask)
-
 
     @triton.jit
     def _blend_laplacians_stacked_kernel(
@@ -1168,28 +1442,84 @@ if _HAS_TRITON:
         w6 = tl.zeros((BLOCK_H, BLOCK_W), dtype=tl.float32)
         w7 = tl.zeros((BLOCK_H, BLOCK_W), dtype=tl.float32)
         if N_INPUTS > 0:
-            w0 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 0 * mask_stride_c, mask=out_mask, other=0.0)
+            w0 = tl.load(
+                mask_ptr
+                + out_y * mask_stride_h
+                + out_x * mask_stride_w
+                + 0 * mask_stride_c,
+                mask=out_mask,
+                other=0.0,
+            )
             raw_sum += w0
         if N_INPUTS > 1:
-            w1 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 1 * mask_stride_c, mask=out_mask, other=0.0)
+            w1 = tl.load(
+                mask_ptr
+                + out_y * mask_stride_h
+                + out_x * mask_stride_w
+                + 1 * mask_stride_c,
+                mask=out_mask,
+                other=0.0,
+            )
             raw_sum += w1
         if N_INPUTS > 2:
-            w2 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 2 * mask_stride_c, mask=out_mask, other=0.0)
+            w2 = tl.load(
+                mask_ptr
+                + out_y * mask_stride_h
+                + out_x * mask_stride_w
+                + 2 * mask_stride_c,
+                mask=out_mask,
+                other=0.0,
+            )
             raw_sum += w2
         if N_INPUTS > 3:
-            w3 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 3 * mask_stride_c, mask=out_mask, other=0.0)
+            w3 = tl.load(
+                mask_ptr
+                + out_y * mask_stride_h
+                + out_x * mask_stride_w
+                + 3 * mask_stride_c,
+                mask=out_mask,
+                other=0.0,
+            )
             raw_sum += w3
         if N_INPUTS > 4:
-            w4 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 4 * mask_stride_c, mask=out_mask, other=0.0)
+            w4 = tl.load(
+                mask_ptr
+                + out_y * mask_stride_h
+                + out_x * mask_stride_w
+                + 4 * mask_stride_c,
+                mask=out_mask,
+                other=0.0,
+            )
             raw_sum += w4
         if N_INPUTS > 5:
-            w5 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 5 * mask_stride_c, mask=out_mask, other=0.0)
+            w5 = tl.load(
+                mask_ptr
+                + out_y * mask_stride_h
+                + out_x * mask_stride_w
+                + 5 * mask_stride_c,
+                mask=out_mask,
+                other=0.0,
+            )
             raw_sum += w5
         if N_INPUTS > 6:
-            w6 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 6 * mask_stride_c, mask=out_mask, other=0.0)
+            w6 = tl.load(
+                mask_ptr
+                + out_y * mask_stride_h
+                + out_x * mask_stride_w
+                + 6 * mask_stride_c,
+                mask=out_mask,
+                other=0.0,
+            )
             raw_sum += w6
         if N_INPUTS > 7:
-            w7 = tl.load(mask_ptr + out_y * mask_stride_h + out_x * mask_stride_w + 7 * mask_stride_c, mask=out_mask, other=0.0)
+            w7 = tl.load(
+                mask_ptr
+                + out_y * mask_stride_h
+                + out_x * mask_stride_w
+                + 7 * mask_stride_c,
+                mask=out_mask,
+                other=0.0,
+            )
             raw_sum += w7
 
         if CHANNELS == 4:
@@ -1209,7 +1539,9 @@ if _HAS_TRITON:
                     + 0 * stack_stride_n
                     + offs_c[None, None, :] * stack_stride_c
                 )
-                vals = tl.load(ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0)
+                vals = tl.load(
+                    ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0
+                )
                 alpha_ptrs = (
                     stack_ptr
                     + pid_b * stack_stride_b
@@ -1223,9 +1555,13 @@ if _HAS_TRITON:
                 blend_weight = weight * tl.where(valid, 1.0, 0.0)
                 rgb_acc += tl.where(rgb_mask, vals * blend_weight[:, :, None], 0.0)
                 valid_sum += blend_weight
-                blend_alpha = tl.maximum(blend_alpha, tl.where(blend_weight > 0.0, alpha, 0.0))
+                blend_alpha = tl.maximum(
+                    blend_alpha, tl.where(blend_weight > 0.0, alpha, 0.0)
+                )
                 take_fallback = alpha > fallback_alpha
-                fallback_vals = tl.where(take_fallback[:, :, None] & channel_mask, vals, fallback_vals)
+                fallback_vals = tl.where(
+                    take_fallback[:, :, None] & channel_mask, vals, fallback_vals
+                )
                 fallback_alpha = tl.where(take_fallback, alpha, fallback_alpha)
 
             if N_INPUTS > 1:
@@ -1238,7 +1574,9 @@ if _HAS_TRITON:
                     + 1 * stack_stride_n
                     + offs_c[None, None, :] * stack_stride_c
                 )
-                vals = tl.load(ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0)
+                vals = tl.load(
+                    ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0
+                )
                 alpha_ptrs = (
                     stack_ptr
                     + pid_b * stack_stride_b
@@ -1252,9 +1590,13 @@ if _HAS_TRITON:
                 blend_weight = weight * tl.where(valid, 1.0, 0.0)
                 rgb_acc += tl.where(rgb_mask, vals * blend_weight[:, :, None], 0.0)
                 valid_sum += blend_weight
-                blend_alpha = tl.maximum(blend_alpha, tl.where(blend_weight > 0.0, alpha, 0.0))
+                blend_alpha = tl.maximum(
+                    blend_alpha, tl.where(blend_weight > 0.0, alpha, 0.0)
+                )
                 take_fallback = alpha > fallback_alpha
-                fallback_vals = tl.where(take_fallback[:, :, None] & channel_mask, vals, fallback_vals)
+                fallback_vals = tl.where(
+                    take_fallback[:, :, None] & channel_mask, vals, fallback_vals
+                )
                 fallback_alpha = tl.where(take_fallback, alpha, fallback_alpha)
 
             if N_INPUTS > 2:
@@ -1267,7 +1609,9 @@ if _HAS_TRITON:
                     + 2 * stack_stride_n
                     + offs_c[None, None, :] * stack_stride_c
                 )
-                vals = tl.load(ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0)
+                vals = tl.load(
+                    ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0
+                )
                 alpha_ptrs = (
                     stack_ptr
                     + pid_b * stack_stride_b
@@ -1281,9 +1625,13 @@ if _HAS_TRITON:
                 blend_weight = weight * tl.where(valid, 1.0, 0.0)
                 rgb_acc += tl.where(rgb_mask, vals * blend_weight[:, :, None], 0.0)
                 valid_sum += blend_weight
-                blend_alpha = tl.maximum(blend_alpha, tl.where(blend_weight > 0.0, alpha, 0.0))
+                blend_alpha = tl.maximum(
+                    blend_alpha, tl.where(blend_weight > 0.0, alpha, 0.0)
+                )
                 take_fallback = alpha > fallback_alpha
-                fallback_vals = tl.where(take_fallback[:, :, None] & channel_mask, vals, fallback_vals)
+                fallback_vals = tl.where(
+                    take_fallback[:, :, None] & channel_mask, vals, fallback_vals
+                )
                 fallback_alpha = tl.where(take_fallback, alpha, fallback_alpha)
 
             if N_INPUTS > 3:
@@ -1296,7 +1644,9 @@ if _HAS_TRITON:
                     + 3 * stack_stride_n
                     + offs_c[None, None, :] * stack_stride_c
                 )
-                vals = tl.load(ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0)
+                vals = tl.load(
+                    ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0
+                )
                 alpha_ptrs = (
                     stack_ptr
                     + pid_b * stack_stride_b
@@ -1310,9 +1660,13 @@ if _HAS_TRITON:
                 blend_weight = weight * tl.where(valid, 1.0, 0.0)
                 rgb_acc += tl.where(rgb_mask, vals * blend_weight[:, :, None], 0.0)
                 valid_sum += blend_weight
-                blend_alpha = tl.maximum(blend_alpha, tl.where(blend_weight > 0.0, alpha, 0.0))
+                blend_alpha = tl.maximum(
+                    blend_alpha, tl.where(blend_weight > 0.0, alpha, 0.0)
+                )
                 take_fallback = alpha > fallback_alpha
-                fallback_vals = tl.where(take_fallback[:, :, None] & channel_mask, vals, fallback_vals)
+                fallback_vals = tl.where(
+                    take_fallback[:, :, None] & channel_mask, vals, fallback_vals
+                )
                 fallback_alpha = tl.where(take_fallback, alpha, fallback_alpha)
 
             if N_INPUTS > 4:
@@ -1325,7 +1679,9 @@ if _HAS_TRITON:
                     + 4 * stack_stride_n
                     + offs_c[None, None, :] * stack_stride_c
                 )
-                vals = tl.load(ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0)
+                vals = tl.load(
+                    ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0
+                )
                 alpha_ptrs = (
                     stack_ptr
                     + pid_b * stack_stride_b
@@ -1339,9 +1695,13 @@ if _HAS_TRITON:
                 blend_weight = weight * tl.where(valid, 1.0, 0.0)
                 rgb_acc += tl.where(rgb_mask, vals * blend_weight[:, :, None], 0.0)
                 valid_sum += blend_weight
-                blend_alpha = tl.maximum(blend_alpha, tl.where(blend_weight > 0.0, alpha, 0.0))
+                blend_alpha = tl.maximum(
+                    blend_alpha, tl.where(blend_weight > 0.0, alpha, 0.0)
+                )
                 take_fallback = alpha > fallback_alpha
-                fallback_vals = tl.where(take_fallback[:, :, None] & channel_mask, vals, fallback_vals)
+                fallback_vals = tl.where(
+                    take_fallback[:, :, None] & channel_mask, vals, fallback_vals
+                )
                 fallback_alpha = tl.where(take_fallback, alpha, fallback_alpha)
 
             if N_INPUTS > 5:
@@ -1354,7 +1714,9 @@ if _HAS_TRITON:
                     + 5 * stack_stride_n
                     + offs_c[None, None, :] * stack_stride_c
                 )
-                vals = tl.load(ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0)
+                vals = tl.load(
+                    ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0
+                )
                 alpha_ptrs = (
                     stack_ptr
                     + pid_b * stack_stride_b
@@ -1368,9 +1730,13 @@ if _HAS_TRITON:
                 blend_weight = weight * tl.where(valid, 1.0, 0.0)
                 rgb_acc += tl.where(rgb_mask, vals * blend_weight[:, :, None], 0.0)
                 valid_sum += blend_weight
-                blend_alpha = tl.maximum(blend_alpha, tl.where(blend_weight > 0.0, alpha, 0.0))
+                blend_alpha = tl.maximum(
+                    blend_alpha, tl.where(blend_weight > 0.0, alpha, 0.0)
+                )
                 take_fallback = alpha > fallback_alpha
-                fallback_vals = tl.where(take_fallback[:, :, None] & channel_mask, vals, fallback_vals)
+                fallback_vals = tl.where(
+                    take_fallback[:, :, None] & channel_mask, vals, fallback_vals
+                )
                 fallback_alpha = tl.where(take_fallback, alpha, fallback_alpha)
 
             if N_INPUTS > 6:
@@ -1383,7 +1749,9 @@ if _HAS_TRITON:
                     + 6 * stack_stride_n
                     + offs_c[None, None, :] * stack_stride_c
                 )
-                vals = tl.load(ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0)
+                vals = tl.load(
+                    ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0
+                )
                 alpha_ptrs = (
                     stack_ptr
                     + pid_b * stack_stride_b
@@ -1397,9 +1765,13 @@ if _HAS_TRITON:
                 blend_weight = weight * tl.where(valid, 1.0, 0.0)
                 rgb_acc += tl.where(rgb_mask, vals * blend_weight[:, :, None], 0.0)
                 valid_sum += blend_weight
-                blend_alpha = tl.maximum(blend_alpha, tl.where(blend_weight > 0.0, alpha, 0.0))
+                blend_alpha = tl.maximum(
+                    blend_alpha, tl.where(blend_weight > 0.0, alpha, 0.0)
+                )
                 take_fallback = alpha > fallback_alpha
-                fallback_vals = tl.where(take_fallback[:, :, None] & channel_mask, vals, fallback_vals)
+                fallback_vals = tl.where(
+                    take_fallback[:, :, None] & channel_mask, vals, fallback_vals
+                )
                 fallback_alpha = tl.where(take_fallback, alpha, fallback_alpha)
 
             if N_INPUTS > 7:
@@ -1412,7 +1784,9 @@ if _HAS_TRITON:
                     + 7 * stack_stride_n
                     + offs_c[None, None, :] * stack_stride_c
                 )
-                vals = tl.load(ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0)
+                vals = tl.load(
+                    ptrs, mask=out_mask[:, :, None] & channel_mask, other=0.0
+                )
                 alpha_ptrs = (
                     stack_ptr
                     + pid_b * stack_stride_b
@@ -1426,16 +1800,32 @@ if _HAS_TRITON:
                 blend_weight = weight * tl.where(valid, 1.0, 0.0)
                 rgb_acc += tl.where(rgb_mask, vals * blend_weight[:, :, None], 0.0)
                 valid_sum += blend_weight
-                blend_alpha = tl.maximum(blend_alpha, tl.where(blend_weight > 0.0, alpha, 0.0))
+                blend_alpha = tl.maximum(
+                    blend_alpha, tl.where(blend_weight > 0.0, alpha, 0.0)
+                )
                 take_fallback = alpha > fallback_alpha
-                fallback_vals = tl.where(take_fallback[:, :, None] & channel_mask, vals, fallback_vals)
+                fallback_vals = tl.where(
+                    take_fallback[:, :, None] & channel_mask, vals, fallback_vals
+                )
                 fallback_alpha = tl.where(take_fallback, alpha, fallback_alpha)
 
-            blended = tl.where(rgb_mask, rgb_acc / tl.maximum(valid_sum[:, :, None], 1.0), 0.0)
-            blended = tl.where(offs_c[None, None, :] == 3, blend_alpha[:, :, None], blended)
+            blended = tl.where(
+                rgb_mask, rgb_acc / tl.maximum(valid_sum[:, :, None], 1.0), 0.0
+            )
+            blended = tl.where(
+                offs_c[None, None, :] == 3, blend_alpha[:, :, None], blended
+            )
             use_blend = valid_sum > 0.0
             has_fallback = fallback_alpha > 0.0
-            out_vals = tl.where(use_blend[:, :, None], blended, tl.where(has_fallback[:, :, None], fallback_vals, tl.zeros((BLOCK_H, BLOCK_W, 4), dtype=tl.float32)))
+            out_vals = tl.where(
+                use_blend[:, :, None],
+                blended,
+                tl.where(
+                    has_fallback[:, :, None],
+                    fallback_vals,
+                    tl.zeros((BLOCK_H, BLOCK_W, 4), dtype=tl.float32),
+                ),
+            )
             out_ptrs = (
                 out_ptr
                 + pid_b * out_stride_b
@@ -1552,6 +1942,7 @@ if _HAS_TRITON:
             + offs_c[None, None, :] * out_stride_c
         )
         tl.store(out_ptrs, out_vals, mask=out_mask[:, :, None] & channel_mask)
+
 else:  # pragma: no cover - exercised only when Triton is unavailable
     _copy_roi_kernel = None
     _remap_kernel = None
@@ -1564,7 +1955,9 @@ else:  # pragma: no cover - exercised only when Triton is unavailable
     _blend_laplacians_stacked_kernel = None
 
 
-def _launch_grid(width: int, height: int, batch: int, block_w: int = 32, block_h: int = 8) -> tuple[int, int, int]:
+def _launch_grid(
+    width: int, height: int, batch: int, block_w: int = 32, block_h: int = 8
+) -> tuple[int, int, int]:
     return triton.cdiv(width, block_w), triton.cdiv(height, block_h), batch
 
 
@@ -1576,11 +1969,21 @@ def _out_is_float(tensor: torch.Tensor) -> bool:
     raise TypeError(f"Unsupported Triton output dtype: {tensor.dtype}")
 
 
-def _launch_grid_2d(width: int, height: int, block_w: int = 32, block_h: int = 8) -> tuple[int, int]:
+def _launch_grid_2d(
+    width: int, height: int, block_w: int = 32, block_h: int = 8
+) -> tuple[int, int]:
     return triton.cdiv(width, block_w), triton.cdiv(height, block_h)
 
 
-def copy_roi_triton(src: torch.Tensor, dest: torch.Tensor, region: Rect, src_roi_x: int, src_roi_y: int, offset_x: int, offset_y: int) -> torch.Tensor:
+def copy_roi_triton(
+    src: torch.Tensor,
+    dest: torch.Tensor,
+    region: Rect,
+    src_roi_x: int,
+    src_roi_y: int,
+    offset_x: int,
+    offset_y: int,
+) -> torch.Tensor:
     if region.width <= 0 or region.height <= 0:
         return dest
     if not can_use_triton_backend(src, dest):
@@ -1618,7 +2021,6 @@ def remap_to_canvas_triton(
     offset_x: int,
     offset_y: int,
     *,
-    adjustment: torch.Tensor | None = None,
     no_unmapped_write: bool = False,
     roi: Rect | None = None,
     fill_invalid_alpha: bool = True,
@@ -1628,12 +2030,18 @@ def remap_to_canvas_triton(
     if roi.empty:
         return dest
     if not can_use_triton_backend(src, dest):
-        raise ValueError("Triton remap requested with unsupported source/destination tensors")
-    if not (map_x.is_cuda and map_y.is_cuda and map_x.is_contiguous() and map_y.is_contiguous()):
+        raise ValueError(
+            "Triton remap requested with unsupported source/destination tensors"
+        )
+    if not (
+        map_x.is_cuda
+        and map_y.is_cuda
+        and map_x.is_contiguous()
+        and map_y.is_contiguous()
+    ):
         raise ValueError("Triton remap requires contiguous GPU map tensors")
     channels = src.shape[-1]
     grid = _launch_grid(roi.width, roi.height, src.shape[0])
-    adj = adjustment.to(device=src.device, dtype=torch.float32) if adjustment is not None else None
     _remap_kernel[grid](
         src,
         dest,
@@ -1655,14 +2063,10 @@ def remap_to_canvas_triton(
         roi.width,
         roi.height,
         _UNMAPPED_VALUE,
-        float(adj[0].item()) if adj is not None else 0.0,
-        float(adj[1].item()) if adj is not None else 0.0,
-        float(adj[2].item()) if adj is not None else 0.0,
         BLOCK_W=32,
         BLOCK_H=8,
         CHANNELS=channels,
         OUT_IS_FLOAT=_out_is_float(dest),
-        HAS_ADJUSTMENT=adj is not None,
         NO_UNMAPPED_WRITE=no_unmapped_write,
         FILL_INVALID_ALPHA=fill_invalid_alpha,
     )
@@ -1679,7 +2083,6 @@ def remap_to_canvas_with_dest_map_triton(
     offset_x: int,
     offset_y: int,
     *,
-    adjustment: torch.Tensor | None = None,
     roi: Rect | None = None,
 ) -> torch.Tensor:
     if roi is None:
@@ -1687,14 +2090,19 @@ def remap_to_canvas_with_dest_map_triton(
     if roi.empty:
         return dest
     if not can_use_triton_backend(src, dest):
-        raise ValueError("Triton remap-with-dest-map requested with unsupported source/destination tensors")
+        raise ValueError(
+            "Triton remap-with-dest-map requested with unsupported source/destination tensors"
+        )
     if not (map_x.is_cuda and map_y.is_cuda and dest_image_map.is_cuda):
         raise ValueError("Triton remap-with-dest-map requires GPU-resident maps")
-    if not (map_x.is_contiguous() and map_y.is_contiguous() and dest_image_map.is_contiguous()):
+    if not (
+        map_x.is_contiguous()
+        and map_y.is_contiguous()
+        and dest_image_map.is_contiguous()
+    ):
         raise ValueError("Triton remap-with-dest-map requires contiguous maps")
     channels = src.shape[-1]
     grid = _launch_grid(roi.width, roi.height, src.shape[0])
-    adj = adjustment.to(device=src.device, dtype=torch.float32) if adjustment is not None else None
     _remap_with_dest_map_kernel[grid](
         src,
         dest,
@@ -1719,28 +2127,40 @@ def remap_to_canvas_with_dest_map_triton(
         roi.height,
         image_index,
         _UNMAPPED_VALUE,
-        float(adj[0].item()) if adj is not None else 0.0,
-        float(adj[1].item()) if adj is not None else 0.0,
-        float(adj[2].item()) if adj is not None else 0.0,
         BLOCK_W=32,
         BLOCK_H=8,
         CHANNELS=channels,
         OUT_IS_FLOAT=_out_is_float(dest),
-        HAS_ADJUSTMENT=adj is not None,
     )
     return dest
 
 
-def downsample_mask_triton(mask: torch.Tensor, out: torch.Tensor | None = None) -> torch.Tensor:
+def downsample_mask_triton(
+    mask: torch.Tensor, out: torch.Tensor | None = None
+) -> torch.Tensor:
     if not _HAS_TRITON:
         raise ValueError("Triton is not available")
-    if mask.dtype != torch.float32 or mask.ndim != 3 or not mask.is_cuda or not mask.is_contiguous():
-        raise ValueError("Triton mask downsample requires a contiguous float32 HWC GPU tensor")
+    if (
+        mask.dtype != torch.float32
+        or mask.ndim != 3
+        or not mask.is_cuda
+        or not mask.is_contiguous()
+    ):
+        raise ValueError(
+            "Triton mask downsample requires a contiguous float32 HWC GPU tensor"
+        )
     out_h = (mask.shape[0] + 1) // 2
     out_w = (mask.shape[1] + 1) // 2
     if out is None:
-        out = torch.empty((out_h, out_w, mask.shape[2]), device=mask.device, dtype=torch.float32)
-    elif out.shape != (out_h, out_w, mask.shape[2]) or out.dtype != torch.float32 or not out.is_cuda or not out.is_contiguous():
+        out = torch.empty(
+            (out_h, out_w, mask.shape[2]), device=mask.device, dtype=torch.float32
+        )
+    elif (
+        out.shape != (out_h, out_w, mask.shape[2])
+        or out.dtype != torch.float32
+        or not out.is_cuda
+        or not out.is_contiguous()
+    ):
         raise ValueError("Invalid Triton mask downsample output buffer")
     grid = _launch_grid_2d(out_w, out_h)
     _downsample_mask_kernel[grid](
@@ -1759,16 +2179,29 @@ def downsample_mask_triton(mask: torch.Tensor, out: torch.Tensor | None = None) 
     return out
 
 
-def downsample_image_triton(image: torch.Tensor, out: torch.Tensor | None = None) -> torch.Tensor:
+def downsample_image_triton(
+    image: torch.Tensor, out: torch.Tensor | None = None
+) -> torch.Tensor:
     if not _HAS_TRITON:
         raise ValueError("Triton is not available")
     if not _supported_blend_image_tensor(image) or not image.is_cuda:
-        raise ValueError("Triton image downsample requires a contiguous float32 BHWC GPU tensor")
+        raise ValueError(
+            "Triton image downsample requires a contiguous float32 BHWC GPU tensor"
+        )
     out_h = (image.shape[1] + 1) // 2
     out_w = (image.shape[2] + 1) // 2
     if out is None:
-        out = torch.empty((image.shape[0], out_h, out_w, image.shape[3]), device=image.device, dtype=torch.float32)
-    elif out.shape != (image.shape[0], out_h, out_w, image.shape[3]) or out.dtype != torch.float32 or not out.is_cuda or not out.is_contiguous():
+        out = torch.empty(
+            (image.shape[0], out_h, out_w, image.shape[3]),
+            device=image.device,
+            dtype=torch.float32,
+        )
+    elif (
+        out.shape != (image.shape[0], out_h, out_w, image.shape[3])
+        or out.dtype != torch.float32
+        or not out.is_cuda
+        or not out.is_contiguous()
+    ):
         raise ValueError("Invalid Triton image downsample output buffer")
     grid = _launch_grid(out_w, out_h, image.shape[0])
     _downsample_image_kernel[grid](
@@ -1787,16 +2220,30 @@ def downsample_image_triton(image: torch.Tensor, out: torch.Tensor | None = None
     return out
 
 
-def compute_laplacian_triton(high: torch.Tensor, low: torch.Tensor, out: torch.Tensor | None = None) -> torch.Tensor:
+def compute_laplacian_triton(
+    high: torch.Tensor, low: torch.Tensor, out: torch.Tensor | None = None
+) -> torch.Tensor:
     if not _HAS_TRITON:
         raise ValueError("Triton is not available")
-    if not (_supported_blend_image_tensor(high) and _supported_blend_image_tensor(low) and high.is_cuda and low.is_cuda):
-        raise ValueError("Triton laplacian requires contiguous float32 BHWC GPU tensors")
+    if not (
+        _supported_blend_image_tensor(high)
+        and _supported_blend_image_tensor(low)
+        and high.is_cuda
+        and low.is_cuda
+    ):
+        raise ValueError(
+            "Triton laplacian requires contiguous float32 BHWC GPU tensors"
+        )
     if high.shape[0] != low.shape[0] or high.shape[3] != low.shape[3]:
         raise ValueError("Mismatched tensor shapes for Triton laplacian")
     if out is None:
         out = torch.empty_like(high)
-    elif out.shape != high.shape or out.dtype != torch.float32 or not out.is_cuda or not out.is_contiguous():
+    elif (
+        out.shape != high.shape
+        or out.dtype != torch.float32
+        or not out.is_cuda
+        or not out.is_contiguous()
+    ):
         raise ValueError("Invalid Triton laplacian output buffer")
     grid = _launch_grid(high.shape[2], high.shape[1], high.shape[0])
     _compute_laplacian_kernel[grid](
@@ -1817,16 +2264,30 @@ def compute_laplacian_triton(high: torch.Tensor, low: torch.Tensor, out: torch.T
     return out
 
 
-def reconstruct_level_triton(low: torch.Tensor, lap: torch.Tensor, out: torch.Tensor | None = None) -> torch.Tensor:
+def reconstruct_level_triton(
+    low: torch.Tensor, lap: torch.Tensor, out: torch.Tensor | None = None
+) -> torch.Tensor:
     if not _HAS_TRITON:
         raise ValueError("Triton is not available")
-    if not (_supported_blend_image_tensor(low) and _supported_blend_image_tensor(lap) and low.is_cuda and lap.is_cuda):
-        raise ValueError("Triton reconstruct requires contiguous float32 BHWC GPU tensors")
+    if not (
+        _supported_blend_image_tensor(low)
+        and _supported_blend_image_tensor(lap)
+        and low.is_cuda
+        and lap.is_cuda
+    ):
+        raise ValueError(
+            "Triton reconstruct requires contiguous float32 BHWC GPU tensors"
+        )
     if low.shape[0] != lap.shape[0] or low.shape[3] != lap.shape[3]:
         raise ValueError("Mismatched tensor shapes for Triton reconstruction")
     if out is None:
         out = torch.empty_like(lap)
-    elif out.shape != lap.shape or out.dtype != torch.float32 or not out.is_cuda or not out.is_contiguous():
+    elif (
+        out.shape != lap.shape
+        or out.dtype != torch.float32
+        or not out.is_cuda
+        or not out.is_contiguous()
+    ):
         raise ValueError("Invalid Triton reconstruction output buffer")
     grid = _launch_grid(lap.shape[2], lap.shape[1], lap.shape[0])
     _reconstruct_level_kernel[grid](
@@ -1847,13 +2308,22 @@ def reconstruct_level_triton(low: torch.Tensor, lap: torch.Tensor, out: torch.Te
     return out
 
 
-def blend_laplacians_n_triton(laplacians: Sequence[torch.Tensor], mask: torch.Tensor, out: torch.Tensor | None = None) -> torch.Tensor:
+def blend_laplacians_n_triton(
+    laplacians: Sequence[torch.Tensor],
+    mask: torch.Tensor,
+    out: torch.Tensor | None = None,
+) -> torch.Tensor:
     if not can_use_triton_blend_backend(laplacians, mask):
         raise ValueError("Triton N-way blend requires contiguous float32 GPU tensors")
     ref = laplacians[0]
     if out is None:
         out = torch.empty_like(ref)
-    elif out.shape != ref.shape or out.dtype != torch.float32 or not out.is_cuda or not out.is_contiguous():
+    elif (
+        out.shape != ref.shape
+        or out.dtype != torch.float32
+        or not out.is_cuda
+        or not out.is_contiguous()
+    ):
         raise ValueError("Invalid Triton blend output buffer")
     stacked = torch.stack(tuple(laplacians), dim=3).contiguous()
     grid = _launch_grid(ref.shape[2], ref.shape[1], ref.shape[0])

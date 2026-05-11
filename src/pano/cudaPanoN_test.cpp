@@ -155,9 +155,8 @@ cv::Mat run_pano(
       /*batch_size=*/1,
       /*num_levels=*/num_levels,
       masks,
-      /*match_exposure=*/false,
-      /*quiet=*/true,
-      /*minimize_blend=*/minimize_blend);
+      /*minimize_blend=*/minimize_blend,
+      /*quiet=*/true);
   if (!pano.status().ok()) {
     ADD_FAILURE() << pano.status().message();
     return {};

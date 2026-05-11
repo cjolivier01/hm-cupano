@@ -80,13 +80,7 @@ struct StitchingContextN {
 template <typename T_pipeline, typename T_compute>
 class CudaStitchPanoN {
  public:
-  CudaStitchPanoN(
-      int batch_size,
-      int num_levels,
-      const ControlMasksN& control_masks,
-      bool match_exposure,
-      bool minimize_blend,
-      bool quiet);
+  CudaStitchPanoN(int batch_size, int num_levels, const ControlMasksN& control_masks, bool minimize_blend, bool quiet);
   int canvas_width() const {
     return canvas_manager_->canvas_width();
   }
@@ -115,7 +109,6 @@ class CudaStitchPanoN {
       CudaMat<T_compute>& dest_canvas,
       int dest_x,
       int dest_y,
-      const std::optional<float3>& image_adjustment,
       int batch_size,
       cudaStream_t stream);
 
@@ -128,7 +121,6 @@ class CudaStitchPanoN {
       CudaMat<T_pipeline>& dest_canvas,
       int dest_x,
       int dest_y,
-      const std::optional<float3>& image_adjustment,
       int batch_size,
       cudaStream_t stream);
 
@@ -146,10 +138,7 @@ class CudaStitchPanoN {
 
   std::unique_ptr<StitchingContextN<T_pipeline, T_compute>> stitch_context_;
   std::unique_ptr<CanvasManagerN> canvas_manager_;
-  bool match_exposure_{false};
   bool minimize_blend_{false};
-  std::optional<float3> image_adjustment_;
-  std::optional<cv::Mat> whole_seam_mask_image_;
   cv::Rect blend_roi_canvas_{};
   cv::Rect write_roi_canvas_{};
   std::vector<RemapRoiInfo> remap_rois_;
