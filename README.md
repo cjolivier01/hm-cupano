@@ -91,13 +91,10 @@ ffmpeg -y -loglevel error -i assets/weir_2.jpg assets/three/image1.png
 ffmpeg -y -loglevel error -i assets/weir_3.jpg assets/three/image2.png
 ```
 
-Create the Hugin project, find control points, optimize, and export remap files (`mapping_000i_[xy].tif`) and warped layers (`mapping_000i.tif`):
+Create the Hugin project, find control points with LightGlue, optimize, and export remap files (`mapping_000i_[xy].tif`) and warped layers (`mapping_000i.tif`):
 ```
 cd assets/three
-pto_gen -p 0 -o three.pto -f 65 image0.png image1.png image2.png
-cpfind --multirow -o three_cp.pto three.pto
-autooptimiser -a -m -l -s -o three_opt.pto three_cp.pto
-nona -m TIFF_m -z NONE --bigtiff -c -o mapping_ three_opt.pto
+python3 ../../scripts/create_control_points_multi.py --inputs image0.png image1.png image2.png --max-control-points 200
 ```
 
 Generate the seam mask with multiblend (recommended for 3+). This uses the Bazel external `@multiblend`:

@@ -6,21 +6,17 @@ extract frames, compute pairwise control points, and build a Hugin PTO.
 
 import argparse
 import os
-import re
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 import cv2
 import ffmpegio
 import kornia
-import kornia.feature as KF
 import numpy as np
 import scipy.signal
 import torch
-import yaml
 from lightglue import LightGlue, SuperPoint, viz2d
 from lightglue.utils import rbd
-from scipy.signal import correlate
 
 _CONTROL_POINTS_LINE: str = "# control points"
 TorchTensor = torch.Tensor
@@ -148,14 +144,10 @@ def synchronize_by_audio(
     if verbose:
         print("Calculating cross-correlation...")
 
-    sum1 = np.sum(audio1[:, 0])
-    sum2 = np.sum(audio2[:, 0])
-
     # Use only the first channel for correlation.
     correlation: np.ndarray = scipy.signal.correlate(
         audio1[:, 0], audio2[:, 0], mode="full"
     )
-    sumc = np.sum(correlation)
     # Compute lag: subtract the length of the signal (using axis 1 length)
     lag: int = np.argmax(correlation) - audio1.shape[0] + 1
 
@@ -356,12 +348,12 @@ def configure_stitching_multi(
         os.makedirs(pair_dir, exist_ok=True)
 
         # matches
-        axes = viz2d.plot_images([frames[i], frames[i + 1]])
+        viz2d.plot_images([frames[i], frames[i + 1]])
         viz2d.plot_matches(cp0, cp1, color="lime", lw=0.2)
         viz2d.save_plot(os.path.join(pair_dir, "matches.png"))
 
         # keypoints
-        axes = viz2d.plot_images([frames[i], frames[i + 1]])
+        viz2d.plot_images([frames[i], frames[i + 1]])
         viz2d.plot_keypoints([cp0, cp1], colors=["red", "blue"], ps=5)
         viz2d.save_plot(os.path.join(pair_dir, "keypoints.png"))
 
@@ -369,7 +361,7 @@ def configure_stitching_multi(
     update_pto_file_multi(pto, names, cps)
 
     # autooptimiser
-    cmd = ["autooptimiser", "-a", "-m", "-l", "-s", "-o", autooptimiser, pto]
+    cmd = ["autooptimiser", "-a", "-l", "-s", "-o", autooptimiser, pto]
     if scale is not None:
         cmd += ["-x", str(scale)]
     os.system(" ".join(cmd))
@@ -381,14 +373,33 @@ def configure_stitching_multi(
 
     def prefer_bazel_tool(name: str) -> List[str]:
         import shutil
+
         if name == "multiblend":
             if shutil.which("bazelisk"):
-                return ["bazelisk", "run", "--noenable_bzlmod", "@multiblend//:multiblend", "--"]
+                return [
+                    "bazelisk",
+                    "run",
+                    "--noenable_bzlmod",
+                    "@multiblend//:multiblend",
+                    "--",
+                ]
             if shutil.which("bazel"):
-                return ["bazel", "run", "--noenable_bzlmod", "@multiblend//:multiblend", "--"]
+                return [
+                    "bazel",
+                    "run",
+                    "--noenable_bzlmod",
+                    "@multiblend//:multiblend",
+                    "--",
+                ]
         if name == "enblend":
             if shutil.which("bazelisk"):
-                return ["bazelisk", "run", "--noenable_bzlmod", "@enblend//:enblend", "--"]
+                return [
+                    "bazelisk",
+                    "run",
+                    "--noenable_bzlmod",
+                    "@enblend//:enblend",
+                    "--",
+                ]
             if shutil.which("bazel"):
                 return ["bazel", "run", "--noenable_bzlmod", "@enblend//:enblend", "--"]
         if shutil.which(name):
@@ -417,9 +428,9 @@ def configure_stitching_multi(
         # Convert seam-*.png (grayscale) into a single paletted seam_file.png with classes [0..N-1]
         try:
             import glob
-            from PIL import Image
+
             import numpy as np
-            import cv2
+            from PIL import Image
 
             mask_files = sorted(glob.glob(os.path.join(directory, "seam-*.png")))
             if not mask_files:
@@ -431,14 +442,31 @@ def configure_stitching_multi(
             for idx, mf in enumerate(mask_files[1:], start=2):
                 arr = np.array(Image.open(mf))
                 if arr.shape != labels.shape:
-                    arr = cv2.resize(arr, (labels.shape[1], labels.shape[0]), interpolation=cv2.INTER_NEAREST)
+                    arr = cv2.resize(
+                        arr,
+                        (labels.shape[1], labels.shape[0]),
+                        interpolation=cv2.INTER_NEAREST,
+                    )
                 labels[arr >= 128] = idx
 
             img = Image.fromarray(labels, mode="P")
             palette = []
-            base = [(0,0,0), (0,255,0), (255,0,0), (0,0,255), (255,255,0), (255,0,255), (0,255,255), (128,128,128)]
+            base = [
+                (0, 0, 0),
+                (0, 255, 0),
+                (255, 0, 0),
+                (0, 0, 255),
+                (255, 255, 0),
+                (255, 0, 255),
+                (0, 255, 255),
+                (128, 128, 128),
+            ]
             for i in range(256):
-                c = base[i % len(base)] if i < max(2, len(mask_files)+1) else (0,0,0)
+                c = (
+                    base[i % len(base)]
+                    if i < max(2, len(mask_files) + 1)
+                    else (0, 0, 0)
+                )
                 palette.extend(list(c))
             img.putpalette(palette)
             img.save(os.path.join(directory, "seam_file.png"))
@@ -454,8 +482,6 @@ def compute_global_offsets(pairs: List[Tuple[float, float]]) -> List[float]:
       - gi+1 == gi + (off_{i+1} - off_i)
       - all gi >= 0 (shifted so the earliest is zero)
     """
-    # Number of videos
-    n = len(pairs) + 1
     # Step 1: compute pairwise delays
     delays = [off1 - off0 for off0, off1 in pairs]
 
