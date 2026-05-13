@@ -18,7 +18,7 @@ module pano_mmio_regs (
     output reg [159:0] src1_desc,
     output reg [159:0] src2_desc,
     output reg [159:0] dest_desc,
-    output reg [287:0] remap_desc,
+    output reg [223:0] remap_desc,
     output reg [95:0] copy_desc,
     output reg [127:0] blend_desc,
     output reg [95:0] pyramid_desc
@@ -56,8 +56,6 @@ localparam REG_MAPY_ADDR_HI = 8'hac;
 localparam REG_REMAP_EXTENT = 8'hb0;
 localparam REG_REMAP_OFFSET = 8'hb4;
 localparam REG_REMAP_FLAGS = 8'hb8;
-localparam REG_ADJUST01 = 8'hbc;
-localparam REG_ADJUST2 = 8'hc0;
 localparam REG_COPY_SRC = 8'hc4;
 localparam REG_COPY_DEST = 8'hc8;
 localparam REG_COPY_EXTENT = 8'hcc;
@@ -80,7 +78,7 @@ always @(posedge clk or negedge rstn) begin
         src1_desc <= 160'd0;
         src2_desc <= 160'd0;
         dest_desc <= 160'd0;
-        remap_desc <= 288'd0;
+        remap_desc <= 224'd0;
         copy_desc <= 96'd0;
         blend_desc <= 128'd0;
         pyramid_desc <= 96'd0;
@@ -126,8 +124,6 @@ always @(posedge clk or negedge rstn) begin
                 REG_REMAP_EXTENT: remap_desc[159:128] <= cfg_write_data;
                 REG_REMAP_OFFSET: remap_desc[191:160] <= cfg_write_data;
                 REG_REMAP_FLAGS: remap_desc[223:192] <= cfg_write_data;
-                REG_ADJUST01: remap_desc[255:224] <= cfg_write_data;
-                REG_ADJUST2: remap_desc[287:256] <= cfg_write_data;
                 REG_COPY_SRC: copy_desc[31:0] <= cfg_write_data;
                 REG_COPY_DEST: copy_desc[63:32] <= cfg_write_data;
                 REG_COPY_EXTENT: copy_desc[95:64] <= cfg_write_data;
@@ -178,8 +174,6 @@ always @(*) begin
             REG_REMAP_EXTENT: cfg_read_data = remap_desc[159:128];
             REG_REMAP_OFFSET: cfg_read_data = remap_desc[191:160];
             REG_REMAP_FLAGS: cfg_read_data = remap_desc[223:192];
-            REG_ADJUST01: cfg_read_data = remap_desc[255:224];
-            REG_ADJUST2: cfg_read_data = remap_desc[287:256];
             REG_COPY_SRC: cfg_read_data = copy_desc[31:0];
             REG_COPY_DEST: cfg_read_data = copy_desc[63:32];
             REG_COPY_EXTENT: cfg_read_data = copy_desc[95:64];

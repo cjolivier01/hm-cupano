@@ -1,6 +1,5 @@
 #pragma once
 #include <memory>
-#include <optional>
 #include "cupano/cuda/cudaBlend3.h"
 #include "cupano/cuda/cudaStatus.h"
 #include "cupano/pano/canvasManager3.h"
@@ -68,12 +67,7 @@ class CudaStitchPano3 {
   using pipeline_type = T_pipeline;
   using compute_type = T_compute;
 
-  CudaStitchPano3(
-      int batch_size,
-      int num_levels,
-      const ControlMasks3& control_masks,
-      bool match_exposure = false,
-      bool quiet = false);
+  CudaStitchPano3(int batch_size, int num_levels, const ControlMasks3& control_masks, bool quiet = false);
 
   int canvas_width() const {
     return canvas_manager_->canvas_width();
@@ -136,12 +130,6 @@ class CudaStitchPano3 {
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
  protected:
-  // Per-image additive adjustment (RGB) for three inputs
-  struct ImageAdjust3 {
-    float3 adj0;
-    float3 adj1;
-    float3 adj2;
-  };
   // Original process_impl for compatibility
   static CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process_impl(
       const CudaMat<T_pipeline>& inputImage0,
@@ -149,7 +137,6 @@ class CudaStitchPano3 {
       const CudaMat<T_pipeline>& inputImage2,
       StitchingContext3<T_pipeline, T_compute>& stitch_context,
       const CanvasManager3& canvas_manager,
-      const std::optional<ImageAdjust3>& image_adjustment,
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
@@ -160,7 +147,6 @@ class CudaStitchPano3 {
       const CudaMat<T_pipeline>& inputImage2,
       StitchingContext3<T_pipeline, T_compute>& stitch_context,
       const CanvasManager3& canvas_manager,
-      const std::optional<ImageAdjust3>& image_adjustment,
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
@@ -173,18 +159,6 @@ class CudaStitchPano3 {
       CudaMat<T_pipeline>& dest_canvas,
       int dest_canvas_x,
       int dest_canvas_y,
-      const std::optional<float3>& image_adjustment,
-      int batch_size,
-      cudaStream_t stream);
-
-  static CudaStatus remap_to_surface_for_blending_compute(
-      const CudaMat<T_pipeline>& inputImage,
-      const CudaMat<uint16_t>& map_x,
-      const CudaMat<uint16_t>& map_y,
-      CudaMat<T_compute>& dest_canvas,
-      int dest_canvas_x,
-      int dest_canvas_y,
-      const std::optional<float3>& image_adjustment,
       int batch_size,
       cudaStream_t stream);
 
@@ -197,39 +171,17 @@ class CudaStitchPano3 {
       CudaMat<T_pipeline>& dest_canvas,
       int dest_canvas_x,
       int dest_canvas_y,
-      const std::optional<float3>& image_adjustment,
       int batch_size,
       cudaStream_t stream);
-
-  std::optional<ImageAdjust3> compute_image_adjustment(
-      const CudaMat<T_pipeline>& inputImage0,
-      const CudaMat<T_pipeline>& inputImage1,
-      const CudaMat<T_pipeline>& inputImage2);
 
   cv::Mat make_n_channel_seam_image(const cv::Mat& seam_image, int n_channels);
 
   std::unique_ptr<StitchingContext3<T_pipeline, T_compute>> stitch_context_;
   std::unique_ptr<CanvasManager3> canvas_manager_;
-  bool match_exposure_;
-  std::optional<ImageAdjust3> image_adjustment_;
-  std::optional<cv::Mat> whole_seam_mask_image_; // now 3‐channel if soft seam
   CudaStatus status_;
 };
 
 } // namespace cuda
-
-// Compute additive RGB offsets for each of three images so that seams are minimized.
-// Returns per-image adjustments (B,G,R) in an array indexed by image 0/1/2.
-std::optional<std::array<cv::Scalar, 3>> match_seam_images3(
-    const cv::Mat& image0,
-    const cv::Mat& image1,
-    const cv::Mat& image2,
-    const cv::Mat& seam_indexed, // CV_8U, values in {0,1,2}
-    int N,
-    const cv::Point& topLeft0,
-    const cv::Point& topLeft1,
-    const cv::Point& topLeft2,
-    bool verbose = false);
 
 } // namespace pano
 } // namespace hm

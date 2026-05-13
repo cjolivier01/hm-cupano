@@ -76,7 +76,7 @@ wire [159:0] src0_desc;
 wire [159:0] src1_desc;
 wire [159:0] src2_desc;
 wire [159:0] dest_desc;
-wire [287:0] remap_desc;
+wire [223:0] remap_desc;
 wire [95:0] copy_desc;
 wire [127:0] blend_desc;
 wire [95:0] pyramid_desc;

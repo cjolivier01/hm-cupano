@@ -5,7 +5,6 @@
 #include <cassert>
 #include <limits>
 #include "cudaFusedKernels3.h"
-#include "cudaImageAdjust.cuh"
 #include "cudaUtils.cuh"
 #include "cupano/pano/canvasManager3.h"
 
@@ -53,12 +52,7 @@ __global__ void FusedRemapToFullKernel3(
     int canvas1_x,
     int canvas1_y,
     int canvas2_x,
-    int canvas2_y,
-    // Adjustments
-    float3 adjustment0,
-    float3 adjustment1,
-    float3 adjustment2,
-    bool apply_adjustment) {
+    int canvas2_y) {
   int b = blockIdx.z;
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -80,9 +74,6 @@ __global__ void FusedRemapToFullKernel3(
         T_pipeline* src_ptr = surface_ptr(inputImage0, b, srcX, srcY);
         T_compute out_pixel = perform_cast<T_compute>(*src_ptr);
 
-        if (apply_adjustment) {
-          out_pixel = PixelAdjuster<T_compute>::adjust(out_pixel, adjustment0);
-        }
         *surface_ptr(cudaFull0, b, x, y) = out_pixel;
       }
     }
@@ -102,9 +93,6 @@ __global__ void FusedRemapToFullKernel3(
         T_pipeline* src_ptr = surface_ptr(inputImage1, b, srcX, srcY);
         T_compute out_pixel = perform_cast<T_compute>(*src_ptr);
 
-        if (apply_adjustment) {
-          out_pixel = PixelAdjuster<T_compute>::adjust(out_pixel, adjustment1);
-        }
         *surface_ptr(cudaFull1, b, x, y) = out_pixel;
       }
     }
@@ -124,9 +112,6 @@ __global__ void FusedRemapToFullKernel3(
         T_pipeline* src_ptr = surface_ptr(inputImage2, b, srcX, srcY);
         T_compute out_pixel = perform_cast<T_compute>(*src_ptr);
 
-        if (apply_adjustment) {
-          out_pixel = PixelAdjuster<T_compute>::adjust(out_pixel, adjustment2);
-        }
         *surface_ptr(cudaFull2, b, x, y) = out_pixel;
       }
     }
@@ -166,12 +151,7 @@ __global__ void FusedRemapHardSeam3(
     int canvas1_x,
     int canvas1_y,
     int canvas2_x,
-    int canvas2_y,
-    // Adjustments
-    float3 adjustment0,
-    float3 adjustment1,
-    float3 adjustment2,
-    bool apply_adjustment) {
+    int canvas2_y) {
   int b = blockIdx.z;
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -198,9 +178,6 @@ __global__ void FusedRemapHardSeam3(
 
       if (srcX != kUnmappedPositionValue && srcX < inputImage0.width && srcY < inputImage0.height) {
         pixel_value = *surface_ptr(inputImage0, b, srcX, srcY);
-        if (apply_adjustment) {
-          pixel_value = PixelAdjuster<T_pipeline>::adjust(pixel_value, adjustment0);
-        }
         pixel_set = true;
       }
     }
@@ -215,9 +192,6 @@ __global__ void FusedRemapHardSeam3(
 
       if (srcX != kUnmappedPositionValue && srcX < inputImage1.width && srcY < inputImage1.height) {
         pixel_value = *surface_ptr(inputImage1, b, srcX, srcY);
-        if (apply_adjustment) {
-          pixel_value = PixelAdjuster<T_pipeline>::adjust(pixel_value, adjustment1);
-        }
         pixel_set = true;
       }
     }
@@ -232,9 +206,6 @@ __global__ void FusedRemapHardSeam3(
 
       if (srcX != kUnmappedPositionValue && srcX < inputImage2.width && srcY < inputImage2.height) {
         pixel_value = *surface_ptr(inputImage2, b, srcX, srcY);
-        if (apply_adjustment) {
-          pixel_value = PixelAdjuster<T_pipeline>::adjust(pixel_value, adjustment2);
-        }
         pixel_set = true;
       }
     }
@@ -264,10 +235,6 @@ CudaStatus launchFusedRemapToFullKernel3(
     CudaMat<T_compute>& cudaFull1,
     CudaMat<T_compute>& cudaFull2,
     const CanvasManager3& canvas_manager,
-    float3 adjustment0,
-    float3 adjustment1,
-    float3 adjustment2,
-    bool apply_adjustment,
     cudaStream_t stream) {
   dim3 block(16, 16);
   dim3 grid(
@@ -301,11 +268,7 @@ CudaStatus launchFusedRemapToFullKernel3(
       canvas_positions[1].x,
       canvas_positions[1].y,
       canvas_positions[2].x,
-      canvas_positions[2].y,
-      adjustment0,
-      adjustment1,
-      adjustment2,
-      apply_adjustment);
+      canvas_positions[2].y);
 
   return CudaStatus(cudaGetLastError());
 }
@@ -324,10 +287,6 @@ CudaStatus launchFusedRemapHardSeam3(
     const CudaMat<unsigned char>& hardSeamMask,
     CudaMat<T_pipeline>& canvas,
     const CanvasManager3& canvas_manager,
-    float3 adjustment0,
-    float3 adjustment1,
-    float3 adjustment2,
-    bool apply_adjustment,
     cudaStream_t stream) {
   dim3 block(16, 16);
   dim3 grid(
@@ -356,11 +315,7 @@ CudaStatus launchFusedRemapHardSeam3(
       canvas_manager.canvas_positions()[1].x,
       canvas_manager.canvas_positions()[1].y,
       canvas_manager.canvas_positions()[2].x,
-      canvas_manager.canvas_positions()[2].y,
-      adjustment0,
-      adjustment1,
-      adjustment2,
-      apply_adjustment);
+      canvas_manager.canvas_positions()[2].y);
 
   return CudaStatus(cudaGetLastError());
 }
@@ -381,30 +336,22 @@ CudaStatus launchFusedRemapHardSeam3(
       CudaMat<T_compute>&,                                                  \
       CudaMat<T_compute>&,                                                  \
       const CanvasManager3&,                                                \
-      float3,                                                               \
-      float3,                                                               \
-      float3,                                                               \
-      bool,                                                                 \
       cudaStream_t);
 
-#define INSTANTIATE_CANVAS_KERNELS(T_pipeline)                     \
-  template CudaStatus launchFusedRemapHardSeam3<T_pipeline>(       \
-      const CudaMat<T_pipeline>&,                                  \
-      const CudaMat<T_pipeline>&,                                  \
-      const CudaMat<T_pipeline>&,                                  \
-      const CudaMat<uint16_t>&,                                    \
-      const CudaMat<uint16_t>&,                                    \
-      const CudaMat<uint16_t>&,                                    \
-      const CudaMat<uint16_t>&,                                    \
-      const CudaMat<uint16_t>&,                                    \
-      const CudaMat<uint16_t>&,                                    \
-      const CudaMat<unsigned char>&,                               \
-      CudaMat<T_pipeline>&,                                        \
-      const CanvasManager3&,                                       \
-      float3,                                                      \
-      float3,                                                      \
-      float3,                                                      \
-      bool,                                                        \
+#define INSTANTIATE_CANVAS_KERNELS(T_pipeline)               \
+  template CudaStatus launchFusedRemapHardSeam3<T_pipeline>( \
+      const CudaMat<T_pipeline>&,                            \
+      const CudaMat<T_pipeline>&,                            \
+      const CudaMat<T_pipeline>&,                            \
+      const CudaMat<uint16_t>&,                              \
+      const CudaMat<uint16_t>&,                              \
+      const CudaMat<uint16_t>&,                              \
+      const CudaMat<uint16_t>&,                              \
+      const CudaMat<uint16_t>&,                              \
+      const CudaMat<uint16_t>&,                              \
+      const CudaMat<unsigned char>&,                         \
+      CudaMat<T_pipeline>&,                                  \
+      const CanvasManager3&,                                 \
       cudaStream_t);
 
 // Common instantiations

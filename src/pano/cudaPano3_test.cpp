@@ -43,7 +43,6 @@ TEST(CudaStitchPano3_InvalidControlMasks, ConstructorReportsError) {
       /*batch_size=*/1,
       /*num_levels=*/1,
       badMasks,
-      /*match_exposure=*/false,
       /*quiet=*/true);
 
   // The internal status should be an error.
@@ -107,7 +106,6 @@ TEST(CudaStitchPano3_HardSeamTrivial, ThirdImageWins) {
       /*batch_size=*/1,
       /*num_levels=*/0,
       masks,
-      /*match_exposure=*/false,
       /*quiet=*/true);
 
   ASSERT_TRUE(stitch.status().ok());
@@ -176,7 +174,6 @@ TEST(CudaStitchPano3_SoftSeamTrivial, OneHotLabelSelectsMiddleImage) {
       /*batch_size=*/1,
       /*num_levels=*/1,
       masks,
-      /*match_exposure=*/false,
       /*quiet=*/true);
   ASSERT_TRUE(stitch.status().ok());
 

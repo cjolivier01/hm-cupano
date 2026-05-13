@@ -4,8 +4,8 @@
 #include "cupano/pano/cudaPanoN.h"
 #include "cupano/utils/showImage.h"
 
-#include "cupano/gpu/gpu_runtime.h"
 #include <opencv2/opencv.hpp>
+#include "cupano/gpu/gpu_runtime.h"
 
 #include <cassert>
 #include <cmath>
@@ -26,7 +26,6 @@ static std::vector<cv::Mat> as_batch(const cv::Mat& mat, int batch_size) {
 int main(int argc, char** argv) {
   bool perf = false;
   bool show = false;
-  bool adjust_images = false;
   std::string game_id;
   std::string directory;
   std::string output;
@@ -45,7 +44,6 @@ int main(int argc, char** argv) {
       {"perf", no_argument, 0, 'p'},
       {"game-id", required_argument, 0, 'g'},
       {"levels", required_argument, 0, 'l'},
-      {"adjust", required_argument, 0, 'a'},
       {"directory", required_argument, 0, 'd'},
       {"output", required_argument, 0, 'o'},
       {"cuda-device", required_argument, 0, 'c'},
@@ -53,7 +51,7 @@ int main(int argc, char** argv) {
       {"num-images", required_argument, 0, 'n'},
       {0, 0, 0, 0}};
 
-  const char* short_opts = "spg:d:o:c:a:l:b:n:";
+  const char* short_opts = "spg:d:o:c:l:b:n:";
   int option_index = 0;
   int opt;
   while ((opt = getopt_long(argc, argv, short_opts, long_options, &option_index)) != -1) {
@@ -63,9 +61,6 @@ int main(int argc, char** argv) {
         break;
       case 'b':
         batch_size = std::atoi(optarg);
-        break;
-      case 'a':
-        adjust_images = !!std::atoi(optarg);
         break;
       case 'p':
         perf = true;
@@ -91,7 +86,7 @@ int main(int argc, char** argv) {
       case '?':
         std::cerr
             << "Usage: " << argv[0]
-            << " [--show] [--perf] [--game-id <id>] [--directory <dir>] [--cuda-device <v>] [--output <v>] [--adjust <0|1>] [--levels <v>] [--num-images <N>]"
+            << " [--show] [--perf] [--game-id <id>] [--directory <dir>] [--cuda-device <v>] [--output <v>] [--levels <v>] [--num-images <N>]"
             << std::endl;
         return 2;
       default:
@@ -135,9 +130,8 @@ int main(int argc, char** argv) {
       batch_size,
       num_levels,
       control_masks,
-      /*match_exposure=*/adjust_images,
-      /*quiet=*/false,
-      /*minimize_blend=*/true);
+      /*minimize_blend=*/true,
+      /*quiet=*/false);
   std::cout << "Canvas size: " << pano.canvas_width() << " x " << pano.canvas_height() << std::endl;
 
   const int cvPipelineType = cudaPixelTypeToCvType(hm::CudaTypeToPixelType<T_pipeline>::value);

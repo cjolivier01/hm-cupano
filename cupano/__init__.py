@@ -1,6 +1,6 @@
 from .geometry import CanvasInfo, Rect, SpatialTiff
 from .masks import ControlMasks, ControlMasksN, UNMAPPED_POSITION_VALUE
-from .pano import CudaStitchPano, CudaStitchPanoN, match_seam_images
+from .pano import CudaStitchPano, CudaStitchPanoN
 from .status import CudaStatus, CudaStatusError
 
 __all__ = [
@@ -14,5 +14,4 @@ __all__ = [
     "Rect",
     "SpatialTiff",
     "UNMAPPED_POSITION_VALUE",
-    "match_seam_images",
 ]

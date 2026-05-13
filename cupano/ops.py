@@ -44,7 +44,9 @@ def ensure_batched(image: torch.Tensor) -> torch.Tensor:
 
 
 def alpha_constant(dtype: torch.dtype, device: torch.device) -> torch.Tensor:
-    return torch.tensor(255.0 if dtype.is_floating_point else 255, device=device, dtype=dtype)
+    return torch.tensor(
+        255.0 if dtype.is_floating_point else 255, device=device, dtype=dtype
+    )
 
 
 def cast_like(value: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
@@ -67,7 +69,9 @@ def resolve_backend(backend: Backend, *tensors: torch.Tensor) -> ResolvedBackend
     raise ValueError(f"Unsupported backend: {backend}")
 
 
-def _region_intersection(offset_x: int, offset_y: int, roi: Rect, dest_w: int, dest_h: int) -> tuple[int, int, int, int, int, int] | None:
+def _region_intersection(
+    offset_x: int, offset_y: int, roi: Rect, dest_w: int, dest_h: int
+) -> tuple[int, int, int, int, int, int] | None:
     dst_left = offset_x + roi.x
     dst_top = offset_y + roi.y
     dst_right = dst_left + roi.width
@@ -83,7 +87,9 @@ def _region_intersection(offset_x: int, offset_y: int, roi: Rect, dest_w: int, d
     return x0, y0, x1, y1, sx0, sy0
 
 
-def _gather_pixels(src: torch.Tensor, mx: torch.Tensor, my: torch.Tensor) -> torch.Tensor:
+def _gather_pixels(
+    src: torch.Tensor, mx: torch.Tensor, my: torch.Tensor
+) -> torch.Tensor:
     batch, _, width, channels = src.shape
     flat = src.reshape(batch, -1, channels)
     idx = (my * width + mx).reshape(-1)
@@ -91,7 +97,15 @@ def _gather_pixels(src: torch.Tensor, mx: torch.Tensor, my: torch.Tensor) -> tor
     return gathered.reshape(batch, mx.shape[0], mx.shape[1], channels)
 
 
-def _copy_roi_torch(src: torch.Tensor, dest: torch.Tensor, region: Rect, src_roi_x: int, src_roi_y: int, offset_x: int, offset_y: int) -> torch.Tensor:
+def _copy_roi_torch(
+    src: torch.Tensor,
+    dest: torch.Tensor,
+    region: Rect,
+    src_roi_x: int,
+    src_roi_y: int,
+    offset_x: int,
+    offset_y: int,
+) -> torch.Tensor:
     if region.width <= 0 or region.height <= 0:
         return dest
     x_start = max(0, -src_roi_x, -offset_x)
@@ -126,7 +140,9 @@ def copy_roi(
 ) -> torch.Tensor:
     chosen_backend = resolve_backend(backend, src, dest)
     if chosen_backend == "triton":
-        return copy_roi_triton(src, dest, region, src_roi_x, src_roi_y, offset_x, offset_y)
+        return copy_roi_triton(
+            src, dest, region, src_roi_x, src_roi_y, offset_x, offset_y
+        )
     return _copy_roi_torch(src, dest, region, src_roi_x, src_roi_y, offset_x, offset_y)
 
 
@@ -163,7 +179,6 @@ def _remap_to_canvas_torch(
     offset_x: int,
     offset_y: int,
     *,
-    adjustment: torch.Tensor | None = None,
     no_unmapped_write: bool = False,
     roi: Rect | None = None,
     fill_invalid_alpha: bool = True,
@@ -203,16 +218,17 @@ def _remap_to_canvas_torch(
     my = map_y[map_y0:map_y1, map_x0:map_x1]
     src_h = src.shape[1]
     src_w = src.shape[2]
-    unmapped = (mx == int(UNMAPPED_POSITION_VALUE)) | (my == int(UNMAPPED_POSITION_VALUE))
+    unmapped = (mx == int(UNMAPPED_POSITION_VALUE)) | (
+        my == int(UNMAPPED_POSITION_VALUE)
+    )
     valid = (mx >= 0) & (my >= 0) & (mx < src_w) & (my < src_h) & ~unmapped
     mx_clamped = mx.clamp(0, max(src_w - 1, 0)).long()
     my_clamped = my.clamp(0, max(src_h - 1, 0)).long()
     sampled = cast_like(_gather_pixels(src, mx_clamped, my_clamped), dest.dtype)
-    if adjustment is not None:
-        sampled = sampled.clone()
-        sampled[..., : min(3, sampled.shape[-1])] += adjustment.to(device=sampled.device, dtype=sampled.dtype)
 
-    out = torch.zeros((src.shape[0], h, w, src.shape[-1]), device=dest.device, dtype=dest.dtype)
+    out = torch.zeros(
+        (src.shape[0], h, w, src.shape[-1]), device=dest.device, dtype=dest.dtype
+    )
     if src.shape[-1] == 4 and fill_invalid_alpha:
         unmapped_3d = unmapped.unsqueeze(0)
         out[..., 3] = torch.where(
@@ -239,7 +255,6 @@ def remap_to_canvas(
     offset_x: int,
     offset_y: int,
     *,
-    adjustment: torch.Tensor | None = None,
     no_unmapped_write: bool = False,
     roi: Rect | None = None,
     fill_invalid_alpha: bool = True,
@@ -255,7 +270,6 @@ def remap_to_canvas(
                 map_y,
                 offset_x,
                 offset_y,
-                adjustment=adjustment,
                 no_unmapped_write=no_unmapped_write,
                 roi=roi,
                 fill_invalid_alpha=fill_invalid_alpha,
@@ -270,7 +284,6 @@ def remap_to_canvas(
         map_y,
         offset_x,
         offset_y,
-        adjustment=adjustment,
         no_unmapped_write=no_unmapped_write,
         roi=roi,
         fill_invalid_alpha=fill_invalid_alpha,
@@ -287,7 +300,6 @@ def _remap_to_canvas_with_dest_map_torch(
     offset_x: int,
     offset_y: int,
     *,
-    adjustment: torch.Tensor | None = None,
     roi: Rect | None = None,
 ) -> torch.Tensor:
     src = ensure_batched(src)
@@ -335,10 +347,9 @@ def _remap_to_canvas_with_dest_map_torch(
     mx_clamped = mx.clamp(0, max(src_w - 1, 0)).long()
     my_clamped = my.clamp(0, max(src_h - 1, 0)).long()
     sampled = cast_like(_gather_pixels(src, mx_clamped, my_clamped), dest.dtype)
-    if adjustment is not None:
-        sampled = sampled.clone()
-        sampled[..., : min(3, sampled.shape[-1])] += adjustment.to(device=sampled.device, dtype=sampled.dtype)
-    out = torch.zeros((src.shape[0], h, w, src.shape[-1]), device=dest.device, dtype=dest.dtype)
+    out = torch.zeros(
+        (src.shape[0], h, w, src.shape[-1]), device=dest.device, dtype=dest.dtype
+    )
     out = torch.where(valid.unsqueeze(0).unsqueeze(-1), sampled, out)
     write_mask = class_mask.unsqueeze(0).unsqueeze(-1)
     dest_patch = dest[:, y0:y1, x0:x1, :]
@@ -356,7 +367,6 @@ def remap_to_canvas_with_dest_map(
     offset_x: int,
     offset_y: int,
     *,
-    adjustment: torch.Tensor | None = None,
     roi: Rect | None = None,
     backend: Backend = "auto",
 ) -> torch.Tensor:
@@ -372,7 +382,6 @@ def remap_to_canvas_with_dest_map(
                 dest_image_map,
                 offset_x,
                 offset_y,
-                adjustment=adjustment,
                 roi=roi,
             )
         except ValueError:
@@ -387,18 +396,21 @@ def remap_to_canvas_with_dest_map(
         dest_image_map,
         offset_x,
         offset_y,
-        adjustment=adjustment,
         roi=roi,
     )
 
 
-def _downsample_mask_torch(mask: torch.Tensor, out: torch.Tensor | None = None) -> torch.Tensor:
+def _downsample_mask_torch(
+    mask: torch.Tensor, out: torch.Tensor | None = None
+) -> torch.Tensor:
     if mask.ndim != 3:
         raise ValueError(f"Expected HWC mask tensor, got {tuple(mask.shape)}")
     out_h = (mask.shape[0] + 1) // 2
     out_w = (mask.shape[1] + 1) // 2
     if out is None:
-        out = torch.zeros((out_h, out_w, mask.shape[2]), device=mask.device, dtype=mask.dtype)
+        out = torch.zeros(
+            (out_h, out_w, mask.shape[2]), device=mask.device, dtype=mask.dtype
+        )
     else:
         out.zero_()
     count = torch.zeros((out_h, out_w, 1), device=mask.device, dtype=mask.dtype)
@@ -411,10 +423,18 @@ def _downsample_mask_torch(mask: torch.Tensor, out: torch.Tensor | None = None) 
     return out / count.clamp_min(1)
 
 
-def downsample_mask(mask: torch.Tensor, *, out: torch.Tensor | None = None, backend: Backend = "auto") -> torch.Tensor:
+def downsample_mask(
+    mask: torch.Tensor, *, out: torch.Tensor | None = None, backend: Backend = "auto"
+) -> torch.Tensor:
     if backend == "triton":
         return downsample_mask_triton(mask, out=out)
-    if backend == "auto" and triton_available() and mask.is_cuda and mask.is_contiguous() and mask.dtype == torch.float32:
+    if (
+        backend == "auto"
+        and triton_available()
+        and mask.is_cuda
+        and mask.is_contiguous()
+        and mask.dtype == torch.float32
+    ):
         try:
             return downsample_mask_triton(mask, out=out)
         except ValueError:
@@ -422,19 +442,31 @@ def downsample_mask(mask: torch.Tensor, *, out: torch.Tensor | None = None, back
     return _downsample_mask_torch(mask, out=out)
 
 
-def _downsample_image_torch(image: torch.Tensor, out: torch.Tensor | None = None) -> torch.Tensor:
+def _downsample_image_torch(
+    image: torch.Tensor, out: torch.Tensor | None = None
+) -> torch.Tensor:
     image = ensure_batched(image)
     out_h = (image.shape[1] + 1) // 2
     out_w = (image.shape[2] + 1) // 2
     channels = image.shape[-1]
     if out is None:
-        out = torch.zeros((image.shape[0], out_h, out_w, channels), device=image.device, dtype=image.dtype)
+        out = torch.zeros(
+            (image.shape[0], out_h, out_w, channels),
+            device=image.device,
+            dtype=image.dtype,
+        )
     else:
         out.zero_()
     if channels == 4:
-        sums = torch.zeros((image.shape[0], out_h, out_w, 3), device=image.device, dtype=image.dtype)
-        counts = torch.zeros((image.shape[0], out_h, out_w, 1), device=image.device, dtype=image.dtype)
-        alpha = torch.zeros((image.shape[0], out_h, out_w, 1), device=image.device, dtype=image.dtype)
+        sums = torch.zeros(
+            (image.shape[0], out_h, out_w, 3), device=image.device, dtype=image.dtype
+        )
+        counts = torch.zeros(
+            (image.shape[0], out_h, out_w, 1), device=image.device, dtype=image.dtype
+        )
+        alpha = torch.zeros(
+            (image.shape[0], out_h, out_w, 1), device=image.device, dtype=image.dtype
+        )
         for dy in range(2):
             for dx in range(2):
                 patch = image[:, dy::2, dx::2, :]
@@ -448,7 +480,9 @@ def _downsample_image_torch(image: torch.Tensor, out: torch.Tensor | None = None
         out[..., 3:4] = alpha
         return out
 
-    count = torch.zeros((image.shape[0], out_h, out_w, 1), device=image.device, dtype=image.dtype)
+    count = torch.zeros(
+        (image.shape[0], out_h, out_w, 1), device=image.device, dtype=image.dtype
+    )
     for dy in range(2):
         for dx in range(2):
             patch = image[:, dy::2, dx::2, :]
@@ -458,10 +492,18 @@ def _downsample_image_torch(image: torch.Tensor, out: torch.Tensor | None = None
     return out / count.clamp_min(1)
 
 
-def downsample_image(image: torch.Tensor, *, out: torch.Tensor | None = None, backend: Backend = "auto") -> torch.Tensor:
+def downsample_image(
+    image: torch.Tensor, *, out: torch.Tensor | None = None, backend: Backend = "auto"
+) -> torch.Tensor:
     if backend == "triton":
         return downsample_image_triton(image, out=out)
-    if backend == "auto" and triton_available() and image.is_cuda and image.is_contiguous() and image.dtype == torch.float32:
+    if (
+        backend == "auto"
+        and triton_available()
+        and image.is_cuda
+        and image.is_contiguous()
+        and image.dtype == torch.float32
+    ):
         try:
             return downsample_image_triton(image, out=out)
         except ValueError:
@@ -488,17 +530,26 @@ def _upsample_alpha_aware(low: torch.Tensor, out_h: int, out_w: int) -> torch.Te
     p11 = _gather_pixels(low, x1, y1)
 
     if channels == 4:
-        out = torch.zeros((batch, out_h, out_w, channels), device=low.device, dtype=low.dtype)
+        out = torch.zeros(
+            (batch, out_h, out_w, channels), device=low.device, dtype=low.dtype
+        )
         neighbors = (p00, p10, p01, p11)
         weights = ((1.0 - dx) * (1.0 - dy), dx * (1.0 - dy), (1.0 - dx) * dy, dx * dy)
-        sum_rgb = torch.zeros((batch, out_h, out_w, 3), device=low.device, dtype=torch.float32)
-        sum_w = torch.zeros((batch, out_h, out_w, 1), device=low.device, dtype=torch.float32)
+        sum_rgb = torch.zeros(
+            (batch, out_h, out_w, 3), device=low.device, dtype=torch.float32
+        )
+        sum_w = torch.zeros(
+            (batch, out_h, out_w, 1), device=low.device, dtype=torch.float32
+        )
         for patch, weight in zip(neighbors, weights, strict=True):
             valid = (patch[..., 3:4] != 0).to(torch.float32)
             sum_rgb += patch[..., :3].to(torch.float32) * weight * valid
             sum_w += weight * valid
         denom = torch.where(sum_w > 0, sum_w, torch.ones_like(sum_w))
-        out[..., :3] = cast_like(torch.where(sum_w > 0, sum_rgb / denom, torch.zeros_like(sum_rgb)), low.dtype)
+        out[..., :3] = cast_like(
+            torch.where(sum_w > 0, sum_rgb / denom, torch.zeros_like(sum_rgb)),
+            low.dtype,
+        )
         return out
 
     w00 = (1.0 - dx) * (1.0 - dy)
@@ -506,12 +557,17 @@ def _upsample_alpha_aware(low: torch.Tensor, out_h: int, out_w: int) -> torch.Te
     w01 = (1.0 - dx) * dy
     w11 = dx * dy
     return cast_like(
-        p00.to(torch.float32) * w00 + p10.to(torch.float32) * w10 + p01.to(torch.float32) * w01 + p11.to(torch.float32) * w11,
+        p00.to(torch.float32) * w00
+        + p10.to(torch.float32) * w10
+        + p01.to(torch.float32) * w01
+        + p11.to(torch.float32) * w11,
         low.dtype,
     )
 
 
-def _compute_laplacian_torch(high: torch.Tensor, low: torch.Tensor, out: torch.Tensor | None = None) -> torch.Tensor:
+def _compute_laplacian_torch(
+    high: torch.Tensor, low: torch.Tensor, out: torch.Tensor | None = None
+) -> torch.Tensor:
     high = ensure_batched(high)
     up = _upsample_alpha_aware(low, high.shape[1], high.shape[2]).to(torch.float32)
     if high.shape[-1] == 4:
@@ -553,7 +609,9 @@ def _blend_laplacians_n_torch(
     stack = torch.stack(laps, dim=3)
     weights = mask.to(device=stack.device, dtype=torch.float32)
     weights_sum = weights.sum(dim=-1, keepdim=True)
-    weights = torch.where(weights_sum > 0, weights / weights_sum.clamp_min(1e-12), weights)
+    weights = torch.where(
+        weights_sum > 0, weights / weights_sum.clamp_min(1e-12), weights
+    )
     weights = weights.unsqueeze(0).expand(stack.shape[0], -1, -1, -1)
 
     channels = stack.shape[-1]
@@ -561,10 +619,18 @@ def _blend_laplacians_n_torch(
         alphas = stack[..., 3]
         weights = torch.where(alphas != 0, weights, torch.zeros_like(weights))
         valid_sum = weights.sum(dim=-1, keepdim=True)
-        renorm = torch.where(valid_sum > 0, weights / valid_sum.clamp_min(1e-12), weights)
+        renorm = torch.where(
+            valid_sum > 0, weights / valid_sum.clamp_min(1e-12), weights
+        )
         rgb = (renorm.unsqueeze(-1) * stack[..., :3]).sum(dim=3)
-        alpha = torch.where(renorm > 0, alphas, torch.zeros_like(alphas)).amax(dim=-1, keepdim=True)
-        blend_out = torch.zeros((stack.shape[0], stack.shape[1], stack.shape[2], 4), device=stack.device, dtype=torch.float32)
+        alpha = torch.where(renorm > 0, alphas, torch.zeros_like(alphas)).amax(
+            dim=-1, keepdim=True
+        )
+        blend_out = torch.zeros(
+            (stack.shape[0], stack.shape[1], stack.shape[2], 4),
+            device=stack.device,
+            dtype=torch.float32,
+        )
         blend_out[..., :3] = rgb
         blend_out[..., 3:4] = alpha
 
@@ -572,11 +638,19 @@ def _blend_laplacians_n_torch(
         fallback = torch.gather(
             stack,
             3,
-            fallback_idx.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, -1, 1, stack.shape[-1]),
+            fallback_idx.unsqueeze(-1)
+            .unsqueeze(-1)
+            .expand(-1, -1, -1, 1, stack.shape[-1]),
         ).squeeze(3)
         has_fallback = alphas.amax(dim=-1, keepdim=True) != 0
         use_blend = valid_sum > 0
-        result = torch.where(use_blend.expand_as(blend_out), blend_out, torch.where(has_fallback.expand_as(blend_out), fallback, torch.zeros_like(blend_out)))
+        result = torch.where(
+            use_blend.expand_as(blend_out),
+            blend_out,
+            torch.where(
+                has_fallback.expand_as(blend_out), fallback, torch.zeros_like(blend_out)
+            ),
+        )
         if out is not None:
             out.copy_(result)
             return out
@@ -601,7 +675,9 @@ def _blend_laplacians_two_cpp_torch(
     if weights.ndim == 2:
         weights = weights.unsqueeze(-1)
     if weights.ndim != 3 or weights.shape[-1] != 1:
-        raise ValueError(f"Expected HWC single-channel mask, got {tuple(weights.shape)}")
+        raise ValueError(
+            f"Expected HWC single-channel mask, got {tuple(weights.shape)}"
+        )
     if a.shape != b.shape:
         raise ValueError("Two-image blend inputs must have the same shape")
 
@@ -646,11 +722,17 @@ def _laplacian_blend_two_cpp(
     if mask_f32.ndim == 2:
         mask_f32 = mask_f32.unsqueeze(-1)
     if mask_f32.ndim != 3 or mask_f32.shape[-1] != 1:
-        raise ValueError(f"Expected HWC single-channel mask, got {tuple(mask_f32.shape)}")
+        raise ValueError(
+            f"Expected HWC single-channel mask, got {tuple(mask_f32.shape)}"
+        )
 
     use_backend: Backend = backend
     if backend == "auto":
-        use_backend = "triton" if can_use_triton_blend_backend([base1, base2], mask_f32) else "auto"
+        use_backend = (
+            "triton"
+            if can_use_triton_blend_backend([base1, base2], mask_f32)
+            else "auto"
+        )
 
     inputs = [base1, base2]
     if workspace is not None:
@@ -682,12 +764,22 @@ def _laplacian_blend_two_cpp(
 
     for lvl in range(levels - 1):
         if workspace is not None:
-            compute_laplacian(gauss[0][lvl], gauss[0][lvl + 1], out=laps[0][lvl], backend=use_backend)
-            compute_laplacian(gauss[1][lvl], gauss[1][lvl + 1], out=laps[1][lvl], backend=use_backend)
-            _blend_laplacians_two_cpp_torch(laps[0][lvl], laps[1][lvl], mask_pyr[lvl], out=blended[lvl])
+            compute_laplacian(
+                gauss[0][lvl], gauss[0][lvl + 1], out=laps[0][lvl], backend=use_backend
+            )
+            compute_laplacian(
+                gauss[1][lvl], gauss[1][lvl + 1], out=laps[1][lvl], backend=use_backend
+            )
+            _blend_laplacians_two_cpp_torch(
+                laps[0][lvl], laps[1][lvl], mask_pyr[lvl], out=blended[lvl]
+            )
         else:
-            lap1 = compute_laplacian(gauss[0][lvl], gauss[0][lvl + 1], backend=use_backend)
-            lap2 = compute_laplacian(gauss[1][lvl], gauss[1][lvl + 1], backend=use_backend)
+            lap1 = compute_laplacian(
+                gauss[0][lvl], gauss[0][lvl + 1], backend=use_backend
+            )
+            lap2 = compute_laplacian(
+                gauss[1][lvl], gauss[1][lvl + 1], backend=use_backend
+            )
             laps[0].append(lap1)
             laps[1].append(lap2)
             blended.append(_blend_laplacians_two_cpp_torch(lap1, lap2, mask_pyr[lvl]))
@@ -698,7 +790,12 @@ def _laplacian_blend_two_cpp(
         _blend_laplacians_two_cpp_torch(coarse1, coarse2, mask_pyr[-1], out=blended[-1])
         recon_levels[-1].copy_(blended[-1])
         for lvl in range(levels - 2, -1, -1):
-            reconstruct_level(recon_levels[lvl + 1], blended[lvl], out=recon_levels[lvl], backend=use_backend)
+            reconstruct_level(
+                recon_levels[lvl + 1],
+                blended[lvl],
+                out=recon_levels[lvl],
+                backend=use_backend,
+            )
         return recon_levels[0]
 
     blended.append(_blend_laplacians_two_cpp_torch(coarse1, coarse2, mask_pyr[-1]))
@@ -726,7 +823,9 @@ def blend_laplacians_n(
     return _blend_laplacians_n_torch(laps, mask, out=out)
 
 
-def _reconstruct_level_torch(low: torch.Tensor, lap: torch.Tensor, out: torch.Tensor | None = None) -> torch.Tensor:
+def _reconstruct_level_torch(
+    low: torch.Tensor, lap: torch.Tensor, out: torch.Tensor | None = None
+) -> torch.Tensor:
     up = _upsample_alpha_aware(low, lap.shape[1], lap.shape[2]).to(torch.float32)
     if lap.shape[-1] == 4:
         next_recon = lap.clone() if out is None else out
@@ -779,7 +878,9 @@ def _level_shapes(width: int, height: int, levels: int) -> list[tuple[int, int]]
     return shapes
 
 
-def _workspace_key(inputs: list[torch.Tensor], mask: torch.Tensor, levels: int) -> tuple[object, ...]:
+def _workspace_key(
+    inputs: list[torch.Tensor], mask: torch.Tensor, levels: int
+) -> tuple[object, ...]:
     ref = ensure_batched(inputs[0]).to(torch.float32)
     return (
         str(ref.device),
@@ -816,14 +917,41 @@ def _ensure_laplacian_workspace(
         gauss_levels = []
         lap_levels = []
         for level_h, level_w in shapes:
-            gauss_levels.append(torch.empty((batch, level_h, level_w, channels), device=device, dtype=torch.float32))
-            lap_levels.append(torch.empty((batch, level_h, level_w, channels), device=device, dtype=torch.float32))
+            gauss_levels.append(
+                torch.empty(
+                    (batch, level_h, level_w, channels),
+                    device=device,
+                    dtype=torch.float32,
+                )
+            )
+            lap_levels.append(
+                torch.empty(
+                    (batch, level_h, level_w, channels),
+                    device=device,
+                    dtype=torch.float32,
+                )
+            )
         workspace.gauss.append(gauss_levels)
         workspace.laps.append(lap_levels)
 
-    workspace.mask_pyr = [torch.empty((level_h, level_w, mask_channels), device=device, dtype=torch.float32) for level_h, level_w in shapes]
-    workspace.blended = [torch.empty((batch, level_h, level_w, channels), device=device, dtype=torch.float32) for level_h, level_w in shapes]
-    workspace.recon = [torch.empty((batch, level_h, level_w, channels), device=device, dtype=torch.float32) for level_h, level_w in shapes]
+    workspace.mask_pyr = [
+        torch.empty(
+            (level_h, level_w, mask_channels), device=device, dtype=torch.float32
+        )
+        for level_h, level_w in shapes
+    ]
+    workspace.blended = [
+        torch.empty(
+            (batch, level_h, level_w, channels), device=device, dtype=torch.float32
+        )
+        for level_h, level_w in shapes
+    ]
+    workspace.recon = [
+        torch.empty(
+            (batch, level_h, level_w, channels), device=device, dtype=torch.float32
+        )
+        for level_h, level_w in shapes
+    ]
     workspace.key = key
     return workspace
 
@@ -842,16 +970,22 @@ def laplacian_blend_n(
     levels = compute_num_levels(inputs[0].shape[2], inputs[0].shape[1], num_levels)
 
     if len(inputs) == 2 and mask.ndim == 3 and mask.shape[-1] == 2:
-        return _laplacian_blend_two_cpp(inputs[0], inputs[1], mask, levels, backend=backend, workspace=workspace)
+        return _laplacian_blend_two_cpp(
+            inputs[0], inputs[1], mask, levels, backend=backend, workspace=workspace
+        )
 
     base_inputs = [ensure_batched(inp).to(torch.float32) for inp in inputs]
     mask_f32 = mask.to(device=base_inputs[0].device, dtype=torch.float32)
     use_backend: Backend = backend
     if backend == "auto":
-        use_backend = "triton" if can_use_triton_blend_backend(base_inputs, mask_f32) else "auto"
+        use_backend = (
+            "triton" if can_use_triton_blend_backend(base_inputs, mask_f32) else "auto"
+        )
 
     if workspace is not None:
-        workspace = _ensure_laplacian_workspace(workspace, base_inputs, mask_f32, levels)
+        workspace = _ensure_laplacian_workspace(
+            workspace, base_inputs, mask_f32, levels
+        )
         gauss = workspace.gauss
         laps = workspace.laps
         blended = workspace.blended
@@ -870,7 +1004,9 @@ def laplacian_blend_n(
     for lvl in range(1, levels):
         for i in range(len(base_inputs)):
             if workspace is not None:
-                downsample_image(gauss[i][lvl - 1], out=gauss[i][lvl], backend=use_backend)
+                downsample_image(
+                    gauss[i][lvl - 1], out=gauss[i][lvl], backend=use_backend
+                )
             else:
                 gauss[i].append(downsample_image(gauss[i][-1], backend=use_backend))
         if workspace is not None:
@@ -882,26 +1018,46 @@ def laplacian_blend_n(
         level_laps: list[torch.Tensor] = []
         for i in range(len(base_inputs)):
             if workspace is not None:
-                compute_laplacian(gauss[i][lvl], gauss[i][lvl + 1], out=laps[i][lvl], backend=use_backend)
+                compute_laplacian(
+                    gauss[i][lvl],
+                    gauss[i][lvl + 1],
+                    out=laps[i][lvl],
+                    backend=use_backend,
+                )
                 level_laps.append(laps[i][lvl])
             else:
-                lap = compute_laplacian(gauss[i][lvl], gauss[i][lvl + 1], backend=use_backend)
+                lap = compute_laplacian(
+                    gauss[i][lvl], gauss[i][lvl + 1], backend=use_backend
+                )
                 laps[i].append(lap)
                 level_laps.append(lap)
         if workspace is not None:
-            blend_laplacians_n(level_laps, mask_pyr[lvl], out=blended[lvl], backend=use_backend)
+            blend_laplacians_n(
+                level_laps, mask_pyr[lvl], out=blended[lvl], backend=use_backend
+            )
         else:
-            blended.append(blend_laplacians_n(level_laps, mask_pyr[lvl], backend=use_backend))
+            blended.append(
+                blend_laplacians_n(level_laps, mask_pyr[lvl], backend=use_backend)
+            )
 
     coarse_inputs = [gauss[i][-1] for i in range(len(base_inputs))]
     if workspace is not None:
-        blend_laplacians_n(coarse_inputs, mask_pyr[-1], out=blended[-1], backend=use_backend)
+        blend_laplacians_n(
+            coarse_inputs, mask_pyr[-1], out=blended[-1], backend=use_backend
+        )
         recon_levels[-1].copy_(blended[-1])
         for lvl in range(levels - 2, -1, -1):
-            reconstruct_level(recon_levels[lvl + 1], blended[lvl], out=recon_levels[lvl], backend=use_backend)
+            reconstruct_level(
+                recon_levels[lvl + 1],
+                blended[lvl],
+                out=recon_levels[lvl],
+                backend=use_backend,
+            )
         recon = recon_levels[0]
     else:
-        blended.append(blend_laplacians_n(coarse_inputs, mask_pyr[-1], backend=use_backend))
+        blended.append(
+            blend_laplacians_n(coarse_inputs, mask_pyr[-1], backend=use_backend)
+        )
         recon = blended[-1]
         for lvl in range(levels - 2, -1, -1):
             recon = reconstruct_level(recon, blended[lvl], backend=use_backend)

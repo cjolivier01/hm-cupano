@@ -156,14 +156,12 @@ TEST(CudaPanoMinimizeBlendTest, TwoImageFlagChangesWorkspaceSizeAndPreservesOutp
       /*batch_size=*/1,
       /*num_levels=*/kLevels,
       masks,
-      /*match_exposure=*/false,
       /*quiet=*/true,
       /*minimize_blend=*/false);
   hm::pano::cuda::CudaStitchPano<float4, float4> pano_mini(
       /*batch_size=*/1,
       /*num_levels=*/kLevels,
       masks,
-      /*match_exposure=*/false,
       /*quiet=*/true,
       /*minimize_blend=*/true);
 

@@ -24,7 +24,6 @@
 - Default remap input/output stays `RGB888` or `RGBA8888` at the frame boundary.
 - Default pyramid compute format is signed `Q9.8` in 18 bits unless a file documents a better reason.
 - Default blend-mask weights are unsigned `U0.16`.
-- Exposure/color adjustments use signed `Q8.8`.
 
 ## Testing
 - Add focused unit tests for planning, descriptor packing, and orchestration.

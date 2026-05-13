@@ -1,8 +1,8 @@
 #pragma once
+#include <cupano/gpu/gpu_runtime.h>
 #include "cupano/cuda/cudaStatus.h"
 #include "cupano/cuda/cudaTypes.h"
 #include "cupano/pano/cudaMat.h"
-#include <cupano/gpu/gpu_runtime.h>
 
 namespace hm {
 namespace pano {
@@ -30,10 +30,6 @@ CudaStatus launchFusedRemapToFullKernel3(
     CudaMat<T_compute>& cudaFull1,
     CudaMat<T_compute>& cudaFull2,
     const CanvasManager3& canvas_manager,
-    float3 adjustment0,
-    float3 adjustment1,
-    float3 adjustment2,
-    bool apply_adjustment,
     cudaStream_t stream);
 
 /**
@@ -54,10 +50,6 @@ CudaStatus launchFusedRemapHardSeam3(
     const CudaMat<unsigned char>& hardSeamMask,
     CudaMat<T_pipeline>& canvas,
     const CanvasManager3& canvas_manager,
-    float3 adjustment0,
-    float3 adjustment1,
-    float3 adjustment2,
-    bool apply_adjustment,
     cudaStream_t stream);
 
 } // namespace cuda

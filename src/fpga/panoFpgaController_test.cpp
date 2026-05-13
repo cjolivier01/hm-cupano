@@ -54,9 +54,6 @@ TEST(PanoFpgaControllerTest, ProgramsRemapRegisters) {
       .offset_x = 384,
       .offset_y = 0,
       .no_unmapped_write = false,
-      .adjust_r_q8_8 = -16,
-      .adjust_g_q8_8 = 8,
-      .adjust_b_q8_8 = 0,
   };
 
   controller.program(op);
@@ -70,7 +67,6 @@ TEST(PanoFpgaControllerTest, ProgramsRemapRegisters) {
   EXPECT_EQ(raw->regs[reg::kMapXAddrHi], 0x00000003u);
   EXPECT_EQ(raw->regs[reg::kMapYAddrHi], 0x00000003u);
   EXPECT_EQ(raw->regs[reg::kRemapOffset], reg::pack_signed_xy(384, 0));
-  EXPECT_EQ(raw->regs[reg::kAdjust01], reg::pack_adjust01(-16, 8));
 }
 
 TEST(PanoFpgaControllerTest, WaitForDoneReturnsAfterDoneBit) {

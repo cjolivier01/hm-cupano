@@ -111,10 +111,9 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
     int batch_size,
     int num_levels,
     const ControlMasksN& control_masks,
-    bool match_exposure,
-    bool quiet,
-    bool minimize_blend)
-    : match_exposure_(match_exposure), minimize_blend_(minimize_blend && num_levels > 0) {
+    bool minimize_blend,
+    bool quiet)
+    : minimize_blend_(minimize_blend && num_levels > 0) {
   if (!control_masks.is_valid()) {
     status_ = CudaStatus(cudaErrorFileNotFound, "Stitching masks (N-image) could not be loaded");
     return;
@@ -269,10 +268,6 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
     }
   }
 
-  if (match_exposure_) {
-    whole_seam_mask_image_ = control_masks.whole_seam_mask_indexed;
-  }
-
   // Load remappers to device
   for (int i = 0; i < n; ++i) {
     stitch_context_->remap_x[i] = std::make_unique<CudaMat<uint16_t>>(control_masks.img_col[i]);
@@ -382,10 +377,8 @@ CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::remap_soft(
     CudaMat<T_compute>& dest_canvas,
     int dest_x,
     int dest_y,
-    const std::optional<float3>& image_adjustment,
     int batch_size,
     cudaStream_t stream) {
-  (void)image_adjustment;
   const T_pipeline default_pixel = T_pipeline{};
   return batched_remap_kernel_ex_offset(
       input.surface(),
@@ -412,10 +405,8 @@ CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::remap_hard(
     CudaMat<T_pipeline>& dest_canvas,
     int dest_x,
     int dest_y,
-    const std::optional<float3>& image_adjustment,
     int batch_size,
     cudaStream_t stream) {
-  (void)image_adjustment;
   const T_pipeline default_pixel = T_pipeline{};
   return batched_remap_kernel_ex_offset_with_dest_map(
       input.surface(),
@@ -662,16 +653,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T
     const auto& my = *stitch_context_->remap_y[i];
     int dx = canvas_manager_->canvas_positions()[i].x;
     int dy = canvas_manager_->canvas_positions()[i].y;
-    CudaStatus s = remap_soft(
-        *inputs[i],
-        mx,
-        my,
-        *stitch_context_->cudaFull[i],
-        dx,
-        dy,
-        image_adjustment_,
-        stitch_context_->batch_size(),
-        stream);
+    CudaStatus s =
+        remap_soft(*inputs[i], mx, my, *stitch_context_->cudaFull[i], dx, dy, stitch_context_->batch_size(), stream);
     if (!s.ok())
       return s;
   }

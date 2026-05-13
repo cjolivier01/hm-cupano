@@ -37,7 +37,6 @@ int main(int argc, char** argv) {
 
   bool perf = false;
   bool show = false;
-  bool adjust_images = false;
   std::string game_id;
   std::string directory;
   std::string output;
@@ -57,7 +56,6 @@ int main(int argc, char** argv) {
       {"perf", no_argument, 0, 'p'}, // --perf (flag)
       {"game-id", required_argument, 0, 'g'}, // --game-id <value>
       {"levels", required_argument, 0, 'l'}, // --levels <value>
-      {"adjust", required_argument, 0, 'a'}, // --directory <value>
       {"directory", required_argument, 0, 'd'}, // --directory <value>
       {"output", required_argument, 0, 'o'}, // --output <value>
       {"cuda-device", required_argument, 0, 'c'}, // --cuda-device <value>
@@ -69,7 +67,7 @@ int main(int argc, char** argv) {
   // 's' for --show (no argument),
   // 'g:' means option 'g' requires an argument,
   // 'd:' means option 'd' requires an argument.
-  const char* short_opts = "spg:d:o:c:a:l:";
+  const char* short_opts = "spg:d:o:c:l:";
 
   int option_index = 0;
   int opt;
@@ -81,9 +79,6 @@ int main(int argc, char** argv) {
         break;
       case 'b':
         batch_size = std::atoi(optarg);
-        break;
-      case 'a': // --adjust
-        adjust_images = !!std::atoi(optarg);
         break;
       case 'p': // --perf
         perf = true;
@@ -106,7 +101,7 @@ int main(int argc, char** argv) {
       case '?': // Unknown option or missing required argument.
         std::cerr
             << "Usage: " << argv[0]
-            << " [--show] [--perf] [--game-id <id>] [--directory <dir>] [--cuda-device <value>] [--output <value>] [--adjust <0|1>] [--levels <value>]"
+            << " [--show] [--perf] [--game-id <id>] [--directory <dir>] [--cuda-device <value>] [--output <value>] [--levels <value>]"
             << std::endl;
         exit(EXIT_FAILURE);
       default:
@@ -181,8 +176,7 @@ int main(int argc, char** argv) {
   using T_compute = __half;
 #endif
 
-  hm::pano::cuda::CudaStitchPano3<T_pipeline, T_compute> pano(
-      batch_size, num_levels, control_masks, /*match_exposure=*/adjust_images);
+  hm::pano::cuda::CudaStitchPano3<T_pipeline, T_compute> pano(batch_size, num_levels, control_masks);
 
   std::cout << "Canvas size: " << pano.canvas_width() << " x " << pano.canvas_height() << std::endl;
 

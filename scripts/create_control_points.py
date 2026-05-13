@@ -15,14 +15,12 @@ from typing import Dict, List, Optional, Tuple, Union
 import cv2
 import ffmpegio
 import kornia
-import kornia.feature as KF
 import numpy as np
 import scipy.signal
 import torch
 import yaml
 from lightglue import LightGlue, SuperPoint, viz2d
-from lightglue.utils import load_image, rbd
-from scipy.signal import correlate
+from lightglue.utils import rbd
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -106,7 +104,7 @@ def synchronize_by_audio(
         A tuple (left_frame_offset, right_frame_offset) representing the number of frames to
         skip in each video so that they are synchronized. The offsets are returned as integers.
     """
-    
+
     if verbose:
         print("Opening videos...")
 
@@ -139,14 +137,10 @@ def synchronize_by_audio(
     if verbose:
         print("Calculating cross-correlation...")
 
-    sum1 = np.sum(audio1[:, 0])
-    sum2 = np.sum(audio2[:, 0])
-
     # Use only the first channel for correlation.
     correlation: np.ndarray = scipy.signal.correlate(
         audio1[:, 0], audio2[:, 0], mode="full"
     )
-    sumc = np.sum(correlation)
     # Compute lag: subtract the length of the signal (using axis 1 length)
     lag: int = np.argmax(correlation) - audio1.shape[0] + 1
 
@@ -309,7 +303,7 @@ def calculate_control_points(
 
     # Optionally generate and save visualizations.
     if output_directory:
-        axes = viz2d.plot_images([frame0, frame1])
+        viz2d.plot_images([frame0, frame1])
         viz2d.plot_matches(m_kpts0, m_kpts1, color="lime", lw=0.2)
         viz2d.add_text(0, f'Stop after {matches01["stop"]} layers', fs=20)
         viz2d.save_plot(os.path.join(output_directory, "matches.png"))
@@ -553,7 +547,6 @@ def configure_stitching(
         cmd = [
             "autooptimiser",
             "-a",
-            "-m",
             "-l",
             "-s",
             "-o",
@@ -585,23 +578,42 @@ def configure_stitching(
         # Blend the mappings into a panorama using the repo's Bazel-managed
         # enblend first, then fall back to a system tool if needed.
         import shutil
+
         def prefer_bazel_tool(name: str) -> list:
             if name == "enblend":
                 if shutil.which("bazelisk"):
-                    return ["bazelisk", "run", "--noenable_bzlmod", "@enblend//:enblend", "--"]
+                    return [
+                        "bazelisk",
+                        "run",
+                        "--noenable_bzlmod",
+                        "@enblend//:enblend",
+                        "--",
+                    ]
                 if shutil.which("bazel"):
-                    return ["bazel", "run", "--noenable_bzlmod", "@enblend//:enblend", "--"]
+                    return [
+                        "bazel",
+                        "run",
+                        "--noenable_bzlmod",
+                        "@enblend//:enblend",
+                        "--",
+                    ]
             if shutil.which(name):
                 return [name]
             return [name]
 
         output_dir = Path.cwd()
-        mapping_layers = sorted(str(path) for path in output_dir.glob("mapping_????.tif"))
-        cmd = prefer_bazel_tool("enblend") + [
-            f"--save-masks={output_dir / 'seam_file.png'}",
-            "-o",
-            str(output_dir / "panorama.tif"),
-        ] + mapping_layers
+        mapping_layers = sorted(
+            str(path) for path in output_dir.glob("mapping_????.tif")
+        )
+        cmd = (
+            prefer_bazel_tool("enblend")
+            + [
+                f"--save-masks={output_dir / 'seam_file.png'}",
+                "-o",
+                str(output_dir / "panorama.tif"),
+            ]
+            + mapping_layers
+        )
         rc = subprocess.run(
             cmd,
             cwd=str(REPO_ROOT if cmd[0] in ("bazelisk", "bazel") else Path.cwd()),
@@ -620,7 +632,9 @@ def configure_stitching(
             except FileNotFoundError:
                 rc = 127
         if rc != 0:
-            print("Warning: unable to generate seam_file.png with enblend; continuing without a seam mask")
+            print(
+                "Warning: unable to generate seam_file.png with enblend; continuing without a seam mask"
+            )
     finally:
         os.chdir(curr_dir)
     return True
@@ -647,7 +661,12 @@ def main() -> None:
     )
     parser.add_argument("--left", default=None, help="Path to left video file")
     parser.add_argument("--right", default=None, help="Path to left video file")
-    parser.add_argument("--max-control-points", type=int, default=500, help="Maximum number of control points")
+    parser.add_argument(
+        "--max-control-points",
+        type=int,
+        default=500,
+        help="Maximum number of control points",
+    )
     parser.add_argument("--lfo", default=None, help="Left frame offset")
     parser.add_argument("--rfo", default=None, help="Right frame offset")
     parser.add_argument(

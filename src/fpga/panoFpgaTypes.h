@@ -115,9 +115,6 @@ struct RemapConfig {
   int32_t offset_x{0};
   int32_t offset_y{0};
   bool no_unmapped_write{false};
-  int16_t adjust_r_q8_8{0};
-  int16_t adjust_g_q8_8{0};
-  int16_t adjust_b_q8_8{0};
 };
 
 struct CopyRoiConfig {
