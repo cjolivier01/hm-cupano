@@ -1,6 +1,13 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
 INCLUDE_PREFIX = "cupano/utils"
+ROCM_HIP_DEFINES = select({
+    "@//:use_hip": [
+        "USE_HIP",
+        "__HIP_PLATFORM_AMD__",
+    ],
+    "//conditions:default": [],
+})
 
 cc_library(
     name = "utils",
@@ -10,8 +17,7 @@ cc_library(
     hdrs = [
         "cudaBlendShow.h",
     ],
-    copts = [
-    ],
+    defines = ROCM_HIP_DEFINES,
     include_prefix = INCLUDE_PREFIX,
     linkopts = [
         "-ltiff",
@@ -46,11 +52,15 @@ cc_library(
         "-lGL",
         "-I/usr/include",
     ],
+    defines = ROCM_HIP_DEFINES,
     visibility = ["//visibility:public"],
     deps = (
       ["//src/gpu:gpu_runtime", "//src/pano:cuda_matrix"]
       + select({
-        "@//:use_hip": ["@local_rocm//:hip_runtime"],
+        "@//:use_hip": [
+          "@local_rocm//:rocm_sdk_core",
+          "@local_rocm//:amdhip64",
+        ],
         "@//:use_vulkan": [],
         "//conditions:default": ["@local_cuda//:cuda_runtime"],
       })
@@ -71,11 +81,15 @@ cc_library(
         "-lGLEW",
         "-lGL",
     ],
+    defines = ROCM_HIP_DEFINES,
     visibility = ["//visibility:public"],
     deps = (
       ["//src/gpu:gpu_runtime", ":gl_window", "//src/pano:cuda_matrix", "@opencv_linux//:opencv"]
       + select({
-        "@//:use_hip": ["@local_rocm//:hip_runtime"],
+        "@//:use_hip": [
+          "@local_rocm//:rocm_sdk_core",
+          "@local_rocm//:amdhip64",
+        ],
         "@//:use_vulkan": [],
         "//conditions:default": ["@local_cuda//:cuda_runtime"],
       })
@@ -97,11 +111,15 @@ cc_library(
         "-lGLEW",
         "-lGL",
     ],
+    defines = ROCM_HIP_DEFINES,
     visibility = ["//visibility:public"],
     deps = (
       ["//src/gpu:gpu_runtime", ":image_utils", ":gl_window", "//src/pano:cuda_matrix", "@opencv_linux//:opencv"]
       + select({
-        "@//:use_hip": ["@local_rocm//:hip_runtime"],
+        "@//:use_hip": [
+          "@local_rocm//:rocm_sdk_core",
+          "@local_rocm//:amdhip64",
+        ],
         "@//:use_vulkan": [],
         "//conditions:default": ["@local_cuda//:cuda_runtime"],
       })

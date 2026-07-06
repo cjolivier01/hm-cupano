@@ -1045,7 +1045,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
   assert(d_reconstruct == d_output);
   context.initialized = true;
 
-  return cudaError_t::cudaSuccess;
+  return cudaSuccess;
 }
 
 //------------------------------------------------------------------------------
