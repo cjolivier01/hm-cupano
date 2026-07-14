@@ -47,7 +47,7 @@ inline int cudaPixelTypeChannels(CudaPixelType fmt) {
       return 3;
     case CUDA_PIXEL_HALF4:
       return 4;
-    // BF16 (Brain Floating Point) pixel types.
+      // BF16 (Brain Floating Point) pixel types.
 #if GPU_HAS_BF16
     case CUDA_PIXEL_BF16_1:
       return 1;
@@ -125,7 +125,7 @@ CudaMat<T>::CudaMat(const std::vector<cv::Mat>& mat_batch, bool copy)
   // Allocate device memory for the entire batch.
   cudaError_t cuerr = cudaMalloc(&d_data_, total_size);
   // If allocation succeeds and data copy is requested, copy each image.
-  if (cuerr == cudaError_t::cudaSuccess && copy) {
+  if (cuerr == cudaSuccess && copy) {
     uint8_t* p = reinterpret_cast<uint8_t*>(d_data_);
     for (const cv::Mat& mat : mat_batch) {
       // Ensure the image is in continuous memory.
@@ -325,8 +325,8 @@ cudaError_t CudaMat<T>::upload(const cv::Mat& cpu_mat, int batch_item, cudaStrea
   // Calculate the number of elements per row based on the pitch.
   int pitch_cols = pitch() / sizeof(T);
   // Verify that the pitch is sufficient for the expected number of columns.
-  
-  assert(pitch_cols == cols_);  // not supporting differeing pitch atm
+
+  assert(pitch_cols == cols_); // not supporting differeing pitch atm
 #endif
 
   size_t elemSize = cudaPixelElementSize(type_);

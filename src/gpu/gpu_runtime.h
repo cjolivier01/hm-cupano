@@ -3,7 +3,8 @@
 #pragma once
 
 // Backend detection
-#if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)
+#if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__) || \
+    (defined(__has_include) && __has_include(<hip/hip_runtime.h>) && !__has_include(<cuda_fp16.h>))
 #define GPU_BACKEND_HIP 1
 #define GPU_BACKEND_VULKAN 0
 #define GPU_BACKEND_CUDA 0
@@ -19,6 +20,9 @@
 
 #if GPU_BACKEND_HIP
 // HIP includes
+#if !defined(__HIP_PLATFORM_AMD__) && !defined(__HIP_PLATFORM_NVIDIA__)
+#define __HIP_PLATFORM_AMD__ 1
+#endif
 #include <hip/hip_fp16.h>
 #include <hip/hip_runtime.h>
 // BF16 support (best-effort)

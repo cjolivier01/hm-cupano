@@ -111,7 +111,7 @@ inline void displayPyramid(
     std::unique_ptr<T[]> buffer = std::make_unique<T[]>(w * h * channels);
     if (pyramid[level]) {
       cudaError_t cuerr = cudaMemcpy(buffer.get(), pyramid[level], dataSize, cudaMemcpyDeviceToHost);
-      assert(cuerr == cudaError_t::cudaSuccess);
+      assert(cuerr == cudaSuccess);
     } else {
       memset(buffer.get(), 0, dataSize);
     }

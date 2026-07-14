@@ -1,6 +1,13 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
 INCLUDE_PREFIX = "cupano/pano"
+ROCM_HIP_DEFINES = select({
+    "@//:use_hip": [
+        "USE_HIP",
+        "__HIP_PLATFORM_AMD__",
+    ],
+    "//conditions:default": [],
+})
 
 config_setting(
     name = "aarch64-linux-gnu",
@@ -21,8 +28,7 @@ cc_library(
         "cudaMat.h",
         "cudaMat.inl",
     ],
-    copts = [
-    ],
+    defines = ROCM_HIP_DEFINES,
     include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
     deps = (
@@ -33,7 +39,10 @@ cc_library(
             "@opencv_linux//:opencv",
         ]
         + select({
-            "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "@//:use_hip": [
+                "@local_rocm//:rocm_sdk_core",
+                "@local_rocm//:amdhip64",
+            ],
             "@//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         })
@@ -123,8 +132,7 @@ cc_library(
         "cudaPano3.inl",
         "cudaPano3_optimized.inl",
     ],
-    copts = [
-    ],
+    defines = ROCM_HIP_DEFINES,
     linkopts = [
       "-lstdc++fs",
     ],
@@ -193,8 +201,9 @@ cc_library(
         "controlMasksN.h",
     ],
     copts = [
-        "--std=c++17",
+      "--std=c++17",
     ],
+    defines = ROCM_HIP_DEFINES,
     include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
     deps = [
