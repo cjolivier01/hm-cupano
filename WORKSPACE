@@ -224,5 +224,5 @@ git_repository(
 
 # Local ROCm (HIP) headers and runtime
 local_rocm_repository(
-    name = "local_rocm",
+    name = "rocm_sdk_includes",
 )

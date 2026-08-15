@@ -40,8 +40,8 @@ cc_library(
         ]
         + select({
             "@//:use_hip": [
-                "@local_rocm//:rocm_sdk_core",
-                "@local_rocm//:amdhip64",
+                "@rocm_sdk_includes//:rocm_sdk_core",
+                "@rocm_sdk_includes//:amdhip64",
             ],
             "@//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],

@@ -67,8 +67,8 @@ cuda_library(
         ]
         + select({
             "@//:use_hip": [
-                "@local_rocm//:rocm_sdk_core",
-                "@local_rocm//:amdhip64",
+                "@rocm_sdk_includes//:rocm_sdk_core",
+                "@rocm_sdk_includes//:amdhip64",
             ],
             "@//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
@@ -110,8 +110,8 @@ cc_library(
         ["//src/gpu:gpu_runtime"]
         + select({
             "@//:use_hip": [
-                "@local_rocm//:rocm_sdk_core",
-                "@local_rocm//:amdhip64",
+                "@rocm_sdk_includes//:rocm_sdk_core",
+                "@rocm_sdk_includes//:amdhip64",
             ],
             "@//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
@@ -203,7 +203,7 @@ genrule(
         "cudaUtils.o",
     ],
     cmd = (
-        "set -e; HIPCC=$(location @local_rocm//:hipcc); "
+        "set -e; HIPCC=$(location @rocm_sdk_includes//:hipcc); "
         # Create a virtual include tree to satisfy include_prefix paths like <cupano/...>
         + "mkdir -p $(RULEDIR)/inc; "
         + "SRC_ROOT=\"$$(pwd)/src\"; if [ ! -d \"$$SRC_ROOT\" ]; then SRC_ROOT=\"$$(pwd)/external/hm-cupano/src\"; fi; "
@@ -214,7 +214,7 @@ genrule(
         + "$$HIPCC -std=c++17 -O2 -fPIC -DUSE_HIP -D__HIP_PLATFORM_AMD__ -I$(RULEDIR)/inc -I. -I src -I src/cuda -Iexternal/hm-cupano -I/usr/include/opencv4 \"$$i\" -c -o $(RULEDIR)/$$base.o ;; esac; done"
     ),
     tags = ["manual"],
-    tools = ["@local_rocm//:hipcc"],
+    tools = ["@rocm_sdk_includes//:hipcc"],
     visibility = ["//visibility:private"],
 )
 
@@ -270,7 +270,7 @@ cc_library(
         "//src/utils:show_image",
         "//src/pano:canvas_manager",
         "@opencv_linux//:opencv",
-        "@local_rocm//:rocm_sdk_core",
-        "@local_rocm//:amdhip64",
+        "@rocm_sdk_includes//:rocm_sdk_core",
+        "@rocm_sdk_includes//:amdhip64",
     ],
 )

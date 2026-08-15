@@ -10,7 +10,7 @@ cc_binary(
     visibility = ["//visibility:public"],
     deps = ["//src/pano:cuda_pano", "@opencv_linux//:opencv"]
         + select({
-            "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "@//:use_hip": ["@rocm_sdk_includes//:hip_runtime"],
             "@//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         }),
@@ -33,7 +33,7 @@ cc_binary(
     }),
     deps = ["//src/pano:cuda_pano", "@ffmpeg_linux//:ffmpeg_libs", "@opencv_linux//:opencv"]
         + select({
-            "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "@//:use_hip": ["@rocm_sdk_includes//:hip_runtime"],
             "@//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         }),
@@ -56,7 +56,7 @@ cc_binary(
     }),
     deps = ["//src/pano:cuda_pano", "@ffmpeg_linux//:ffmpeg_libs", "@opencv_linux//:opencv"]
         + select({
-            "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "@//:use_hip": ["@rocm_sdk_includes//:hip_runtime"],
             "@//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         }),
@@ -74,7 +74,7 @@ cc_binary(
     visibility = ["//visibility:public"],
     deps = ["//src/pano:cuda_pano", "@opencv_linux//:opencv"]
         + select({
-            "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "@//:use_hip": ["@rocm_sdk_includes//:hip_runtime"],
             "@//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         }),
@@ -92,7 +92,7 @@ cc_binary(
     visibility = ["//visibility:public"],
     deps = ["//src/pano:cuda_pano_n", "@opencv_linux//:opencv"]
         + select({
-            "@//:use_hip": ["@local_rocm//:hip_runtime"],
+            "@//:use_hip": ["@rocm_sdk_includes//:hip_runtime"],
             "@//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         }),
