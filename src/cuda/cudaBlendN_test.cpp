@@ -9,6 +9,7 @@
 
 #include "cudaBlendN.h"
 
+#include <cuda_fp16.h>
 #include <vector>
 
 #define CUDA_CHECK(call)                                                                                      \
@@ -22,6 +23,18 @@
   } while (0)
 
 constexpr float kTol = 1e-5f;
+
+namespace {
+
+std::vector<__half> to_half(const std::vector<float>& values) {
+  std::vector<__half> out(values.size());
+  for (size_t i = 0; i < values.size(); ++i) {
+    out[i] = __float2half(values[i]);
+  }
+  return out;
+}
+
+} // namespace
 
 // Test: Single-pixel RGBA, alpha==0 image should be ignored in N-way blend
 TEST(CudaBlendNSmallTest, AlphaZeroSkipsContribution) {
@@ -68,6 +81,62 @@ TEST(CudaBlendNSmallTest, AlphaZeroSkipsContribution) {
   cudaFree(d_img3);
   cudaFree(d_mask);
   cudaFree(d_out);
+}
+
+TEST(CudaBlendNSmallTest, HalfRgbaAlphaZeroSkipsContribution) {
+  constexpr int W = 1, H = 1, C = 4, B = 1, L = 1;
+  constexpr int N = 3;
+
+  std::vector<__half> h_img1 = to_half({10.0f, 20.0f, 30.0f, 255.0f});
+  std::vector<__half> h_img2 = to_half({100.0f, 110.0f, 120.0f, 0.0f});
+  std::vector<__half> h_img3 = to_half({90.0f, 100.0f, 110.0f, 255.0f});
+  std::vector<__half> h_mask = to_half({0.1f, 0.8f, 0.1f});
+  std::vector<__half> h_out(W * H * C * B, __float2half(0.0f));
+
+  __half* d_img1 = nullptr;
+  __half* d_img2 = nullptr;
+  __half* d_img3 = nullptr;
+  __half* d_mask = nullptr;
+  __half* d_out = nullptr;
+  CUDA_CHECK(cudaMalloc(&d_img1, h_img1.size() * sizeof(__half)));
+  CUDA_CHECK(cudaMalloc(&d_img2, h_img2.size() * sizeof(__half)));
+  CUDA_CHECK(cudaMalloc(&d_img3, h_img3.size() * sizeof(__half)));
+  CUDA_CHECK(cudaMalloc(&d_mask, h_mask.size() * sizeof(__half)));
+  CUDA_CHECK(cudaMalloc(&d_out, h_out.size() * sizeof(__half)));
+  CUDA_CHECK(cudaMemcpy(d_img1, h_img1.data(), h_img1.size() * sizeof(__half), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_img2, h_img2.data(), h_img2.size() * sizeof(__half), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_img3, h_img3.data(), h_img3.size() * sizeof(__half), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_mask, h_mask.data(), h_mask.size() * sizeof(__half), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemset(d_out, 0, h_out.size() * sizeof(__half)));
+
+  std::vector<const __half*> d_imgs{d_img1, d_img2, d_img3};
+  CudaBatchLaplacianBlendContextN<__half, N> ctx(W, H, L, B);
+  ASSERT_EQ((cudaBatchedLaplacianBlendWithContextN<__half, float, N, C>(d_imgs, d_mask, d_out, ctx, 0)), cudaSuccess);
+  CUDA_CHECK(cudaDeviceSynchronize());
+  CUDA_CHECK(cudaMemcpy(h_out.data(), d_out, h_out.size() * sizeof(__half), cudaMemcpyDeviceToHost));
+
+  const std::vector<float> expected{50.0f, 60.0f, 70.0f, 255.0f};
+  for (int c = 0; c < C; ++c) {
+    EXPECT_NEAR(__half2float(h_out[c]), expected[c], 0.01f) << "Mismatch at channel " << c;
+  }
+
+  cudaFree(d_img1);
+  cudaFree(d_img2);
+  cudaFree(d_img3);
+  cudaFree(d_mask);
+  cudaFree(d_out);
+}
+
+TEST(CudaBlendNSmallTest, HalfRgbaNonContextApiIsInstantiated) {
+  constexpr int W = 1, H = 1, C = 4, B = 1, L = 1;
+  constexpr int N = 3;
+
+  std::vector<const __half*> h_imgs{nullptr, nullptr};
+  std::vector<__half> h_mask(W * H * N, __float2half(0.0f));
+  std::vector<__half> h_out(W * H * C * B, __float2half(0.0f));
+
+  EXPECT_EQ((cudaBatchedLaplacianBlendN<__half, float, N, C>(h_imgs, h_mask.data(), h_out.data(), W, H, L, B, 0)),
+            cudaErrorInvalidValue);
 }
 
 // Test: Multi-level blend of constant inputs should match per-pixel weighted average.

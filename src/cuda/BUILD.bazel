@@ -53,8 +53,8 @@ cuda_library(
     }),
     visibility = ["//visibility:public"],
     target_compatible_with = select({
-        "@//:use_hip": ["@platforms//:incompatible"],
-        "@//:use_vulkan": ["@platforms//:incompatible"],
+        "//:use_hip": ["@platforms//:incompatible"],
+        "//:use_vulkan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = (
@@ -66,11 +66,11 @@ cuda_library(
             "@opencv_linux//:opencv",
         ]
         + select({
-            "@//:use_hip": [
+            "//:use_hip": [
                 "@local_rocm//:rocm_sdk_core",
                 "@local_rocm//:amdhip64",
             ],
-            "@//:use_vulkan": [],
+            "//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         })
     ),
@@ -109,11 +109,11 @@ cc_library(
     deps = (
         ["//src/gpu:gpu_runtime"]
         + select({
-            "@//:use_hip": [
+            "//:use_hip": [
                 "@local_rocm//:rocm_sdk_core",
                 "@local_rocm//:amdhip64",
             ],
-            "@//:use_vulkan": [],
+            "//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         })
     ),
@@ -126,6 +126,23 @@ cc_library(
     ],
     include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
+    deps = ["//src/gpu:gpu_runtime"],
+)
+
+cc_test(
+    name = "cudaBlend_test",
+    srcs = ["cudaBlend_test.cpp"],
+    deps = (
+        select({
+            "//:use_hip": [":cuda_blend_cuda_lib_hip"],
+            "//:use_vulkan": [":cuda_blend_vulkan_lib"],
+            "//conditions:default": [":cuda_blend_cuda_lib"],
+        })
+        + [
+            "@googletest//:gtest",
+            "@googletest//:gtest_main",
+        ]
+    ),
 )
 
 cc_test(
@@ -133,8 +150,8 @@ cc_test(
     srcs = ["cudaBlend3_test.cpp"],
     deps = (
         select({
-            "@//:use_hip": [":cuda_blend_cuda_lib_hip"],
-            "@//:use_vulkan": [":cuda_blend_vulkan_lib"],
+            "//:use_hip": [":cuda_blend_cuda_lib_hip"],
+            "//:use_vulkan": [":cuda_blend_vulkan_lib"],
             "//conditions:default": [":cuda_blend_cuda_lib"],
         })
         + [
@@ -159,8 +176,8 @@ cc_test(
     srcs = ["cudaBlendN_test.cpp"],
     deps = (
         select({
-            "@//:use_hip": [":cuda_blend_cuda_lib_hip"],
-            "@//:use_vulkan": [":cuda_blend_vulkan_lib"],
+            "//:use_hip": [":cuda_blend_cuda_lib_hip"],
+            "//:use_vulkan": [":cuda_blend_vulkan_lib"],
             "//conditions:default": [":cuda_blend_cuda_lib"],
         })
         + [
@@ -237,7 +254,7 @@ cc_library(
     linkopts = ["-lvulkan"],
     visibility = ["//visibility:public"],
     target_compatible_with = select({
-        "@//:use_vulkan": [],
+        "//:use_vulkan": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [

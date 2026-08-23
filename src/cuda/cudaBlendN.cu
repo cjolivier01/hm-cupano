@@ -85,8 +85,10 @@ __global__ void FusedBatchedDownsampleKernelN(
         bool keep = true;
         if constexpr (CHANNELS == 4) {
           T a = p[3];
-          alphas[i] = max(alphas[i], a);
-          keep = (a != 0);
+          if (static_cast<F_T>(a) > static_cast<F_T>(alphas[i])) {
+            alphas[i] = a;
+          }
+          keep = (static_cast<F_T>(a) != F_T(0));
         }
         if (!keep)
           continue;
@@ -273,7 +275,9 @@ __global__ void BatchedBlendKernelN(
         if (w[i] == F_T(0))
           continue;
         const T* L = laplacians[i] + base;
-        alpha_out = max(alpha_out, L[3]);
+        if (static_cast<F_T>(L[3]) > static_cast<F_T>(alpha_out)) {
+          alpha_out = L[3];
+        }
       }
       out[base + 3] = alpha_out;
     } else {
@@ -840,6 +844,34 @@ template cudaError_t cudaBatchedLaplacianBlendN<float, float, 3, 4>(
     int,
     cudaStream_t);
 
+#define INSTANTIATE_HALF_BLEND_N(N_IMAGES, CHANNELS)                                \
+  template cudaError_t cudaBatchedLaplacianBlendN<__half, float, N_IMAGES, CHANNELS>( \
+      const std::vector<const __half*>&,                                             \
+      const __half*,                                                                 \
+      __half*,                                                                       \
+      int,                                                                           \
+      int,                                                                           \
+      int,                                                                           \
+      int,                                                                           \
+      cudaStream_t);
+
+INSTANTIATE_HALF_BLEND_N(2, 3)
+INSTANTIATE_HALF_BLEND_N(3, 3)
+INSTANTIATE_HALF_BLEND_N(4, 3)
+INSTANTIATE_HALF_BLEND_N(5, 3)
+INSTANTIATE_HALF_BLEND_N(6, 3)
+INSTANTIATE_HALF_BLEND_N(7, 3)
+INSTANTIATE_HALF_BLEND_N(8, 3)
+INSTANTIATE_HALF_BLEND_N(2, 4)
+INSTANTIATE_HALF_BLEND_N(3, 4)
+INSTANTIATE_HALF_BLEND_N(4, 4)
+INSTANTIATE_HALF_BLEND_N(5, 4)
+INSTANTIATE_HALF_BLEND_N(6, 4)
+INSTANTIATE_HALF_BLEND_N(7, 4)
+INSTANTIATE_HALF_BLEND_N(8, 4)
+
+#undef INSTANTIATE_HALF_BLEND_N
+
 // Explicit instantiations for common pixel types and N in [2..8]
 // float3 (3 channels)
 // Base scalar float (mask and image buffers are passed as scalar arrays)
@@ -928,3 +960,28 @@ template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 8, 4>(
     float*,
     CudaBatchLaplacianBlendContextN<float, 8>&,
     cudaStream_t);
+
+#define INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(N_IMAGES, CHANNELS)                                \
+  template cudaError_t cudaBatchedLaplacianBlendWithContextN<__half, float, N_IMAGES, CHANNELS>( \
+      const std::vector<const __half*>&,                                                         \
+      const __half*,                                                                             \
+      __half*,                                                                                   \
+      CudaBatchLaplacianBlendContextN<__half, N_IMAGES>&,                                        \
+      cudaStream_t);
+
+INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(2, 3)
+INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(3, 3)
+INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(4, 3)
+INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(5, 3)
+INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(6, 3)
+INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(7, 3)
+INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(8, 3)
+INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(2, 4)
+INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(3, 4)
+INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(4, 4)
+INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(5, 4)
+INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(6, 4)
+INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(7, 4)
+INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(8, 4)
+
+#undef INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT

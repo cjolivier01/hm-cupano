@@ -154,8 +154,10 @@ __global__ void FusedBatchedDownsampleKernel3(
       bool keep1 = true;
       if constexpr (CHANNELS == 4) {
         T a = in1[idx + 3];
-        alpha1 = max(alpha1, a);
-        keep1 = (a != 0);
+        if (static_cast<F_T>(a) > static_cast<F_T>(alpha1)) {
+          alpha1 = a;
+        }
+        keep1 = (static_cast<F_T>(a) != F_T(0));
       }
       if (keep1) {
         for (int c = 0; c < sumCh; ++c)
@@ -167,8 +169,10 @@ __global__ void FusedBatchedDownsampleKernel3(
       bool keep2 = true;
       if constexpr (CHANNELS == 4) {
         T a = in2[idx + 3];
-        alpha2 = max(alpha2, a);
-        keep2 = (a != 0);
+        if (static_cast<F_T>(a) > static_cast<F_T>(alpha2)) {
+          alpha2 = a;
+        }
+        keep2 = (static_cast<F_T>(a) != F_T(0));
       }
       if (keep2) {
         for (int c = 0; c < sumCh; ++c)
@@ -180,8 +184,10 @@ __global__ void FusedBatchedDownsampleKernel3(
       bool keep3 = true;
       if constexpr (CHANNELS == 4) {
         T a = in3[idx + 3];
-        alpha3 = max(alpha3, a);
-        keep3 = (a != 0);
+        if (static_cast<F_T>(a) > static_cast<F_T>(alpha3)) {
+          alpha3 = a;
+        }
+        keep3 = (static_cast<F_T>(a) != F_T(0));
       }
       if (keep3) {
         for (int c = 0; c < sumCh; ++c)
@@ -520,12 +526,12 @@ __global__ void BatchedBlendKernel3(
     const T alpha2 = lap2Image[idx + 3];
     const T alpha3 = lap3Image[idx + 3];
     T alpha_out = static_cast<T>(0);
-    if (m1 > static_cast<F_T>(0))
-      alpha_out = max(alpha_out, alpha1);
-    if (m2 > static_cast<F_T>(0))
-      alpha_out = max(alpha_out, alpha2);
-    if (m3 > static_cast<F_T>(0))
-      alpha_out = max(alpha_out, alpha3);
+    if (m1 > static_cast<F_T>(0) && static_cast<F_T>(alpha1) > static_cast<F_T>(alpha_out))
+      alpha_out = alpha1;
+    if (m2 > static_cast<F_T>(0) && static_cast<F_T>(alpha2) > static_cast<F_T>(alpha_out))
+      alpha_out = alpha2;
+    if (m3 > static_cast<F_T>(0) && static_cast<F_T>(alpha3) > static_cast<F_T>(alpha_out))
+      alpha_out = alpha3;
     blendImage[idx + 3] = alpha_out;
   }
 }
@@ -1264,6 +1270,19 @@ template cudaError_t cudaBatchedLaplacianBlend3<unsigned char, float>(
     int batchSize,
     cudaStream_t stream);
 
+template cudaError_t cudaBatchedLaplacianBlend3<__half, float>(
+    const __half* h_image1,
+    const __half* h_image2,
+    const __half* h_image3,
+    const __half* h_mask,
+    __half* h_output,
+    int imageWidth,
+    int imageHeight,
+    int channels,
+    int numLevels,
+    int batchSize,
+    cudaStream_t stream);
+
 template cudaError_t cudaBatchedLaplacianBlendWithContext3<float, float>(
     const float* d_image1,
     const float* d_image2,
@@ -1271,6 +1290,16 @@ template cudaError_t cudaBatchedLaplacianBlendWithContext3<float, float>(
     const float* d_mask,
     float* d_output,
     CudaBatchLaplacianBlendContext3<float>& context,
+    int channels,
+    cudaStream_t stream);
+
+template cudaError_t cudaBatchedLaplacianBlendWithContext3<__half, float>(
+    const __half* d_image1,
+    const __half* d_image2,
+    const __half* d_image3,
+    const __half* d_mask,
+    __half* d_output,
+    CudaBatchLaplacianBlendContext3<__half>& context,
     int channels,
     cudaStream_t stream);
 

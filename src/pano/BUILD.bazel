@@ -2,7 +2,7 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 INCLUDE_PREFIX = "cupano/pano"
 ROCM_HIP_DEFINES = select({
-    "@//:use_hip": [
+    "//:use_hip": [
         "USE_HIP",
         "__HIP_PLATFORM_AMD__",
     ],
@@ -39,11 +39,11 @@ cc_library(
             "@opencv_linux//:opencv",
         ]
         + select({
-            "@//:use_hip": [
+            "//:use_hip": [
                 "@local_rocm//:rocm_sdk_core",
                 "@local_rocm//:amdhip64",
             ],
-            "@//:use_vulkan": [],
+            "//:use_vulkan": [],
             "//conditions:default": ["@local_cuda//:cuda_runtime"],
         })
     ),
@@ -241,8 +241,8 @@ cc_library(
             "@opencv_linux//:opencv",
         ]
         + select({
-            "@//:use_hip": ["//src/cuda:cuda_blend_cuda_lib_hip"],
-            "@//:use_vulkan": ["//src/cuda:cuda_blend_vulkan_lib"],
+            "//:use_hip": ["//src/cuda:cuda_blend_cuda_lib_hip"],
+            "//:use_vulkan": ["//src/cuda:cuda_blend_vulkan_lib"],
             "//conditions:default": ["//src/cuda:cuda_blend_cuda_lib"],
         })
     ),
