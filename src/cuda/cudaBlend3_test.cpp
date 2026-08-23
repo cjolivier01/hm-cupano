@@ -15,6 +15,7 @@
 #include <gtest/gtest.h>
 #include "cudaBlend3.h"
 
+#include <cuda_fp16.h>
 #include <cassert>
 #include <cmath>
 #include <vector>
@@ -32,6 +33,14 @@
 
 // Numeric tolerance for floating-point comparisons
 constexpr float kEpsilon = 1e-5f;
+
+std::vector<__half> to_half(const std::vector<float>& values) {
+  std::vector<__half> out(values.size());
+  for (size_t i = 0; i < values.size(); ++i) {
+    out[i] = __float2half(values[i]);
+  }
+  return out;
+}
 
 struct CudaVector {
   using Type = float;
@@ -286,6 +295,56 @@ TEST(CudaBlend3SmallTest, AlphaZeroSkipsContribution) {
   for (int c = 0; c < channels; ++c) {
     EXPECT_NEAR(h_output[c], expected[c], kEpsilon) << "Channel " << c << " mismatch with alpha gating.";
   }
+}
+
+TEST(CudaBlend3SmallTest, HalfRgbaAlphaZeroSkipsContribution) {
+  const int width = 1;
+  const int height = 1;
+  const int channels = 4;
+  const int batchSize = 1;
+  const int numLevels = 1;
+  const int pixelCount = width * height * channels * batchSize;
+
+  std::vector<__half> h_image1 = to_half({10.0f, 20.0f, 30.0f, 255.0f});
+  std::vector<__half> h_image2 = to_half({100.0f, 110.0f, 120.0f, 0.0f});
+  std::vector<__half> h_image3 = to_half({90.0f, 100.0f, 110.0f, 255.0f});
+  std::vector<__half> h_mask = to_half({0.1f, 0.8f, 0.1f});
+  std::vector<__half> h_output(pixelCount, __float2half(0.0f));
+
+  __half* d_image1 = nullptr;
+  __half* d_image2 = nullptr;
+  __half* d_image3 = nullptr;
+  __half* d_mask = nullptr;
+  __half* d_output = nullptr;
+  CUDA_CHECK(cudaMalloc(&d_image1, h_image1.size() * sizeof(__half)));
+  CUDA_CHECK(cudaMalloc(&d_image2, h_image2.size() * sizeof(__half)));
+  CUDA_CHECK(cudaMalloc(&d_image3, h_image3.size() * sizeof(__half)));
+  CUDA_CHECK(cudaMalloc(&d_mask, h_mask.size() * sizeof(__half)));
+  CUDA_CHECK(cudaMalloc(&d_output, h_output.size() * sizeof(__half)));
+  CUDA_CHECK(cudaMemcpy(d_image1, h_image1.data(), h_image1.size() * sizeof(__half), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_image2, h_image2.data(), h_image2.size() * sizeof(__half), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_image3, h_image3.data(), h_image3.size() * sizeof(__half), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_mask, h_mask.data(), h_mask.size() * sizeof(__half), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemset(d_output, 0, h_output.size() * sizeof(__half)));
+
+  CudaBatchLaplacianBlendContext3<__half> ctx(width, height, numLevels, batchSize);
+  ASSERT_EQ(
+      (cudaBatchedLaplacianBlendWithContext3<__half, float>(
+          d_image1, d_image2, d_image3, d_mask, d_output, ctx, channels, cudaStream_t{})),
+      cudaSuccess);
+  CUDA_CHECK(cudaDeviceSynchronize());
+  CUDA_CHECK(cudaMemcpy(h_output.data(), d_output, h_output.size() * sizeof(__half), cudaMemcpyDeviceToHost));
+
+  const std::vector<float> expected{50.0f, 60.0f, 70.0f, 255.0f};
+  for (int c = 0; c < channels; ++c) {
+    EXPECT_NEAR(__half2float(h_output[c]), expected[c], 0.01f) << "Channel " << c << " mismatch.";
+  }
+
+  cudaFree(d_image1);
+  cudaFree(d_image2);
+  cudaFree(d_image3);
+  cudaFree(d_mask);
+  cudaFree(d_output);
 }
 
 // Test 5: If mask selects a transparent source (weight=1 on alpha==0),

@@ -40,10 +40,9 @@ inline __device__ T max_of(const T& v1, const T& v2) {
 }
 
 template <typename T>
-inline __device__ T is_zero(const T& v) {
+inline __device__ bool is_zero(const T& v) {
   if constexpr (std::is_same<T, __half>::value) {
-    constexpr unsigned short uszero = 0;
-    return static_cast<T>(uszero);
+    return static_cast<float>(v) == 0.0f;
   } else {
     return v == static_cast<T>(0);
   }
@@ -196,6 +195,7 @@ DECLARE_PERFORM_CAST_3_TO_4(uchar3, float4)
 DECLARE_PERFORM_CAST_3_TO_4(uchar3, half4)
 DECLARE_PERFORM_CAST_3_TO_4(float3, float4)
 DECLARE_PERFORM_CAST_3_TO_4(float3, half4)
+DECLARE_PERFORM_CAST_3_TO_4(half3, half4)
 
 DECLARE_PERFORM_CAST_3(uchar3, float3)
 DECLARE_PERFORM_CAST_3(uchar3, half3)
