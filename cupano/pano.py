@@ -157,8 +157,9 @@ class CudaStitchPano:
             self._status = CudaStatus(1, "Stitching masks were not able to be loaded")
             return
         original_canvas_width = control_masks.canvas_width()
-        control_masks = copy.copy(control_masks)
-        control_masks.scale_to_max_output_width(max_output_width)
+        if max_output_width > 0 and original_canvas_width > max_output_width:
+            control_masks = copy.copy(control_masks)
+            control_masks.scale_to_max_output_width(max_output_width)
 
         self._context = StitchingContext(
             batch_size=batch_size, is_hard_seam=(num_levels == 0)
@@ -596,8 +597,9 @@ class CudaStitchPanoN:
             )
             return
         original_canvas_width = control_masks.canvas_width()
-        control_masks = copy.copy(control_masks)
-        control_masks.scale_to_max_output_width(max_output_width)
+        if max_output_width > 0 and original_canvas_width > max_output_width:
+            control_masks = copy.copy(control_masks)
+            control_masks.scale_to_max_output_width(max_output_width)
 
         n = len(control_masks.img_col)
         if n < 2 or n > 8:

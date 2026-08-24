@@ -9,6 +9,7 @@
 #include <cmath>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <set>
 #include <stdexcept>
 
@@ -44,6 +45,21 @@ static SpatialTiff get_geo_tiffN(const std::string& filename) {
   info.yPosition = ypos;
   TIFFClose(tif);
   return SpatialTiff{.xpos = info.xPosition * info.xResolution, .ypos = info.yPosition * info.yResolution};
+}
+
+static std::optional<cv::Size> read_tiff_size(const std::string& filename) {
+  TIFF* tif = TIFFOpen(filename.c_str(), "r");
+  if (!tif) {
+    return std::nullopt;
+  }
+  uint32_t width = 0;
+  uint32_t height = 0;
+  const bool ok = TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &width) && TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &height);
+  TIFFClose(tif);
+  if (!ok || width == 0 || height == 0) {
+    return std::nullopt;
+  }
+  return cv::Size(static_cast<int>(width), static_cast<int>(height));
 }
 
 static std::vector<SpatialTiff> normalize_positionsN(std::vector<SpatialTiff>&& positions) {
@@ -221,7 +237,7 @@ double scale_to_fit_max_widthN(
 
 } // namespace
 
-bool ControlMasksN::load(const std::string& dirIn, int n_images) {
+bool ControlMasksN::load(const std::string& dirIn, int n_images, int max_output_width) {
   std::string dir = dirIn;
   if (!dir.empty() && dir.back() != '/')
     dir += '/';
@@ -230,6 +246,12 @@ bool ControlMasksN::load(const std::string& dirIn, int n_images) {
   img_row.resize(n_images);
   positions.clear();
   positions.reserve(n_images);
+  std::vector<cv::Size> native_sizes;
+  native_sizes.reserve(n_images);
+  std::vector<std::string> mapping_x_paths;
+  std::vector<std::string> mapping_y_paths;
+  mapping_x_paths.reserve(n_images);
+  mapping_y_paths.reserve(n_images);
 
   for (int i = 0; i < n_images; ++i) {
     char buf_pos[64], buf_x[64], buf_y[64];
@@ -240,16 +262,53 @@ bool ControlMasksN::load(const std::string& dirIn, int n_images) {
     std::string mapping_x = dir + buf_x;
     std::string mapping_y = dir + buf_y;
 
-    img_col[i] = cv::imread(mapping_x, cv::IMREAD_ANYDEPTH);
-    img_row[i] = cv::imread(mapping_y, cv::IMREAD_ANYDEPTH);
-    if (img_col[i].empty() || img_row[i].empty()) {
-      std::cerr << "Unable to load remap for index " << i << " from " << mapping_x << " / " << mapping_y << std::endl;
+    const auto size = read_tiff_size(mapping_x);
+    if (!size) {
+      std::cerr << "Unable to load remap metadata for index " << i << " from " << mapping_x << std::endl;
       return false;
     }
+    native_sizes.push_back(*size);
+    mapping_x_paths.push_back(mapping_x);
+    mapping_y_paths.push_back(mapping_y);
     positions.push_back(get_geo_tiffN(mapping_pos));
   }
 
   positions = normalize_positionsN(std::move(positions));
+  std::vector<ScaledPlacementN> placements;
+  placements.reserve(native_sizes.size());
+  for (size_t i = 0; i < native_sizes.size(); ++i) {
+    placements.push_back(ScaledPlacementN{.position = positions[i], .size = native_sizes[i]});
+  }
+  const cv::Size native_canvas_size = canvas_sizeN(placements);
+  if (max_output_width > 0 && native_canvas_size.width > max_output_width) {
+    const double scale = scale_to_fit_max_widthN(
+        positions, native_sizes, static_cast<size_t>(native_canvas_size.width), max_output_width);
+    placements.clear();
+    placements.reserve(native_sizes.size());
+    for (size_t i = 0; i < native_sizes.size(); ++i) {
+      placements.push_back(scaled_placementN(positions[i], native_sizes[i], scale));
+    }
+  }
+
+  for (int i = 0; i < n_images; ++i) {
+    img_col[i] = cv::imread(mapping_x_paths[i], cv::IMREAD_ANYDEPTH);
+    if (img_col[i].empty()) {
+      std::cerr << "Unable to load remap for index " << i << " from " << mapping_x_paths[i] << std::endl;
+      return false;
+    }
+    if (img_col[i].size() != placements[i].size) {
+      img_col[i] = resize_remap_preserving_unmapped(img_col[i], placements[i].size);
+    }
+    img_row[i] = cv::imread(mapping_y_paths[i], cv::IMREAD_ANYDEPTH);
+    if (img_row[i].empty()) {
+      std::cerr << "Unable to load remap for index " << i << " from " << mapping_y_paths[i] << std::endl;
+      return false;
+    }
+    if (img_row[i].size() != placements[i].size) {
+      img_row[i] = resize_remap_preserving_unmapped(img_row[i], placements[i].size);
+    }
+    positions[i] = placements[i].position;
+  }
 
   std::string seam_filename = dir + "seam_file.png";
   try {
@@ -262,6 +321,10 @@ bool ControlMasksN::load(const std::string& dirIn, int n_images) {
       std::cerr << "Unable to load seam mask: " << seam_filename << " (" << e.what() << ")" << std::endl;
       return false;
     }
+  }
+  const cv::Size effective_canvas_size = canvas_sizeN(placements);
+  if (whole_seam_mask_indexed.size() != effective_canvas_size) {
+    whole_seam_mask_indexed = resize_nearest(whole_seam_mask_indexed, effective_canvas_size);
   }
 
   auto uniq = get_unique_values(whole_seam_mask_indexed);

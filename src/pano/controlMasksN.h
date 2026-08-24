@@ -13,12 +13,12 @@ namespace pano {
 class ControlMasksN {
  public:
   ControlMasksN() = default;
-  ControlMasksN(const std::string& dir, int n_images) {
-    load(dir, n_images);
+  ControlMasksN(const std::string& dir, int n_images, int max_output_width = 0) {
+    load(dir, n_images, max_output_width);
   }
 
   // Loads mapping_XXXX(_x|_y).tif for i in [0..N-1] and seam_file.png (indexed).
-  bool load(const std::string& dir, int n_images);
+  bool load(const std::string& dir, int n_images, int max_output_width = 0);
 
   bool is_valid() const;
 

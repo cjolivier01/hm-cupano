@@ -1,8 +1,8 @@
 #pragma once
 
+#include <opencv2/opencv.hpp>
 #include <string>
 #include <vector>
-#include <opencv2/opencv.hpp>
 
 #include "cupano/pano/controlMasks.h"
 
@@ -12,11 +12,11 @@ namespace pano {
 class ControlMasks3 {
  public:
   ControlMasks3() = default;
-  ControlMasks3(const std::string& game_dir);
+  ControlMasks3(const std::string& game_dir, int max_output_width = 0);
 
   static cv::Mat split_to_channels(const cv::Mat& seam_mask);
 
-  bool load(const std::string& game_dir);
+  bool load(const std::string& game_dir, int max_output_width = 0);
   bool is_valid() const;
 
   size_t canvas_width() const;

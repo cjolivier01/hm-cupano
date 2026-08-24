@@ -50,6 +50,12 @@ def _get_geo_tiff(path: str | Path) -> SpatialTiff:
     return SpatialTiff(xpos=_snap_near_integer(xpos * xres), ypos=_snap_near_integer(ypos * yres))
 
 
+def _read_tiff_shape(path: str | Path) -> tuple[int, int]:
+    with tifffile.TiffFile(str(path)) as tif:
+        shape = tif.pages[0].shape
+    return int(shape[0]), int(shape[1])
+
+
 def _read_indexed_png_or_grayscale(path: str | Path) -> np.ndarray:
     with Image.open(path) as image:
         if image.mode == "P":
@@ -154,7 +160,7 @@ class ControlMasks:
     whole_seam_mask_image: np.ndarray = field(default_factory=lambda: np.empty((0, 0), dtype=np.uint8))
     positions: list[SpatialTiff] = field(default_factory=list)
 
-    def __init__(self, game_dir: str | None = None):
+    def __init__(self, game_dir: str | None = None, max_output_width: int = 0):
         self.img1_col = np.empty((0, 0), dtype=np.uint16)
         self.img1_row = np.empty((0, 0), dtype=np.uint16)
         self.img2_col = np.empty((0, 0), dtype=np.uint16)
@@ -162,23 +168,55 @@ class ControlMasks:
         self.whole_seam_mask_image = np.empty((0, 0), dtype=np.uint8)
         self.positions = []
         if game_dir is not None:
-            self.load(game_dir)
+            self.load(game_dir, max_output_width=max_output_width)
 
-    def load(self, game_dir: str) -> bool:
+    def load(self, game_dir: str, max_output_width: int = 0) -> bool:
         base = Path(game_dir)
-        self.img1_col = cv2.imread(str(base / "mapping_0000_x.tif"), cv2.IMREAD_ANYDEPTH)
-        self.img1_row = cv2.imread(str(base / "mapping_0000_y.tif"), cv2.IMREAD_ANYDEPTH)
-        self.img2_col = cv2.imread(str(base / "mapping_0001_x.tif"), cv2.IMREAD_ANYDEPTH)
-        self.img2_row = cv2.imread(str(base / "mapping_0001_y.tif"), cv2.IMREAD_ANYDEPTH)
-        if any(x is None or x.size == 0 for x in (self.img1_col, self.img1_row, self.img2_col, self.img2_row)):
-            return False
-        self.whole_seam_mask_image = _load_two_image_seam(base / "seam_file.png")
         self.positions = _normalize_positions(
             [
                 _get_geo_tiff(base / "mapping_0000.tif"),
                 _get_geo_tiff(base / "mapping_0001.tif"),
             ]
         )
+        native_shapes = [_read_tiff_shape(base / "mapping_0000_x.tif"), _read_tiff_shape(base / "mapping_0001_x.tif")]
+        scaled_positions = list(self.positions)
+        shapes = list(native_shapes)
+        canvas_width = _scaled_canvas_size(scaled_positions, shapes)[0]
+        if max_output_width > 0 and canvas_width > max_output_width:
+            scale = _scale_to_fit_max_width(self.positions, native_shapes, canvas_width, max_output_width)
+            scaled_positions = []
+            shapes = []
+            for position, shape in zip(self.positions, native_shapes, strict=True):
+                xpos, width = _scale_span(position.xpos, shape[1], scale)
+                ypos, height = _scale_span(position.ypos, shape[0], scale)
+                scaled_positions.append(SpatialTiff(xpos=xpos, ypos=ypos))
+                shapes.append((height, width))
+        img1_shape, img2_shape = shapes
+        self.img1_col = cv2.imread(str(base / "mapping_0000_x.tif"), cv2.IMREAD_ANYDEPTH)
+        if self.img1_col is None or self.img1_col.size == 0:
+            return False
+        if self.img1_col.shape != img1_shape:
+            self.img1_col = _resize_remap_preserving_unmapped(self.img1_col, img1_shape)
+        self.img1_row = cv2.imread(str(base / "mapping_0000_y.tif"), cv2.IMREAD_ANYDEPTH)
+        if self.img1_row is None or self.img1_row.size == 0:
+            return False
+        if self.img1_row.shape != img1_shape:
+            self.img1_row = _resize_remap_preserving_unmapped(self.img1_row, img1_shape)
+        self.img2_col = cv2.imread(str(base / "mapping_0001_x.tif"), cv2.IMREAD_ANYDEPTH)
+        if self.img2_col is None or self.img2_col.size == 0:
+            return False
+        if self.img2_col.shape != img2_shape:
+            self.img2_col = _resize_remap_preserving_unmapped(self.img2_col, img2_shape)
+        self.img2_row = cv2.imread(str(base / "mapping_0001_y.tif"), cv2.IMREAD_ANYDEPTH)
+        if self.img2_row is None or self.img2_row.size == 0:
+            return False
+        if self.img2_row.shape != img2_shape:
+            self.img2_row = _resize_remap_preserving_unmapped(self.img2_row, img2_shape)
+        self.whole_seam_mask_image = _load_two_image_seam(base / "seam_file.png")
+        seam_shape = tuple(reversed(_scaled_canvas_size(scaled_positions, shapes)))
+        if self.whole_seam_mask_image.shape != seam_shape:
+            self.whole_seam_mask_image = _resize_nearest(self.whole_seam_mask_image, seam_shape)
+        self.positions = scaled_positions
         return self.is_valid()
 
     def is_valid(self) -> bool:
@@ -232,27 +270,52 @@ class ControlMasksN:
     whole_seam_mask_indexed: np.ndarray = field(default_factory=lambda: np.empty((0, 0), dtype=np.uint8))
     positions: list[SpatialTiff] = field(default_factory=list)
 
-    def __init__(self, directory: str | None = None, n_images: int | None = None):
+    def __init__(self, directory: str | None = None, n_images: int | None = None, max_output_width: int = 0):
         self.img_col = []
         self.img_row = []
         self.whole_seam_mask_indexed = np.empty((0, 0), dtype=np.uint8)
         self.positions = []
         if directory is not None and n_images is not None:
-            self.load(directory, n_images)
+            self.load(directory, n_images, max_output_width=max_output_width)
 
-    def load(self, directory: str, n_images: int) -> bool:
+    def load(self, directory: str, n_images: int, max_output_width: int = 0) -> bool:
         base = Path(directory)
         self.img_col = []
         self.img_row = []
-        self.positions = []
+        self.positions = [_get_geo_tiff(base / f"mapping_{i:04d}.tif") for i in range(n_images)]
+        self.positions = _normalize_positions(self.positions)
+        native_shapes = [_read_tiff_shape(base / f"mapping_{i:04d}_x.tif") for i in range(n_images)]
+        scaled_positions = list(self.positions)
+        shapes = list(native_shapes)
+        canvas_width = _scaled_canvas_size(scaled_positions, shapes)[0]
+        if max_output_width > 0 and canvas_width > max_output_width:
+            scale = _scale_to_fit_max_width(self.positions, native_shapes, canvas_width, max_output_width)
+            scaled_positions = []
+            shapes = []
+            for position, shape in zip(self.positions, native_shapes, strict=True):
+                xpos, width = _scale_span(position.xpos, shape[1], scale)
+                ypos, height = _scale_span(position.ypos, shape[0], scale)
+                scaled_positions.append(SpatialTiff(xpos=xpos, ypos=ypos))
+                shapes.append((height, width))
         for i in range(n_images):
-            self.img_col.append(cv2.imread(str(base / f"mapping_{i:04d}_x.tif"), cv2.IMREAD_ANYDEPTH))
-            self.img_row.append(cv2.imread(str(base / f"mapping_{i:04d}_y.tif"), cv2.IMREAD_ANYDEPTH))
-            self.positions.append(_get_geo_tiff(base / f"mapping_{i:04d}.tif"))
+            col = cv2.imread(str(base / f"mapping_{i:04d}_x.tif"), cv2.IMREAD_ANYDEPTH)
+            if col is None or col.size == 0:
+                return False
+            if col.shape != shapes[i]:
+                col = _resize_remap_preserving_unmapped(col, shapes[i])
+            self.img_col.append(col)
+            row = cv2.imread(str(base / f"mapping_{i:04d}_y.tif"), cv2.IMREAD_ANYDEPTH)
+            if row is None or row.size == 0:
+                return False
+            if row.shape != shapes[i]:
+                row = _resize_remap_preserving_unmapped(row, shapes[i])
+            self.img_row.append(row)
         if any(x is None or x.size == 0 for x in self.img_col + self.img_row):
             return False
-        self.positions = _normalize_positions(self.positions)
         self.whole_seam_mask_indexed = _read_indexed_png_or_grayscale(base / "seam_file.png")
+        seam_shape = tuple(reversed(_scaled_canvas_size(scaled_positions, shapes)))
+        if self.whole_seam_mask_indexed.shape != seam_shape:
+            self.whole_seam_mask_indexed = _resize_nearest(self.whole_seam_mask_indexed, seam_shape)
         uniq = np.unique(self.whole_seam_mask_indexed)
         if uniq.size != n_images:
             return False
@@ -261,6 +324,7 @@ class ControlMasksN:
             for idx, value in enumerate(uniq.tolist()):
                 lut[int(value)] = idx
             self.whole_seam_mask_indexed = lut[self.whole_seam_mask_indexed]
+        self.positions = scaled_positions
         return self.is_valid()
 
     def is_valid(self) -> bool:

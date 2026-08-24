@@ -6,6 +6,7 @@
 #include <tiffio.h> // For TIFF metadata
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -61,6 +62,21 @@ static SpatialTiff get_geo_tiff3(const std::string& filename) {
 
   TIFFClose(tif);
   return SpatialTiff{.xpos = info.xPosition * info.xResolution, .ypos = info.yPosition * info.yResolution};
+}
+
+static std::optional<cv::Size> read_tiff_size(const std::string& filename) {
+  TIFF* tif = TIFFOpen(filename.c_str(), "r");
+  if (!tif) {
+    return std::nullopt;
+  }
+  uint32_t width = 0;
+  uint32_t height = 0;
+  const bool ok = TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &width) && TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &height);
+  TIFFClose(tif);
+  if (!ok || width == 0 || height == 0) {
+    return std::nullopt;
+  }
+  return cv::Size(static_cast<int>(width), static_cast<int>(height));
 }
 
 /**
@@ -298,8 +314,8 @@ double scale_to_fit_max_width3(
 
 } // namespace
 
-ControlMasks3::ControlMasks3(const std::string& game_dir) {
-  load(game_dir);
+ControlMasks3::ControlMasks3(const std::string& game_dir, int max_output_width) {
+  load(game_dir, max_output_width);
 }
 
 cv::Mat ControlMasks3::split_to_channels(const cv::Mat& seam_mask) {
@@ -323,7 +339,7 @@ cv::Mat ControlMasks3::split_to_channels(const cv::Mat& seam_mask) {
   return seam_mask_dest;
 }
 
-bool ControlMasks3::load(const std::string& game_dir_in) {
+bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
   std::string game_dir = game_dir_in;
   if (!game_dir.empty() && game_dir.back() != '/') {
     game_dir += '/';
@@ -340,16 +356,50 @@ bool ControlMasks3::load(const std::string& game_dir_in) {
   std::string mapping2_y = game_dir + "mapping_0002_y.tif";
   std::string seam_filename = game_dir + "seam_file.png"; // we assume 3‐channel PNG
 
+  positions =
+      normalize_positions3({get_geo_tiff3(mapping0_pos), get_geo_tiff3(mapping1_pos), get_geo_tiff3(mapping2_pos)});
+  const auto img0_size = read_tiff_size(mapping0_x);
+  const auto img1_size = read_tiff_size(mapping1_x);
+  const auto img2_size = read_tiff_size(mapping2_x);
+  if (!img0_size || !img1_size || !img2_size) {
+    std::cerr << "Unable to load 3-image remap metadata" << std::endl;
+    return false;
+  }
+  std::vector<ScaledPlacement3> placements{
+      ScaledPlacement3{.position = positions[0], .size = *img0_size},
+      ScaledPlacement3{.position = positions[1], .size = *img1_size},
+      ScaledPlacement3{.position = positions[2], .size = *img2_size},
+  };
+  const cv::Size native_canvas_size = canvas_size3(placements);
+  if (max_output_width > 0 && native_canvas_size.width > max_output_width) {
+    const double scale = scale_to_fit_max_width3(
+        positions,
+        {*img0_size, *img1_size, *img2_size},
+        static_cast<size_t>(native_canvas_size.width),
+        max_output_width);
+    placements = {
+        scaled_placement3(positions[0], *img0_size, scale),
+        scaled_placement3(positions[1], *img1_size, scale),
+        scaled_placement3(positions[2], *img2_size, scale),
+    };
+  }
+
   // Load remap (X/Y) for image0:
   img0_col = cv::imread(mapping0_x, cv::IMREAD_ANYDEPTH);
   if (img0_col.empty()) {
     std::cerr << "Unable to load remap0_x: " << mapping0_x << std::endl;
     return false;
   }
+  if (img0_col.size() != placements[0].size) {
+    img0_col = resize_remap_preserving_unmapped3(img0_col, placements[0].size);
+  }
   img0_row = cv::imread(mapping0_y, cv::IMREAD_ANYDEPTH);
   if (img0_row.empty()) {
     std::cerr << "Unable to load remap0_y: " << mapping0_y << std::endl;
     return false;
+  }
+  if (img0_row.size() != placements[0].size) {
+    img0_row = resize_remap_preserving_unmapped3(img0_row, placements[0].size);
   }
 
   // Load remap for image1:
@@ -358,10 +408,16 @@ bool ControlMasks3::load(const std::string& game_dir_in) {
     std::cerr << "Unable to load remap1_x: " << mapping1_x << std::endl;
     return false;
   }
+  if (img1_col.size() != placements[1].size) {
+    img1_col = resize_remap_preserving_unmapped3(img1_col, placements[1].size);
+  }
   img1_row = cv::imread(mapping1_y, cv::IMREAD_ANYDEPTH);
   if (img1_row.empty()) {
     std::cerr << "Unable to load remap1_y: " << mapping1_y << std::endl;
     return false;
+  }
+  if (img1_row.size() != placements[1].size) {
+    img1_row = resize_remap_preserving_unmapped3(img1_row, placements[1].size);
   }
 
   // Load remap for image2:
@@ -370,10 +426,16 @@ bool ControlMasks3::load(const std::string& game_dir_in) {
     std::cerr << "Unable to load remap2_x: " << mapping2_x << std::endl;
     return false;
   }
+  if (img2_col.size() != placements[2].size) {
+    img2_col = resize_remap_preserving_unmapped3(img2_col, placements[2].size);
+  }
   img2_row = cv::imread(mapping2_y, cv::IMREAD_ANYDEPTH);
   if (img2_row.empty()) {
     std::cerr << "Unable to load remap2_y: " << mapping2_y << std::endl;
     return false;
+  }
+  if (img2_row.size() != placements[2].size) {
+    img2_row = resize_remap_preserving_unmapped3(img2_row, placements[2].size);
   }
 
   // Load the seam mask:
@@ -383,12 +445,11 @@ bool ControlMasks3::load(const std::string& game_dir_in) {
     std::cerr << "Unable to load seam mask: " << seam_filename << std::endl;
     return false;
   }
-
-  // Load geospatial positions from TIFF tags:
-  SpatialTiff p0 = get_geo_tiff3(mapping0_pos);
-  SpatialTiff p1 = get_geo_tiff3(mapping1_pos);
-  SpatialTiff p2 = get_geo_tiff3(mapping2_pos);
-  positions = normalize_positions3({p0, p1, p2});
+  const cv::Size effective_canvas_size = canvas_size3(placements);
+  if (whole_seam_mask_image.size() != effective_canvas_size) {
+    whole_seam_mask_image = resize_nearest3(whole_seam_mask_image, effective_canvas_size);
+  }
+  positions = {placements[0].position, placements[1].position, placements[2].position};
 
   return true;
 }
