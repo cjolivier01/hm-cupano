@@ -115,6 +115,18 @@ def write_position_tiff(path, width: int, height: int, xpos: int, ypos: int) -> 
     )
 
 
+def write_rgba_position_tiff(path, width: int, height: int, xpos: int, ypos: int) -> None:
+    tifffile.imwrite(
+        path,
+        np.zeros((height, width, 4), dtype=np.uint8),
+        resolution=(1.0, 1.0),
+        extratags=[
+            (286, 5, 1, (xpos, 1), False),
+            (287, 5, 1, (ypos, 1), False),
+        ],
+    )
+
+
 def write_bad_position_tiff(path, width: int, height: int) -> None:
     tifffile.imwrite(path, np.zeros((height, width), dtype=np.uint8))
 
@@ -384,6 +396,31 @@ def test_python_loaders_reject_placement_remap_dimension_mismatch(tmp_path) -> N
 
     assert not ControlMasks().load(str(tmp_path))
     assert not ControlMasksN().load(str(tmp_path), 3)
+
+
+def test_python_loaders_accept_rgba_placement_tiffs(tmp_path) -> None:
+    two_dir = tmp_path / "two"
+    two_dir.mkdir()
+    for i, xpos in enumerate((0, 8)):
+        write_identity_mapping_set(two_dir, i, 8, 4, xpos)
+        write_rgba_position_tiff(two_dir / f"mapping_{i:04d}.tif", 8, 4, xpos, 0)
+    two_seam = np.zeros((4, 16), dtype=np.uint8)
+    two_seam[:, 8:] = 255
+    tifffile.imwrite(two_dir / "seam_file.png", two_seam)
+
+    assert ControlMasks().load(str(two_dir))
+
+    n_dir = tmp_path / "n"
+    n_dir.mkdir()
+    for i, xpos in enumerate((0, 8, 16)):
+        write_identity_mapping_set(n_dir, i, 8, 4, xpos)
+        write_rgba_position_tiff(n_dir / f"mapping_{i:04d}.tif", 8, 4, xpos, 0)
+    seam = np.zeros((4, 24), dtype=np.uint8)
+    seam[:, 8:16] = 1
+    seam[:, 16:] = 2
+    tifffile.imwrite(n_dir / "seam_file.png", seam)
+
+    assert ControlMasksN().load(str(n_dir), 3)
 
 
 def test_python_loaders_return_false_for_missing_seam(tmp_path) -> None:

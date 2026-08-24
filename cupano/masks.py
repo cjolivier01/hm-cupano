@@ -63,7 +63,9 @@ def _read_tiff_shape(path: str | Path, require_uint16: bool = True) -> tuple[int
     with tifffile.TiffFile(str(path)) as tif:
         page = tif.pages[0]
         shape = page.shape
-        if len(shape) != 2 or (require_uint16 and np.dtype(page.dtype) != np.dtype(np.uint16)):
+        if require_uint16 and (len(shape) != 2 or np.dtype(page.dtype) != np.dtype(np.uint16)):
+            raise ValueError(f"Invalid remap TIFF type in {path}")
+        if not require_uint16 and len(shape) < 2:
             raise ValueError(f"Invalid remap TIFF type in {path}")
         if (
             shape[0] <= 0
