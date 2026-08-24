@@ -136,7 +136,6 @@ class CudaStitchPano:
         backend: Backend = "auto",
         enable_cuda_graphs: bool = True,
     ) -> None:
-        del max_output_width
         self._status = CudaStatus()
         self._num_levels = num_levels
         self._minimize_blend = bool(minimize_blend and num_levels > 0)
@@ -149,6 +148,7 @@ class CudaStitchPano:
         if not control_masks.is_valid():
             self._status = CudaStatus(1, "Stitching masks were not able to be loaded")
             return
+        control_masks.scale_to_max_output_width(max_output_width)
 
         self._context = StitchingContext(
             batch_size=batch_size, is_hard_seam=(num_levels == 0)
@@ -558,6 +558,7 @@ class CudaStitchPanoN:
         control_masks: ControlMasksN,
         quiet: bool = False,
         minimize_blend: bool = True,
+        max_output_width: int = 0,
         backend: Backend = "auto",
         enable_cuda_graphs: bool = True,
     ) -> None:
@@ -579,6 +580,7 @@ class CudaStitchPanoN:
                 1, "Stitching masks (N-image) could not be loaded"
             )
             return
+        control_masks.scale_to_max_output_width(max_output_width)
 
         n = len(control_masks.img_col)
         if n < 2 or n > 8:

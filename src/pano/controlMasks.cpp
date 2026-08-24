@@ -1,9 +1,12 @@
 #include "controlMasks.h"
 
+#include <opencv2/imgproc.hpp>
 #include <png.h>
 #include <tiffio.h> // For reading TIFF metadata
 #include <tiffio.h> // For TIFF metadata
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <limits>
 #include <optional>
@@ -18,6 +21,8 @@ namespace pano {
  * @brief Internal structure used to store metadata from TIFF tags.
  */
 namespace {
+
+constexpr uint16_t kUnmappedPositionValue = 65535;
 
 struct TiffInfo {
   bool validResolution = false; ///< Whether resolution tags were valid
@@ -56,6 +61,31 @@ std::vector<SpatialTiff> normalize_positions(std::vector<SpatialTiff>&& position
   });
 
   return positions;
+}
+
+cv::Mat resize_remap_preserving_unmapped(const cv::Mat& src, const cv::Size& size) {
+  cv::Mat resized;
+  cv::resize(src, resized, size, 0.0, 0.0, cv::INTER_NEAREST);
+  cv::Mat invalid_expr = src == kUnmappedPositionValue;
+  cv::Mat invalid_mask_src;
+  invalid_expr.convertTo(invalid_mask_src, CV_8U);
+  cv::Mat invalid_mask;
+  cv::resize(invalid_mask_src, invalid_mask, size, 0.0, 0.0, cv::INTER_AREA);
+  cv::threshold(invalid_mask, invalid_mask, 0, 255, cv::THRESH_BINARY);
+  resized.setTo(kUnmappedPositionValue, invalid_mask);
+  return resized;
+}
+
+cv::Mat resize_mask_nearest(const cv::Mat& src, const cv::Size& size) {
+  cv::Mat resized;
+  cv::resize(src, resized, size, 0.0, 0.0, cv::INTER_NEAREST);
+  return resized;
+}
+
+cv::Size scaled_size(const cv::Mat& mat, double scale) {
+  return cv::Size(
+      std::max(1, static_cast<int>(std::floor(mat.cols * scale))),
+      std::max(1, static_cast<int>(std::floor(mat.rows * scale))));
 }
 
 /**
@@ -268,6 +298,23 @@ size_t ControlMasks::canvas_width() const {
 
 size_t ControlMasks::canvas_height() const {
   return std::max(positions.at(0).ypos + img1_col.rows, positions.at(1).ypos + img2_col.rows);
+}
+
+void ControlMasks::scale_to_max_output_width(int max_output_width) {
+  if (!is_valid() || max_output_width <= 0 || canvas_width() <= static_cast<size_t>(max_output_width)) {
+    return;
+  }
+
+  const double scale = static_cast<double>(max_output_width) / static_cast<double>(canvas_width());
+  img1_col = resize_remap_preserving_unmapped(img1_col, scaled_size(img1_col, scale));
+  img1_row = resize_remap_preserving_unmapped(img1_row, img1_col.size());
+  img2_col = resize_remap_preserving_unmapped(img2_col, scaled_size(img2_col, scale));
+  img2_row = resize_remap_preserving_unmapped(img2_row, img2_col.size());
+  whole_seam_mask_image = resize_mask_nearest(whole_seam_mask_image, scaled_size(whole_seam_mask_image, scale));
+  for (SpatialTiff& position : positions) {
+    position.xpos = std::floor(position.xpos * scale);
+    position.ypos = std::floor(position.ypos * scale);
+  }
 }
 
 bool ControlMasks::load(std::string game_dir) {

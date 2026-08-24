@@ -1,8 +1,8 @@
 #pragma once
 
+#include <opencv2/opencv.hpp>
 #include <string>
 #include <vector>
-#include <opencv2/opencv.hpp>
 
 #include "cupano/pano/controlMasks.h"
 
@@ -13,7 +13,9 @@ namespace pano {
 class ControlMasksN {
  public:
   ControlMasksN() = default;
-  ControlMasksN(const std::string& dir, int n_images) { load(dir, n_images); }
+  ControlMasksN(const std::string& dir, int n_images) {
+    load(dir, n_images);
+  }
 
   // Loads mapping_XXXX(_x|_y).tif for i in [0..N-1] and seam_file.png (indexed).
   bool load(const std::string& dir, int n_images);
@@ -22,6 +24,7 @@ class ControlMasksN {
 
   size_t canvas_width() const;
   size_t canvas_height() const;
+  void scale_to_max_output_width(int max_output_width);
 
   // Per-image remap col/row (CV_16U)
   std::vector<cv::Mat> img_col; // size N
@@ -39,4 +42,3 @@ class ControlMasksN {
 
 } // namespace pano
 } // namespace hm
-

@@ -70,6 +70,23 @@ def _load_two_image_seam(path: str | Path) -> np.ndarray:
     return out.astype(np.uint8, copy=False)
 
 
+def _scaled_shape(shape: tuple[int, int], scale: float) -> tuple[int, int]:
+    return (max(1, int(np.floor(shape[0] * scale))), max(1, int(np.floor(shape[1] * scale))))
+
+
+def _resize_nearest(array: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
+    resized = cv2.resize(array, (shape[1], shape[0]), interpolation=cv2.INTER_NEAREST)
+    return resized.astype(array.dtype, copy=False)
+
+
+def _resize_remap_preserving_unmapped(array: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
+    resized = _resize_nearest(array, shape)
+    invalid_src = (array == UNMAPPED_POSITION_VALUE).astype(np.uint8)
+    invalid = cv2.resize(invalid_src, (shape[1], shape[0]), interpolation=cv2.INTER_AREA) > 0
+    resized[invalid] = UNMAPPED_POSITION_VALUE
+    return resized.astype(np.uint16, copy=False)
+
+
 @dataclass
 class ControlMasks:
     img1_col: np.ndarray = field(default_factory=lambda: np.empty((0, 0), dtype=np.uint16))
@@ -121,6 +138,24 @@ class ControlMasks:
 
     def canvas_height(self) -> int:
         return int(max(self.positions[0].ypos + self.img1_col.shape[0], self.positions[1].ypos + self.img2_col.shape[0]))
+
+    def scale_to_max_output_width(self, max_output_width: int) -> None:
+        if max_output_width <= 0 or not self.is_valid():
+            return
+        canvas_width = self.canvas_width()
+        if canvas_width <= max_output_width:
+            return
+        scale = float(max_output_width) / float(canvas_width)
+        img1_shape = _scaled_shape(self.img1_col.shape, scale)
+        img2_shape = _scaled_shape(self.img2_col.shape, scale)
+        self.img1_col = _resize_remap_preserving_unmapped(self.img1_col, img1_shape)
+        self.img1_row = _resize_remap_preserving_unmapped(self.img1_row, img1_shape)
+        self.img2_col = _resize_remap_preserving_unmapped(self.img2_col, img2_shape)
+        self.img2_row = _resize_remap_preserving_unmapped(self.img2_row, img2_shape)
+        self.whole_seam_mask_image = _resize_nearest(self.whole_seam_mask_image, _scaled_shape(self.whole_seam_mask_image.shape, scale))
+        self.positions = [
+            SpatialTiff(xpos=float(np.floor(p.xpos * scale)), ypos=float(np.floor(p.ypos * scale))) for p in self.positions
+        ]
 
 
 @dataclass
@@ -174,6 +209,24 @@ class ControlMasksN:
 
     def canvas_height(self) -> int:
         return int(max(pos.ypos + remap.shape[0] for pos, remap in zip(self.positions, self.img_row, strict=True)))
+
+    def scale_to_max_output_width(self, max_output_width: int) -> None:
+        if max_output_width <= 0 or not self.is_valid():
+            return
+        canvas_width = self.canvas_width()
+        if canvas_width <= max_output_width:
+            return
+        scale = float(max_output_width) / float(canvas_width)
+        self.img_col = [_resize_remap_preserving_unmapped(remap, _scaled_shape(remap.shape, scale)) for remap in self.img_col]
+        self.img_row = [
+            _resize_remap_preserving_unmapped(remap, self.img_col[index].shape) for index, remap in enumerate(self.img_row)
+        ]
+        self.whole_seam_mask_indexed = _resize_nearest(
+            self.whole_seam_mask_indexed, _scaled_shape(self.whole_seam_mask_indexed.shape, scale)
+        )
+        self.positions = [
+            SpatialTiff(xpos=float(np.floor(p.xpos * scale)), ypos=float(np.floor(p.ypos * scale))) for p in self.positions
+        ]
 
     @staticmethod
     def split_to_channels(indexed: np.ndarray, n_images: int) -> np.ndarray:

@@ -2,15 +2,21 @@
 
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 #include <png.h>
 #include <tiffio.h>
 #include <array>
+#include <cmath>
+#include <iostream>
+#include <limits>
 #include <set>
 #include <stdexcept>
 
 namespace hm {
 namespace pano {
 namespace {
+
+constexpr uint16_t kUnmappedPositionValue = 65535;
 
 struct TiffInfoN {
   float xResolution = 0.0f;
@@ -120,6 +126,31 @@ static cv::Mat imreadPalettedAsIndex(const std::string& filename) {
   return indexed.clone();
 }
 
+cv::Mat resize_remap_preserving_unmapped(const cv::Mat& src, const cv::Size& size) {
+  cv::Mat resized;
+  cv::resize(src, resized, size, 0.0, 0.0, cv::INTER_NEAREST);
+  cv::Mat invalid_expr = src == kUnmappedPositionValue;
+  cv::Mat invalid_mask_src;
+  invalid_expr.convertTo(invalid_mask_src, CV_8U);
+  cv::Mat invalid_mask;
+  cv::resize(invalid_mask_src, invalid_mask, size, 0.0, 0.0, cv::INTER_AREA);
+  cv::threshold(invalid_mask, invalid_mask, 0, 255, cv::THRESH_BINARY);
+  resized.setTo(kUnmappedPositionValue, invalid_mask);
+  return resized;
+}
+
+cv::Mat resize_nearest(const cv::Mat& src, const cv::Size& size) {
+  cv::Mat resized;
+  cv::resize(src, resized, size, 0.0, 0.0, cv::INTER_NEAREST);
+  return resized;
+}
+
+cv::Size scaled_size(const cv::Mat& mat, double scale) {
+  return cv::Size(
+      std::max(1, static_cast<int>(std::floor(mat.cols * scale))),
+      std::max(1, static_cast<int>(std::floor(mat.rows * scale))));
+}
+
 } // namespace
 
 bool ControlMasksN::load(const std::string& dirIn, int n_images) {
@@ -216,6 +247,22 @@ size_t ControlMasksN::canvas_height() const {
     maxh = std::max(maxh, positions[i].ypos + img_row[i].rows);
   }
   return static_cast<size_t>(maxh);
+}
+
+void ControlMasksN::scale_to_max_output_width(int max_output_width) {
+  if (!is_valid() || max_output_width <= 0 || canvas_width() <= static_cast<size_t>(max_output_width)) {
+    return;
+  }
+  const double scale = static_cast<double>(max_output_width) / static_cast<double>(canvas_width());
+  for (size_t i = 0; i < img_col.size(); ++i) {
+    img_col[i] = resize_remap_preserving_unmapped(img_col[i], scaled_size(img_col[i], scale));
+    img_row[i] = resize_remap_preserving_unmapped(img_row[i], img_col[i].size());
+  }
+  whole_seam_mask_indexed = resize_nearest(whole_seam_mask_indexed, scaled_size(whole_seam_mask_indexed, scale));
+  for (SpatialTiff& position : positions) {
+    position.xpos = std::floor(position.xpos * scale);
+    position.ypos = std::floor(position.ypos * scale);
+  }
 }
 
 cv::Mat ControlMasksN::split_to_channels(const cv::Mat& indexed, int n_images) {
