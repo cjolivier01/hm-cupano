@@ -306,13 +306,10 @@ bool ControlMasksN::load(const std::string& dirIn, int n_images, int max_output_
   }
   const cv::Size native_canvas_size = canvas_sizeN(placements);
   if (max_output_width > 0 && native_canvas_size.width > max_output_width) {
-    const double scale = scale_to_fit_max_widthN(
-        positions, native_sizes, static_cast<size_t>(native_canvas_size.width), max_output_width);
-    placements.clear();
-    placements.reserve(native_sizes.size());
-    for (size_t i = 0; i < native_sizes.size(); ++i) {
-      placements.push_back(scaled_placementN(positions[i], native_sizes[i], scale));
-    }
+    std::cerr << "Control mask canvas " << native_canvas_size.width << "x" << native_canvas_size.height
+              << " exceeds max_output_width " << max_output_width << "; regenerate capped mapping TIFFs" << std::endl;
+    clear_control_masksN(*this);
+    return false;
   }
 
   for (int i = 0; i < n_images; ++i) {

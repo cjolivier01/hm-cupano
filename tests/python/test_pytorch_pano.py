@@ -114,6 +114,10 @@ def write_position_tiff(path, width: int, height: int, xpos: int, ypos: int) -> 
     )
 
 
+def write_bad_position_tiff(path, width: int, height: int) -> None:
+    tifffile.imwrite(path, np.zeros((height, width), dtype=np.uint8))
+
+
 def write_identity_mapping_set(directory, index: int, width: int, height: int, xpos: int) -> None:
     write_position_tiff(directory / f"mapping_{index:04d}.tif", width, height, xpos, 0)
     tifffile.imwrite(directory / f"mapping_{index:04d}_x.tif", identity_map_x(width, height))
@@ -331,6 +335,15 @@ def test_python_loaders_return_false_for_missing_mapping_metadata(tmp_path) -> N
     assert not ControlMasksN().load(str(tmp_path), 3, max_output_width=48)
 
 
+def test_python_loaders_return_false_for_corrupt_mapping_metadata(tmp_path) -> None:
+    for i, xpos in enumerate((0, 8, 16)):
+        write_identity_mapping_set(tmp_path, i, 8, 4, xpos)
+        write_bad_position_tiff(tmp_path / f"mapping_{i:04d}.tif", 8, 4)
+
+    assert not ControlMasks().load(str(tmp_path))
+    assert not ControlMasksN().load(str(tmp_path), 3)
+
+
 def test_python_loaders_return_false_for_missing_seam(tmp_path) -> None:
     for i, xpos in enumerate((0, 8, 16)):
         write_identity_mapping_set(tmp_path, i, 8, 4, xpos)
@@ -342,6 +355,18 @@ def test_python_loaders_return_false_for_missing_seam(tmp_path) -> None:
     many = ControlMasksN()
     assert not many.load(str(tmp_path), 3, max_output_width=12)
     assert not many.is_valid()
+
+
+def test_python_two_image_loader_rejects_collapsed_capped_seam(tmp_path) -> None:
+    for i, xpos in enumerate((0, 40)):
+        write_identity_mapping_set(tmp_path, i, 40, 4, xpos)
+    seam = np.zeros((4, 80), dtype=np.uint8)
+    seam[:, 40:] = 255
+    tifffile.imwrite(tmp_path / "seam_file.png", seam)
+
+    masks = ControlMasks()
+    assert not masks.load(str(tmp_path), max_output_width=1)
+    assert not masks.is_valid()
 
 
 def test_cuda_pano_n_max_output_width_rejects_collapsed_seam_class(device: torch.device) -> None:

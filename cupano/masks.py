@@ -43,10 +43,16 @@ def _get_geo_tiff(path: str | Path) -> SpatialTiff:
     with tifffile.TiffFile(str(path)) as tif:
         page = tif.pages[0]
         tags = page.tags
-        xres = _tag_to_float(tags["XResolution"].value) if "XResolution" in tags else 0.0
-        yres = _tag_to_float(tags["YResolution"].value) if "YResolution" in tags else 0.0
-        xpos = _tag_to_float(tags["XPosition"].value) if "XPosition" in tags else 0.0
-        ypos = _tag_to_float(tags["YPosition"].value) if "YPosition" in tags else 0.0
+        required = ("XResolution", "YResolution", "XPosition", "YPosition")
+        missing = [name for name in required if name not in tags]
+        if missing:
+            raise ValueError(f"Missing GeoTIFF placement tags in {path}: {', '.join(missing)}")
+        xres = _tag_to_float(tags["XResolution"].value)
+        yres = _tag_to_float(tags["YResolution"].value)
+        xpos = _tag_to_float(tags["XPosition"].value)
+        ypos = _tag_to_float(tags["YPosition"].value)
+    if not all(np.isfinite(value) for value in (xres, yres, xpos, ypos)) or xres <= 0.0 or yres <= 0.0:
+        raise ValueError(f"Invalid GeoTIFF placement tags in {path}")
     return SpatialTiff(xpos=_snap_near_integer(xpos * xres), ypos=_snap_near_integer(ypos * yres))
 
 
@@ -198,14 +204,7 @@ class ControlMasks:
         shapes = list(native_shapes)
         canvas_width = _scaled_canvas_size(scaled_positions, shapes)[0]
         if max_output_width > 0 and canvas_width > max_output_width:
-            scale = _scale_to_fit_max_width(self.positions, native_shapes, canvas_width, max_output_width)
-            scaled_positions = []
-            shapes = []
-            for position, shape in zip(self.positions, native_shapes, strict=True):
-                xpos, width = _scale_span(position.xpos, shape[1], scale)
-                ypos, height = _scale_span(position.ypos, shape[0], scale)
-                scaled_positions.append(SpatialTiff(xpos=xpos, ypos=ypos))
-                shapes.append((height, width))
+            return False
         img1_shape, img2_shape = shapes
         self.img1_col = cv2.imread(str(base / "mapping_0000_x.tif"), cv2.IMREAD_ANYDEPTH)
         if self.img1_col is None or self.img1_col.size == 0:
@@ -234,6 +233,14 @@ class ControlMasks:
                 self.whole_seam_mask_image = _resize_nearest(self.whole_seam_mask_image, seam_shape)
         except Exception:
             self.whole_seam_mask_image = np.empty((0, 0), dtype=np.uint8)
+            return False
+        if not _indexed_seam_has_all_classes(self.whole_seam_mask_image, 2):
+            self.img1_col = np.empty((0, 0), dtype=np.uint16)
+            self.img1_row = np.empty((0, 0), dtype=np.uint16)
+            self.img2_col = np.empty((0, 0), dtype=np.uint16)
+            self.img2_row = np.empty((0, 0), dtype=np.uint16)
+            self.whole_seam_mask_image = np.empty((0, 0), dtype=np.uint8)
+            self.positions = []
             return False
         self.positions = scaled_positions
         return self.is_valid()
@@ -322,14 +329,7 @@ class ControlMasksN:
         shapes = list(native_shapes)
         canvas_width = _scaled_canvas_size(scaled_positions, shapes)[0]
         if max_output_width > 0 and canvas_width > max_output_width:
-            scale = _scale_to_fit_max_width(self.positions, native_shapes, canvas_width, max_output_width)
-            scaled_positions = []
-            shapes = []
-            for position, shape in zip(self.positions, native_shapes, strict=True):
-                xpos, width = _scale_span(position.xpos, shape[1], scale)
-                ypos, height = _scale_span(position.ypos, shape[0], scale)
-                scaled_positions.append(SpatialTiff(xpos=xpos, ypos=ypos))
-                shapes.append((height, width))
+            return False
         for i in range(n_images):
             col = cv2.imread(str(base / f"mapping_{i:04d}_x.tif"), cv2.IMREAD_ANYDEPTH)
             if col is None or col.size == 0:

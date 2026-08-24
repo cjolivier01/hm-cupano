@@ -405,16 +405,10 @@ bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
   };
   const cv::Size native_canvas_size = canvas_size3(placements);
   if (max_output_width > 0 && native_canvas_size.width > max_output_width) {
-    const double scale = scale_to_fit_max_width3(
-        positions,
-        {*img0_size, *img1_size, *img2_size},
-        static_cast<size_t>(native_canvas_size.width),
-        max_output_width);
-    placements = {
-        scaled_placement3(positions[0], *img0_size, scale),
-        scaled_placement3(positions[1], *img1_size, scale),
-        scaled_placement3(positions[2], *img2_size, scale),
-    };
+    std::cerr << "Control mask canvas " << native_canvas_size.width << "x" << native_canvas_size.height
+              << " exceeds max_output_width " << max_output_width << "; regenerate capped mapping TIFFs" << std::endl;
+    clear_control_masks3(*this);
+    return false;
   }
 
   // Load remap (X/Y) for image0:
