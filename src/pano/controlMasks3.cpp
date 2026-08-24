@@ -225,23 +225,26 @@ cv::Mat resize_remap_preserving_unmapped3(const cv::Mat& src, const cv::Size& si
   cv::Mat invalid_mask(size, CV_8U, cv::Scalar(0));
   const double scale_x = static_cast<double>(src.cols) / static_cast<double>(size.width);
   const double scale_y = static_cast<double>(src.rows) / static_cast<double>(size.height);
+  std::vector<int> column_prefix(static_cast<size_t>(src.cols) + 1, 0);
   for (int y = 0; y < size.height; ++y) {
     const int y0 = std::clamp(static_cast<int>(std::floor(y * scale_y)), 0, src.rows - 1);
     const int y1 = std::clamp(static_cast<int>(std::ceil((y + 1) * scale_y)), y0 + 1, src.rows);
+    column_prefix[0] = 0;
+    for (int source_x = 0; source_x < src.cols; ++source_x) {
+      bool has_unmapped = false;
+      for (int source_y = y0; source_y < y1; ++source_y) {
+        if (src.ptr<uint16_t>(source_y)[source_x] == kUnmappedPositionValue) {
+          has_unmapped = true;
+          break;
+        }
+      }
+      column_prefix[static_cast<size_t>(source_x) + 1] =
+          column_prefix[static_cast<size_t>(source_x)] + (has_unmapped ? 1 : 0);
+    }
     for (int x = 0; x < size.width; ++x) {
       const int x0 = std::clamp(static_cast<int>(std::floor(x * scale_x)), 0, src.cols - 1);
       const int x1 = std::clamp(static_cast<int>(std::ceil((x + 1) * scale_x)), x0 + 1, src.cols);
-      bool has_unmapped = false;
-      for (int source_y = y0; source_y < y1 && !has_unmapped; ++source_y) {
-        const auto* row = src.ptr<uint16_t>(source_y);
-        for (int source_x = x0; source_x < x1; ++source_x) {
-          if (row[source_x] == kUnmappedPositionValue) {
-            has_unmapped = true;
-            break;
-          }
-        }
-      }
-      if (has_unmapped) {
+      if (column_prefix[static_cast<size_t>(x1)] - column_prefix[static_cast<size_t>(x0)] > 0) {
         invalid_mask.at<uint8_t>(y, x) = 255;
       }
     }
