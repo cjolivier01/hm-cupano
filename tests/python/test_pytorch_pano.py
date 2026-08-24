@@ -202,6 +202,17 @@ def test_cuda_pano_legacy_positional_max_output_width(device: torch.device) -> N
     assert pano.canvas_width() == 48
 
 
+def test_cuda_pano_max_output_width_rejects_collapsed_seam_class(device: torch.device) -> None:
+    height = 4
+    seam = np.zeros((height, 80), dtype=np.uint8)
+    seam[:, 40:] = 1
+    masks = make_two_masks(40, height, seam, 40)
+
+    pano = CudaStitchPano(1, 0, masks, quiet=True, max_output_width=1)
+
+    assert not pano.status.ok()
+
+
 def test_cuda_pano_minimize_blend_changes_workspace_size(
     device: torch.device, tmp_path
 ) -> None:

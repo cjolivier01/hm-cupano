@@ -26,24 +26,26 @@ struct TiffInfoN {
   float yPosition = 0.0f;
 };
 
-static SpatialTiff get_geo_tiffN(const std::string& filename) {
+static std::optional<SpatialTiff> get_geo_tiffN(const std::string& filename) {
   TiffInfoN info;
   TIFF* tif = TIFFOpen(filename.c_str(), "r");
   if (!tif) {
     std::cerr << "Error: Could not open file " << filename << std::endl;
-    return {0, 0};
+    return std::nullopt;
   }
   float xres = 0.0f, yres = 0.0f;
-  TIFFGetField(tif, TIFFTAG_XRESOLUTION, &xres);
-  TIFFGetField(tif, TIFFTAG_YRESOLUTION, &yres);
+  const bool has_resolution =
+      TIFFGetField(tif, TIFFTAG_XRESOLUTION, &xres) && TIFFGetField(tif, TIFFTAG_YRESOLUTION, &yres);
   info.xResolution = xres;
   info.yResolution = yres;
   float xpos = 0.0f, ypos = 0.0f;
-  TIFFGetField(tif, TIFFTAG_XPOSITION, &xpos);
-  TIFFGetField(tif, TIFFTAG_YPOSITION, &ypos);
+  const bool has_position = TIFFGetField(tif, TIFFTAG_XPOSITION, &xpos) && TIFFGetField(tif, TIFFTAG_YPOSITION, &ypos);
   info.xPosition = xpos;
   info.yPosition = ypos;
   TIFFClose(tif);
+  if (!has_resolution || !has_position) {
+    return std::nullopt;
+  }
   return SpatialTiff{.xpos = info.xPosition * info.xResolution, .ypos = info.yPosition * info.yResolution};
 }
 
@@ -287,7 +289,13 @@ bool ControlMasksN::load(const std::string& dirIn, int n_images, int max_output_
     native_sizes.push_back(*size);
     mapping_x_paths.push_back(mapping_x);
     mapping_y_paths.push_back(mapping_y);
-    positions.push_back(get_geo_tiffN(mapping_pos));
+    const auto position = get_geo_tiffN(mapping_pos);
+    if (!position) {
+      std::cerr << "Unable to load mapping placement metadata for index " << i << " from " << mapping_pos << std::endl;
+      clear_control_masksN(*this);
+      return false;
+    }
+    positions.push_back(*position);
   }
 
   positions = normalize_positionsN(std::move(positions));

@@ -4,6 +4,9 @@
 #include "cupano/pano/controlMasksN.h"
 
 #include <gtest/gtest.h>
+#include <tiffio.h>
+#include <filesystem>
+#include <string>
 
 namespace hm::pano {
 namespace {
@@ -18,6 +21,72 @@ cv::Mat remap(int rows, int cols, uint16_t base) {
     }
   }
   return out;
+}
+
+bool write_tiff(const std::filesystem::path& path, uint32_t width, uint32_t height, float xpos, float ypos) {
+  TIFF* tif = TIFFOpen(path.c_str(), "w");
+  if (!tif) {
+    return false;
+  }
+  TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
+  TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
+  TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
+  TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 8);
+  TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
+  TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+  TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+  TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, height);
+  TIFFSetField(tif, TIFFTAG_XRESOLUTION, 1.0f);
+  TIFFSetField(tif, TIFFTAG_YRESOLUTION, 1.0f);
+  TIFFSetField(tif, TIFFTAG_XPOSITION, xpos);
+  TIFFSetField(tif, TIFFTAG_YPOSITION, ypos);
+  std::vector<uint8_t> row(width, 0);
+  bool ok = true;
+  for (uint32_t y = 0; y < height; ++y) {
+    ok = TIFFWriteScanline(tif, row.data(), y, 0) >= 0 && ok;
+  }
+  TIFFClose(tif);
+  return ok;
+}
+
+bool write_bad_tiff(const std::filesystem::path& path, uint32_t width, uint32_t height) {
+  TIFF* tif = TIFFOpen(path.c_str(), "w");
+  if (!tif) {
+    return false;
+  }
+  TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
+  TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
+  TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
+  TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 8);
+  TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
+  TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+  TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+  TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, height);
+  std::vector<uint8_t> row(width, 0);
+  bool ok = true;
+  for (uint32_t y = 0; y < height; ++y) {
+    ok = TIFFWriteScanline(tif, row.data(), y, 0) >= 0 && ok;
+  }
+  TIFFClose(tif);
+  return ok;
+}
+
+bool write_control_masks_files(const std::filesystem::path& dir, bool valid_positions) {
+  std::filesystem::create_directories(dir);
+  const bool positions_ok = valid_positions
+      ? (write_tiff(dir / "mapping_0000.tif", 8, 4, 0.0f, 0.0f) &&
+         write_tiff(dir / "mapping_0001.tif", 8, 4, 8.0f, 0.0f))
+      : (write_bad_tiff(dir / "mapping_0000.tif", 8, 4) && write_bad_tiff(dir / "mapping_0001.tif", 8, 4));
+  if (!positions_ok) {
+    return false;
+  }
+  cv::imwrite((dir / "mapping_0000_x.tif").string(), remap(4, 8, 10));
+  cv::imwrite((dir / "mapping_0000_y.tif").string(), remap(4, 8, 100));
+  cv::imwrite((dir / "mapping_0001_x.tif").string(), remap(4, 8, 200));
+  cv::imwrite((dir / "mapping_0001_y.tif").string(), remap(4, 8, 300));
+  cv::Mat seam(4, 16, CV_8U, cv::Scalar(0));
+  seam.colRange(8, 16).setTo(255);
+  return cv::imwrite((dir / "seam_file.png").string(), seam);
 }
 
 TEST(ControlMasksTest, ScaleToMaxOutputWidthPreservesUnmappedSentinel) {
@@ -45,6 +114,38 @@ TEST(ControlMasksTest, ScaleToMaxOutputWidthPreservesUnmappedSentinel) {
   EXPECT_EQ(cv::countNonZero(masks.img1_row == kUnmapped), 1);
   EXPECT_EQ(cv::countNonZero(masks.img2_col == kUnmapped), 1);
   EXPECT_EQ(cv::countNonZero(masks.img2_row == kUnmapped), 1);
+}
+
+TEST(ControlMasksTest, ScaleToMaxOutputWidthRejectsCollapsedSeamClass) {
+  ControlMasks masks;
+  masks.img1_col = remap(4, 40, 10);
+  masks.img1_row = remap(4, 40, 100);
+  masks.img2_col = remap(4, 40, 200);
+  masks.img2_row = remap(4, 40, 300);
+  masks.whole_seam_mask_image = cv::Mat(4, 80, CV_8U, cv::Scalar(0));
+  masks.whole_seam_mask_image.colRange(40, 80).setTo(1);
+  masks.positions = {{0.0f, 0.0f}, {40.0f, 0.0f}};
+
+  EXPECT_FALSE(masks.scale_to_max_output_width(1));
+  EXPECT_FALSE(masks.is_valid());
+}
+
+TEST(ControlMasksTest, FailedLoadClearsPreviousState) {
+  const std::filesystem::path root =
+      std::filesystem::temp_directory_path() / ("cupano-control-masks-test-" + std::to_string(::getpid()));
+  const std::filesystem::path valid = root / "valid";
+  const std::filesystem::path invalid = root / "invalid";
+  std::filesystem::remove_all(root);
+  ASSERT_TRUE(write_control_masks_files(valid, true));
+  ASSERT_TRUE(write_control_masks_files(invalid, false));
+
+  ControlMasks masks;
+  EXPECT_TRUE(masks.load(valid.string()));
+  EXPECT_TRUE(masks.is_valid());
+  EXPECT_FALSE(masks.load(invalid.string()));
+  EXPECT_FALSE(masks.is_valid());
+
+  std::filesystem::remove_all(root);
 }
 
 TEST(ControlMasksTest, ScaleToMaxOutputWidthPreservesSparseUnmappedSentinel) {

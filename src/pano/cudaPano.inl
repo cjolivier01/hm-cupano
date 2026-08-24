@@ -48,7 +48,10 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
   std::optional<ControlMasks> scaled_control_masks;
   if (max_output_width > 0 && original_canvas_width > static_cast<size_t>(max_output_width)) {
     scaled_control_masks = control_masks;
-    scaled_control_masks->scale_to_max_output_width(max_output_width);
+    if (!scaled_control_masks->scale_to_max_output_width(max_output_width)) {
+      status_ = CudaStatus(cudaErrorInvalidValue, "Stitching masks lost a seam class while applying max_output_width");
+      return;
+    }
   }
   const ControlMasks& masks = scaled_control_masks ? *scaled_control_masks : control_masks;
   stitch_context_ = std::make_unique<StitchingContext<T_pipeline, T_compute>>(

@@ -254,12 +254,12 @@ class ControlMasks:
     def canvas_height(self) -> int:
         return int(max(self.positions[0].ypos + self.img1_col.shape[0], self.positions[1].ypos + self.img2_col.shape[0]))
 
-    def scale_to_max_output_width(self, max_output_width: int) -> None:
+    def scale_to_max_output_width(self, max_output_width: int) -> bool:
         if max_output_width <= 0 or not self.is_valid():
-            return
+            return self.is_valid()
         canvas_width = self.canvas_width()
         if canvas_width <= max_output_width:
-            return
+            return True
         native_shapes = [self.img1_col.shape, self.img2_col.shape]
         scale = _scale_to_fit_max_width(self.positions, native_shapes, canvas_width, max_output_width)
         scaled_positions: list[SpatialTiff] = []
@@ -279,7 +279,16 @@ class ControlMasks:
         self.img2_row = _resize_remap_preserving_unmapped(self.img2_row, img2_shape)
         canvas_size = _scaled_canvas_size(scaled_positions, shapes)
         self.whole_seam_mask_image = _resize_nearest(self.whole_seam_mask_image, (canvas_size[1], canvas_size[0]))
+        if not _indexed_seam_has_all_classes(self.whole_seam_mask_image, 2):
+            self.img1_col = np.empty((0, 0), dtype=np.uint16)
+            self.img1_row = np.empty((0, 0), dtype=np.uint16)
+            self.img2_col = np.empty((0, 0), dtype=np.uint16)
+            self.img2_row = np.empty((0, 0), dtype=np.uint16)
+            self.whole_seam_mask_image = np.empty((0, 0), dtype=np.uint8)
+            self.positions = []
+            return False
         self.positions = scaled_positions
+        return True
 
 
 @dataclass

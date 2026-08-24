@@ -33,12 +33,12 @@ struct TiffInfo3 {
   float yPosition = 0.0f;
 };
 
-static SpatialTiff get_geo_tiff3(const std::string& filename) {
+static std::optional<SpatialTiff> get_geo_tiff3(const std::string& filename) {
   TiffInfo3 info;
   TIFF* tif = TIFFOpen(filename.c_str(), "r");
   if (!tif) {
     std::cerr << "Error: Could not open file " << filename << std::endl;
-    return {0, 0};
+    return std::nullopt;
   }
 
   float xres = 0.0f, yres = 0.0f;
@@ -53,14 +53,19 @@ static SpatialTiff get_geo_tiff3(const std::string& filename) {
   }
 
   float xpos = 0.0f, ypos = 0.0f;
-  if (TIFFGetField(tif, TIFFTAG_XPOSITION, &xpos)) {
+  const bool has_x_position = TIFFGetField(tif, TIFFTAG_XPOSITION, &xpos);
+  if (has_x_position) {
     info.xPosition = xpos;
   }
-  if (TIFFGetField(tif, TIFFTAG_YPOSITION, &ypos)) {
+  const bool has_y_position = TIFFGetField(tif, TIFFTAG_YPOSITION, &ypos);
+  if (has_y_position) {
     info.yPosition = ypos;
   }
 
   TIFFClose(tif);
+  if (!info.validResolution || !has_x_position || !has_y_position) {
+    return std::nullopt;
+  }
   return SpatialTiff{.xpos = info.xPosition * info.xResolution, .ypos = info.yPosition * info.yResolution};
 }
 
@@ -376,8 +381,15 @@ bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
   std::string mapping2_y = game_dir + "mapping_0002_y.tif";
   std::string seam_filename = game_dir + "seam_file.png"; // we assume 3‐channel PNG
 
-  positions =
-      normalize_positions3({get_geo_tiff3(mapping0_pos), get_geo_tiff3(mapping1_pos), get_geo_tiff3(mapping2_pos)});
+  const auto p0 = get_geo_tiff3(mapping0_pos);
+  const auto p1 = get_geo_tiff3(mapping1_pos);
+  const auto p2 = get_geo_tiff3(mapping2_pos);
+  if (!p0 || !p1 || !p2) {
+    std::cerr << "Unable to load 3-image mapping placement metadata" << std::endl;
+    clear_control_masks3(*this);
+    return false;
+  }
+  positions = normalize_positions3({*p0, *p1, *p2});
   const auto img0_size = read_tiff_size(mapping0_x);
   const auto img1_size = read_tiff_size(mapping1_x);
   const auto img2_size = read_tiff_size(mapping2_x);
