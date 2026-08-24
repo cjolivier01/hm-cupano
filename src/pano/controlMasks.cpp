@@ -105,6 +105,21 @@ struct ScaledPlacement {
   cv::Size size;
 };
 
+std::optional<cv::Size> read_tiff_size(const std::string& filename) {
+  TIFF* tif = TIFFOpen(filename.c_str(), "r");
+  if (!tif) {
+    return std::nullopt;
+  }
+  uint32_t width = 0;
+  uint32_t height = 0;
+  const bool ok = TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &width) && TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &height);
+  TIFFClose(tif);
+  if (!ok || width == 0 || height == 0) {
+    return std::nullopt;
+  }
+  return cv::Size(static_cast<int>(width), static_cast<int>(height));
+}
+
 ScaledPlacement scaled_placement(const SpatialTiff& position, const cv::Size& size, double scale) {
   const auto scaled_x = static_cast<int>(std::floor(position.xpos * scale));
   const auto scaled_y = static_cast<int>(std::floor(position.ypos * scale));
@@ -350,9 +365,9 @@ std::optional<cv::Mat> load_seam_mask(const std::string& filename) {
 
 } // namespace
 
-ControlMasks::ControlMasks(std::string game_dir) {
+ControlMasks::ControlMasks(std::string game_dir, int max_output_width) {
   // Caller should check is_valid()
-  (void)load(std::move(game_dir));
+  (void)load(std::move(game_dir), max_output_width);
 }
 
 bool ControlMasks::is_valid() const {
@@ -388,7 +403,7 @@ void ControlMasks::scale_to_max_output_width(int max_output_width) {
   positions = {placements[0].position, placements[1].position};
 }
 
-bool ControlMasks::load(std::string game_dir) {
+bool ControlMasks::load(std::string game_dir, int max_output_width) {
   if (!game_dir.empty() && game_dir.back() != '/') {
     game_dir += '/';
   }
@@ -404,6 +419,27 @@ bool ControlMasks::load(std::string game_dir) {
   std::string mapping_1_y = game_dir + "mapping_0001_y.tif";
   std::string whole_seam_mask = game_dir + "seam_file.png";
 
+  positions = normalize_positions({get_geo_tiff(mapping_0_pos), get_geo_tiff(mapping_1_pos)});
+  const auto img1_size = read_tiff_size(mapping_0_x);
+  const auto img2_size = read_tiff_size(mapping_1_x);
+  if (!img1_size || !img2_size) {
+    std::cerr << "Unable to load remap metadata from " << mapping_0_x << " / " << mapping_1_x << std::endl;
+    return false;
+  }
+  std::vector<ScaledPlacement> placements{
+      ScaledPlacement{.position = positions[0], .size = *img1_size},
+      ScaledPlacement{.position = positions[1], .size = *img2_size},
+  };
+  const cv::Size native_canvas_size = canvas_size(placements);
+  if (max_output_width > 0 && native_canvas_size.width > max_output_width) {
+    const double scale = scale_to_fit_max_width(
+        positions, {*img1_size, *img2_size}, static_cast<size_t>(native_canvas_size.width), max_output_width);
+    placements = {
+        scaled_placement(positions[0], *img1_size, scale),
+        scaled_placement(positions[1], *img2_size, scale),
+    };
+  }
+
   // Load column/row transformations for the first image.
   img1_col = cv::imread(mapping_0_x, cv::IMREAD_ANYDEPTH);
   if (img1_col.empty()) {
@@ -411,10 +447,16 @@ bool ControlMasks::load(std::string game_dir) {
     return false;
   }
   assert(img1_col.type() == CV_16U);
+  if (img1_col.size() != placements[0].size) {
+    img1_col = resize_remap_preserving_unmapped(img1_col, placements[0].size);
+  }
   img1_row = cv::imread(mapping_0_y, cv::IMREAD_ANYDEPTH);
   if (img1_row.empty()) {
     std::cerr << "Unable to load seam or masking file: " << mapping_0_y << std::endl;
     return false;
+  }
+  if (img1_row.size() != placements[0].size) {
+    img1_row = resize_remap_preserving_unmapped(img1_row, placements[0].size);
   }
 
   // Load column/row transformations for the second image.
@@ -423,10 +465,16 @@ bool ControlMasks::load(std::string game_dir) {
     std::cerr << "Unable to load seam or masking file: " << mapping_1_x << std::endl;
     return false;
   }
+  if (img2_col.size() != placements[1].size) {
+    img2_col = resize_remap_preserving_unmapped(img2_col, placements[1].size);
+  }
   img2_row = cv::imread(mapping_1_y, cv::IMREAD_ANYDEPTH);
   if (img2_row.empty()) {
     std::cerr << "Unable to load seam or masking file: " << mapping_1_y << std::endl;
     return false;
+  }
+  if (img2_row.size() != placements[1].size) {
+    img2_row = resize_remap_preserving_unmapped(img2_row, placements[1].size);
   }
 
   // Load and process the seam mask.
@@ -436,9 +484,11 @@ bool ControlMasks::load(std::string game_dir) {
     return false;
   }
   whole_seam_mask_image = std::move(*optional_whole_seam_mask_image);
-
-  // Determine the geospatial positions of both images, then normalize them to start at (0,0).
-  positions = normalize_positions({get_geo_tiff(mapping_0_pos), get_geo_tiff(mapping_1_pos)});
+  const cv::Size effective_canvas_size = canvas_size(placements);
+  if (whole_seam_mask_image.size() != effective_canvas_size) {
+    whole_seam_mask_image = resize_mask_nearest(whole_seam_mask_image, effective_canvas_size);
+  }
+  positions = {placements[0].position, placements[1].position};
 
   return true;
 }

@@ -3,6 +3,7 @@
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "cupano/cuda/cudaMakeFull.h"
 
@@ -18,9 +19,9 @@ inline int scaled_overlap_padding(size_t original_canvas_width, int scaled_canva
   }
   return std::max(
       1,
-      static_cast<int>(
-          std::floor(static_cast<double>(base_pad) * static_cast<double>(scaled_canvas_width) /
-              static_cast<double>(original_canvas_width))));
+      static_cast<int>(std::floor(
+          static_cast<double>(base_pad) * static_cast<double>(scaled_canvas_width) /
+          static_cast<double>(original_canvas_width))));
 }
 
 inline float3 neg(const float3& f) {
@@ -133,9 +134,12 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
     return;
   }
 
-  ControlMasksN scaled_control_masks = control_masks;
-  scaled_control_masks.scale_to_max_output_width(max_output_width);
-  const ControlMasksN& masks = scaled_control_masks;
+  std::optional<ControlMasksN> scaled_control_masks;
+  if (max_output_width > 0 && control_masks.canvas_width() > static_cast<size_t>(max_output_width)) {
+    scaled_control_masks = control_masks;
+    scaled_control_masks->scale_to_max_output_width(max_output_width);
+  }
+  const ControlMasksN& masks = scaled_control_masks ? *scaled_control_masks : control_masks;
 
   const int n = static_cast<int>(masks.img_col.size());
   stitch_context_ =
@@ -452,12 +456,13 @@ CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::blend_soft_dispatch(
   auto d_mask = stitch_context_->cudaBlendSoftSeam.get();
   auto out = stitch_context_->cudaBlendOut->data_raw();
 
-#define BLEND_N_CASE(NVAL, CH)                                                                         \
-  do {                                                                                                 \
-    auto& ctx = std::get<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, NVAL>>(              \
-        stitch_context_->laplacian_blend_context);                                                     \
-    return CudaStatus(cudaBatchedLaplacianBlendWithContextN<BaseScalar_t<T_compute>, float, NVAL, CH>( \
-        d_ptrs, d_mask, out, ctx, stream));                                                            \
+#define BLEND_N_CASE(NVAL, CH)                                                            \
+  do {                                                                                    \
+    auto& ctx = std::get<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, NVAL>>( \
+        stitch_context_->laplacian_blend_context);                                        \
+    return CudaStatus(                                                                    \
+        cudaBatchedLaplacianBlendWithContextN<BaseScalar_t<T_compute>, float, NVAL, CH>(  \
+            d_ptrs, d_mask, out, ctx, stream));                                           \
   } while (0)
 
   if (C == 3) {

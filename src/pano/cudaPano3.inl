@@ -10,6 +10,7 @@
 #include "cupano/utils/showImage.h" /*NOLINT*/
 
 #include <csignal>
+#include <optional>
 
 namespace hm {
 namespace pano {
@@ -33,9 +34,12 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
     status_ = CudaStatus(cudaErrorFileNotFound, "Stitching masks (3‐image) were not able to be loaded");
     return;
   }
-  ControlMasks3 scaled_control_masks = control_masks;
-  scaled_control_masks.scale_to_max_output_width(max_output_width);
-  const ControlMasks3& masks = scaled_control_masks;
+  std::optional<ControlMasks3> scaled_control_masks;
+  if (max_output_width > 0 && control_masks.canvas_width() > static_cast<size_t>(max_output_width)) {
+    scaled_control_masks = control_masks;
+    scaled_control_masks->scale_to_max_output_width(max_output_width);
+  }
+  const ControlMasks3& masks = scaled_control_masks ? *scaled_control_masks : control_masks;
 
   // 1) Create stitch_context:
   stitch_context_ = std::make_unique<StitchingContext3<T_pipeline, T_compute>>(
@@ -56,9 +60,9 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
           .width = canvas_w,
           .height = canvas_h,
           .positions =
-	              {cv::Point(masks.positions[0].xpos, masks.positions[0].ypos),
-	               cv::Point(masks.positions[1].xpos, masks.positions[1].ypos),
-	               cv::Point(masks.positions[2].xpos, masks.positions[2].ypos)}},
+              {cv::Point(masks.positions[0].xpos, masks.positions[0].ypos),
+               cv::Point(masks.positions[1].xpos, masks.positions[1].ypos),
+               cv::Point(masks.positions[2].xpos, masks.positions[2].ypos)}},
       /*minimize_blend=*/!stitch_context_->is_hard_seam());
 
   // Remapping image sizes:
@@ -69,8 +73,7 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
   canvas_manager_->_remapper_2.width = masks.img2_col.cols;
   canvas_manager_->_remapper_2.height = masks.img2_col.rows;
 
-  canvas_manager_->updateMinimizeBlend(
-      masks.img0_col.size(), masks.img1_col.size(), masks.img2_col.size());
+  canvas_manager_->updateMinimizeBlend(masks.img0_col.size(), masks.img1_col.size(), masks.img2_col.size());
 
   // Load the seam mask (3‐channel) if soft‐seam, else load single‐channel:
   cv::Mat seam_indexed = masks.whole_seam_mask_image; // CV_8UC3 if soft-seam

@@ -45,9 +45,12 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
     return;
   }
   const size_t original_canvas_width = control_masks.canvas_width();
-  ControlMasks scaled_control_masks = control_masks;
-  scaled_control_masks.scale_to_max_output_width(max_output_width);
-  const ControlMasks& masks = scaled_control_masks;
+  std::optional<ControlMasks> scaled_control_masks;
+  if (max_output_width > 0 && original_canvas_width > static_cast<size_t>(max_output_width)) {
+    scaled_control_masks = control_masks;
+    scaled_control_masks->scale_to_max_output_width(max_output_width);
+  }
+  const ControlMasks& masks = scaled_control_masks ? *scaled_control_masks : control_masks;
   stitch_context_ = std::make_unique<StitchingContext<T_pipeline, T_compute>>(
       /*batch_size=*/batch_size, /*is_hard_seam=*/num_levels == 0);
   assert(!masks.positions.empty());

@@ -126,16 +126,21 @@ def _resize_nearest(array: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
 
 def _resize_remap_preserving_unmapped(array: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
     resized = _resize_nearest(array, shape)
-    invalid = np.zeros(shape, dtype=bool)
     scale_y = array.shape[0] / shape[0]
     scale_x = array.shape[1] / shape[1]
-    for y in range(shape[0]):
-        y0 = max(0, min(array.shape[0] - 1, int(np.floor(y * scale_y))))
-        y1 = max(y0 + 1, min(array.shape[0], int(np.ceil((y + 1) * scale_y))))
-        for x in range(shape[1]):
-            x0 = max(0, min(array.shape[1] - 1, int(np.floor(x * scale_x))))
-            x1 = max(x0 + 1, min(array.shape[1], int(np.ceil((x + 1) * scale_x))))
-            invalid[y, x] = bool(np.any(array[y0:y1, x0:x1] == UNMAPPED_POSITION_VALUE))
+    y = np.arange(shape[0], dtype=np.float64)
+    x = np.arange(shape[1], dtype=np.float64)
+    y0 = np.clip(np.floor(y * scale_y).astype(np.int64), 0, array.shape[0] - 1)
+    y1 = np.clip(np.ceil((y + 1) * scale_y).astype(np.int64), y0 + 1, array.shape[0])
+    x0 = np.clip(np.floor(x * scale_x).astype(np.int64), 0, array.shape[1] - 1)
+    x1 = np.clip(np.ceil((x + 1) * scale_x).astype(np.int64), x0 + 1, array.shape[1])
+    integral = np.pad((array == UNMAPPED_POSITION_VALUE).astype(np.uint32, copy=False), ((1, 0), (1, 0)))
+    integral = integral.cumsum(axis=0).cumsum(axis=1)
+    invalid_counts = integral[y1[:, None], x1[None, :]]
+    invalid_counts -= integral[y0[:, None], x1[None, :]]
+    invalid_counts -= integral[y1[:, None], x0[None, :]]
+    invalid_counts += integral[y0[:, None], x0[None, :]]
+    invalid = invalid_counts > 0
     resized[invalid] = UNMAPPED_POSITION_VALUE
     return resized.astype(np.uint16, copy=False)
 
