@@ -202,6 +202,19 @@ TEST(ControlMasksTest, LoadRejectsNonUint16Remaps) {
   std::filesystem::remove_all(root);
 }
 
+TEST(ControlMasksTest, LoadRejectsPlacementRemapDimensionMismatch) {
+  const std::filesystem::path root = std::filesystem::temp_directory_path() /
+      ("cupano-control-masks-placement-mismatch-test-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(root);
+  ASSERT_TRUE(write_control_masks_files(root, true));
+  ASSERT_TRUE(write_tiff(root / "mapping_0001.tif", 16, 4, 8.0f, 0.0f));
+
+  ControlMasks masks(root.string());
+  EXPECT_FALSE(masks.is_valid());
+
+  std::filesystem::remove_all(root);
+}
+
 TEST(ControlMasksNTest, LoadRejectsMismatchedRemapDimensionsBeforeDecode) {
   const std::filesystem::path root =
       std::filesystem::temp_directory_path() / ("cupano-control-masks-n-mismatch-test-" + std::to_string(::getpid()));
@@ -225,6 +238,23 @@ TEST(ControlMasksNTest, LoadRejectsNonUint16Remaps) {
   std::filesystem::remove_all(root);
   ASSERT_TRUE(write_control_masks3_files(root));
   ASSERT_TRUE(write_bad_tiff(root / "mapping_0001_x.tif", 8, 4));
+  cv::Mat seam(4, 24, CV_8U, cv::Scalar(0));
+  seam.colRange(8, 16).setTo(1);
+  seam.colRange(16, 24).setTo(2);
+  ASSERT_TRUE(cv::imwrite((root / "seam_file.png").string(), seam));
+
+  ControlMasksN masks(root.string(), 3);
+  EXPECT_FALSE(masks.is_valid());
+
+  std::filesystem::remove_all(root);
+}
+
+TEST(ControlMasksNTest, LoadRejectsPlacementRemapDimensionMismatch) {
+  const std::filesystem::path root = std::filesystem::temp_directory_path() /
+      ("cupano-control-masks-n-placement-mismatch-test-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(root);
+  ASSERT_TRUE(write_control_masks3_files(root));
+  ASSERT_TRUE(write_tiff(root / "mapping_0002.tif", 16, 4, 16.0f, 0.0f));
   cv::Mat seam(4, 24, CV_8U, cv::Scalar(0));
   seam.colRange(8, 16).setTo(1);
   seam.colRange(16, 24).setTo(2);
@@ -381,6 +411,20 @@ TEST(ControlMasks3Test, LoadRejectsNonUint16Remaps) {
   std::filesystem::remove_all(root);
   ASSERT_TRUE(write_control_masks3_files(root));
   ASSERT_TRUE(write_bad_tiff(root / "mapping_0002_x.tif", 8, 4));
+  ASSERT_TRUE(write_text_file(root / "seam_file.png", "not needed"));
+
+  ControlMasks3 masks(root.string());
+  EXPECT_FALSE(masks.is_valid());
+
+  std::filesystem::remove_all(root);
+}
+
+TEST(ControlMasks3Test, LoadRejectsPlacementRemapDimensionMismatch) {
+  const std::filesystem::path root = std::filesystem::temp_directory_path() /
+      ("cupano-control-masks3-placement-mismatch-test-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(root);
+  ASSERT_TRUE(write_control_masks3_files(root));
+  ASSERT_TRUE(write_tiff(root / "mapping_0002.tif", 16, 4, 16.0f, 0.0f));
   ASSERT_TRUE(write_text_file(root / "seam_file.png", "not needed"));
 
   ControlMasks3 masks(root.string());

@@ -108,7 +108,7 @@ struct ScaledPlacement {
   cv::Size size;
 };
 
-std::optional<cv::Size> read_tiff_size(const std::string& filename) {
+std::optional<cv::Size> read_tiff_size(const std::string& filename, bool require_uint16 = true) {
   TIFF* tif = TIFFOpen(filename.c_str(), "r");
   if (!tif) {
     return std::nullopt;
@@ -124,8 +124,8 @@ std::optional<cv::Size> read_tiff_size(const std::string& filename) {
   TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLEFORMAT, &sample_format);
   TIFFClose(tif);
   if (!ok || width == 0 || height == 0 || width > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
-      height > static_cast<uint32_t>(std::numeric_limits<int>::max()) || samples != 1 || bits != 16 ||
-      sample_format != SAMPLEFORMAT_UINT) {
+      height > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
+      (require_uint16 && (samples != 1 || bits != 16 || sample_format != SAMPLEFORMAT_UINT))) {
     return std::nullopt;
   }
   return cv::Size(static_cast<int>(width), static_cast<int>(height));
@@ -476,17 +476,20 @@ bool ControlMasks::load(std::string game_dir, int max_output_width) {
     return false;
   }
   positions = normalize_positions({*p0, *p1});
+  const auto img1_position_size = read_tiff_size(mapping_0_pos, /*require_uint16=*/false);
+  const auto img2_position_size = read_tiff_size(mapping_1_pos, /*require_uint16=*/false);
   const auto img1_size = read_tiff_size(mapping_0_x);
   const auto img2_size = read_tiff_size(mapping_1_x);
   const auto img1_row_size = read_tiff_size(mapping_0_y);
   const auto img2_row_size = read_tiff_size(mapping_1_y);
-  if (!img1_size || !img2_size || !img1_row_size || !img2_row_size) {
+  if (!img1_position_size || !img2_position_size || !img1_size || !img2_size || !img1_row_size || !img2_row_size) {
     std::cerr << "Unable to load remap metadata from " << mapping_0_x << " / " << mapping_1_x << std::endl;
     clear_control_masks(*this);
     return false;
   }
-  if (*img1_size != *img1_row_size || *img2_size != *img2_row_size) {
-    std::cerr << "Remap X/Y dimensions do not match" << std::endl;
+  if (*img1_position_size != *img1_size || *img1_size != *img1_row_size || *img2_position_size != *img2_size ||
+      *img2_size != *img2_row_size) {
+    std::cerr << "Mapping placement and remap dimensions do not match" << std::endl;
     clear_control_masks(*this);
     return false;
   }

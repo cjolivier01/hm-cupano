@@ -201,13 +201,17 @@ class ControlMasks:
                 _read_tiff_shape(base / "mapping_0000_x.tif"),
                 _read_tiff_shape(base / "mapping_0001_x.tif"),
             ]
+            native_position_shapes = [
+                _read_tiff_shape(base / "mapping_0000.tif"),
+                _read_tiff_shape(base / "mapping_0001.tif"),
+            ]
             native_row_shapes = [
                 _read_tiff_shape(base / "mapping_0000_y.tif"),
                 _read_tiff_shape(base / "mapping_0001_y.tif"),
             ]
         except Exception:
             return False
-        if native_shapes != native_row_shapes:
+        if native_position_shapes != native_shapes or native_shapes != native_row_shapes:
             return False
         scaled_positions = list(self.positions)
         shapes = list(native_shapes)
@@ -331,11 +335,12 @@ class ControlMasksN:
         try:
             self.positions = [_get_geo_tiff(base / f"mapping_{i:04d}.tif") for i in range(n_images)]
             self.positions = _normalize_positions(self.positions)
+            native_position_shapes = [_read_tiff_shape(base / f"mapping_{i:04d}.tif") for i in range(n_images)]
             native_shapes = [_read_tiff_shape(base / f"mapping_{i:04d}_x.tif") for i in range(n_images)]
             native_row_shapes = [_read_tiff_shape(base / f"mapping_{i:04d}_y.tif") for i in range(n_images)]
         except Exception:
             return False
-        if native_shapes != native_row_shapes:
+        if native_position_shapes != native_shapes or native_shapes != native_row_shapes:
             return False
         scaled_positions = list(self.positions)
         shapes = list(native_shapes)

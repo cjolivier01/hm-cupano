@@ -362,6 +362,15 @@ def test_python_loaders_reject_non_uint16_remaps(tmp_path) -> None:
     assert not ControlMasksN().load(str(tmp_path), 3)
 
 
+def test_python_loaders_reject_placement_remap_dimension_mismatch(tmp_path) -> None:
+    for i, xpos in enumerate((0, 8, 16)):
+        write_identity_mapping_set(tmp_path, i, 8, 4, xpos)
+    write_position_tiff(tmp_path / "mapping_0001.tif", 16, 4, 8, 0)
+
+    assert not ControlMasks().load(str(tmp_path))
+    assert not ControlMasksN().load(str(tmp_path), 3)
+
+
 def test_python_loaders_return_false_for_missing_seam(tmp_path) -> None:
     for i, xpos in enumerate((0, 8, 16)):
         write_identity_mapping_set(tmp_path, i, 8, 4, xpos)

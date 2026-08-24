@@ -56,7 +56,7 @@ static std::optional<SpatialTiff> get_geo_tiffN(const std::string& filename) {
   return SpatialTiff{.xpos = scaled_xpos, .ypos = scaled_ypos};
 }
 
-static std::optional<cv::Size> read_tiff_size(const std::string& filename) {
+static std::optional<cv::Size> read_tiff_size(const std::string& filename, bool require_uint16 = true) {
   TIFF* tif = TIFFOpen(filename.c_str(), "r");
   if (!tif) {
     return std::nullopt;
@@ -72,8 +72,8 @@ static std::optional<cv::Size> read_tiff_size(const std::string& filename) {
   TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLEFORMAT, &sample_format);
   TIFFClose(tif);
   if (!ok || width == 0 || height == 0 || width > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
-      height > static_cast<uint32_t>(std::numeric_limits<int>::max()) || samples != 1 || bits != 16 ||
-      sample_format != SAMPLEFORMAT_UINT) {
+      height > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
+      (require_uint16 && (samples != 1 || bits != 16 || sample_format != SAMPLEFORMAT_UINT))) {
     return std::nullopt;
   }
   return cv::Size(static_cast<int>(width), static_cast<int>(height));
@@ -295,15 +295,16 @@ bool ControlMasksN::load(const std::string& dirIn, int n_images, int max_output_
     std::string mapping_x = dir + buf_x;
     std::string mapping_y = dir + buf_y;
 
+    const auto position_size = read_tiff_size(mapping_pos, /*require_uint16=*/false);
     const auto size = read_tiff_size(mapping_x);
     const auto row_size = read_tiff_size(mapping_y);
-    if (!size || !row_size) {
+    if (!position_size || !size || !row_size) {
       std::cerr << "Unable to load remap metadata for index " << i << " from " << mapping_x << std::endl;
       clear_control_masksN(*this);
       return false;
     }
-    if (*size != *row_size) {
-      std::cerr << "Remap X/Y dimensions do not match for index " << i << std::endl;
+    if (*position_size != *size || *size != *row_size) {
+      std::cerr << "Mapping placement and remap dimensions do not match for index " << i << std::endl;
       clear_control_masksN(*this);
       return false;
     }
