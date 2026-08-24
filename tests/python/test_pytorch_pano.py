@@ -13,6 +13,7 @@ from cupano import (
     SpatialTiff,
 )
 from cupano.ops import compute_laplacian
+from cupano.masks import _read_tiff_shape, _tag_to_float
 
 _MIN_TEST_FREE_BYTES = 1 << 30
 
@@ -360,6 +361,20 @@ def test_python_loaders_reject_non_uint16_remaps(tmp_path) -> None:
 
     assert not ControlMasks().load(str(tmp_path))
     assert not ControlMasksN().load(str(tmp_path), 3)
+
+
+def test_python_rejects_invalid_tiff_rational_and_oversized_remap(tmp_path) -> None:
+    with pytest.raises(ValueError):
+        _tag_to_float((1, 0))
+    path = tmp_path / "oversized_remap.tif"
+    tifffile.imwrite(
+        path,
+        data=None,
+        shape=(32769, 1),
+        dtype=np.uint16,
+    )
+    with pytest.raises(ValueError):
+        _read_tiff_shape(path)
 
 
 def test_python_loaders_reject_placement_remap_dimension_mismatch(tmp_path) -> None:

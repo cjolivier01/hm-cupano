@@ -73,6 +73,24 @@ bool write_bad_tiff(const std::filesystem::path& path, uint32_t width, uint32_t 
   return ok;
 }
 
+bool write_uint16_tiff_header_only(const std::filesystem::path& path, uint32_t width, uint32_t height) {
+  TIFF* tif = TIFFOpen(path.c_str(), "w");
+  if (!tif) {
+    return false;
+  }
+  TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
+  TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
+  TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
+  TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 16);
+  TIFFSetField(tif, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_UINT);
+  TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
+  TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+  TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+  TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, height);
+  TIFFClose(tif);
+  return true;
+}
+
 bool write_control_masks_files(const std::filesystem::path& dir, bool valid_positions) {
   std::filesystem::create_directories(dir);
   const bool positions_ok = valid_positions
@@ -195,6 +213,19 @@ TEST(ControlMasksTest, LoadRejectsNonUint16Remaps) {
   std::filesystem::remove_all(root);
   ASSERT_TRUE(write_control_masks_files(root, true));
   ASSERT_TRUE(write_bad_tiff(root / "mapping_0000_x.tif", 8, 4));
+
+  ControlMasks masks(root.string());
+  EXPECT_FALSE(masks.is_valid());
+
+  std::filesystem::remove_all(root);
+}
+
+TEST(ControlMasksTest, LoadRejectsOversizedRemapHeaderBeforeDecode) {
+  const std::filesystem::path root = std::filesystem::temp_directory_path() /
+      ("cupano-control-masks-oversized-remap-test-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(root);
+  ASSERT_TRUE(write_control_masks_files(root, true));
+  ASSERT_TRUE(write_uint16_tiff_header_only(root / "mapping_0000_x.tif", 32769, 1));
 
   ControlMasks masks(root.string());
   EXPECT_FALSE(masks.is_valid());

@@ -23,6 +23,8 @@ namespace pano {
 namespace {
 
 constexpr uint16_t kUnmappedPositionValue = 65535;
+constexpr uint32_t kHardMaximumRemapDimension = 32768;
+constexpr uint64_t kHardMaximumRemapPixels = 128ULL * 1024ULL * 1024ULL;
 
 struct TiffInfo {
   bool validResolution = false; ///< Whether resolution tags were valid
@@ -123,8 +125,8 @@ std::optional<cv::Size> read_tiff_size(const std::string& filename, bool require
   TIFFGetFieldDefaulted(tif, TIFFTAG_BITSPERSAMPLE, &bits);
   TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLEFORMAT, &sample_format);
   TIFFClose(tif);
-  if (!ok || width == 0 || height == 0 || width > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
-      height > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
+  if (!ok || width == 0 || height == 0 || width > kHardMaximumRemapDimension || height > kHardMaximumRemapDimension ||
+      static_cast<uint64_t>(width) * height > kHardMaximumRemapPixels ||
       (require_uint16 && (samples != 1 || bits != 16 || sample_format != SAMPLEFORMAT_UINT))) {
     return std::nullopt;
   }
@@ -316,6 +318,13 @@ std::optional<cv::Mat> imreadPalettedAsIndex(const std::string& filename) {
   png_uint_32 height = png_get_image_height(png_ptr, info_ptr);
   png_byte color_type = png_get_color_type(png_ptr, info_ptr);
   png_byte bit_depth = png_get_bit_depth(png_ptr, info_ptr);
+
+  if (width == 0 || height == 0 || width > kHardMaximumRemapDimension || height > kHardMaximumRemapDimension ||
+      static_cast<uint64_t>(width) * height > kHardMaximumRemapPixels) {
+    png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp) nullptr);
+    fclose(fp);
+    throw std::runtime_error("PNG dimensions exceed safety limits.");
+  }
 
   if (color_type != PNG_COLOR_TYPE_PALETTE || bit_depth != 8) {
     png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp) nullptr);

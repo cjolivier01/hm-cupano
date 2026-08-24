@@ -13,6 +13,8 @@ from .geometry import SpatialTiff
 
 
 UNMAPPED_POSITION_VALUE = np.uint16(65535)
+HARD_MAXIMUM_REMAP_DIMENSION = 32768
+HARD_MAXIMUM_REMAP_PIXELS = 128 * 1024 * 1024
 
 
 def _normalize_positions(positions: Iterable[SpatialTiff]) -> list[SpatialTiff]:
@@ -25,7 +27,8 @@ def _normalize_positions(positions: Iterable[SpatialTiff]) -> list[SpatialTiff]:
 def _tag_to_float(value: object) -> float:
     if isinstance(value, tuple) and len(value) == 2:
         num, den = value
-        den = den or 1
+        if den == 0:
+            raise ValueError("Invalid zero-denominator TIFF rational")
         return float(num) / float(den)
     if isinstance(value, (list, tuple)) and value:
         return _tag_to_float(value[0])
@@ -56,12 +59,20 @@ def _get_geo_tiff(path: str | Path) -> SpatialTiff:
     return SpatialTiff(xpos=_snap_near_integer(xpos * xres), ypos=_snap_near_integer(ypos * yres))
 
 
-def _read_tiff_shape(path: str | Path) -> tuple[int, int]:
+def _read_tiff_shape(path: str | Path, require_uint16: bool = True) -> tuple[int, int]:
     with tifffile.TiffFile(str(path)) as tif:
         page = tif.pages[0]
         shape = page.shape
-        if len(shape) != 2 or np.dtype(page.dtype) != np.dtype(np.uint16):
+        if len(shape) != 2 or (require_uint16 and np.dtype(page.dtype) != np.dtype(np.uint16)):
             raise ValueError(f"Invalid remap TIFF type in {path}")
+        if (
+            shape[0] <= 0
+            or shape[1] <= 0
+            or shape[0] > HARD_MAXIMUM_REMAP_DIMENSION
+            or shape[1] > HARD_MAXIMUM_REMAP_DIMENSION
+            or shape[0] * shape[1] > HARD_MAXIMUM_REMAP_PIXELS
+        ):
+            raise ValueError(f"Invalid remap TIFF dimensions in {path}")
     return int(shape[0]), int(shape[1])
 
 
@@ -202,8 +213,8 @@ class ControlMasks:
                 _read_tiff_shape(base / "mapping_0001_x.tif"),
             ]
             native_position_shapes = [
-                _read_tiff_shape(base / "mapping_0000.tif"),
-                _read_tiff_shape(base / "mapping_0001.tif"),
+                _read_tiff_shape(base / "mapping_0000.tif", require_uint16=False),
+                _read_tiff_shape(base / "mapping_0001.tif", require_uint16=False),
             ]
             native_row_shapes = [
                 _read_tiff_shape(base / "mapping_0000_y.tif"),
@@ -335,7 +346,9 @@ class ControlMasksN:
         try:
             self.positions = [_get_geo_tiff(base / f"mapping_{i:04d}.tif") for i in range(n_images)]
             self.positions = _normalize_positions(self.positions)
-            native_position_shapes = [_read_tiff_shape(base / f"mapping_{i:04d}.tif") for i in range(n_images)]
+            native_position_shapes = [
+                _read_tiff_shape(base / f"mapping_{i:04d}.tif", require_uint16=False) for i in range(n_images)
+            ]
             native_shapes = [_read_tiff_shape(base / f"mapping_{i:04d}_x.tif") for i in range(n_images)]
             native_row_shapes = [_read_tiff_shape(base / f"mapping_{i:04d}_y.tif") for i in range(n_images)]
         except Exception:
