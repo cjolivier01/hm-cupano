@@ -381,6 +381,14 @@ bool ControlMasksN::load(const std::string& dirIn, int n_images, int max_output_
     clear_control_masksN(*this);
     return false;
   }
+  std::string seam_filename = dir + "seam_file.png";
+  const cv::Size effective_canvas_size = canvas_sizeN(placements);
+  const auto seam_size = read_png_size(seam_filename);
+  if (!seam_size || *seam_size != effective_canvas_size) {
+    std::cerr << "Seam mask dimensions do not match the effective canvas: " << seam_filename << std::endl;
+    clear_control_masksN(*this);
+    return false;
+  }
 
   for (int i = 0; i < n_images; ++i) {
     img_col[i] = cv::imread(mapping_x_paths[i], cv::IMREAD_ANYDEPTH);
@@ -404,14 +412,6 @@ bool ControlMasksN::load(const std::string& dirIn, int n_images, int max_output_
     positions[i] = placements[i].position;
   }
 
-  std::string seam_filename = dir + "seam_file.png";
-  const cv::Size effective_canvas_size = canvas_sizeN(placements);
-  const auto seam_size = read_png_size(seam_filename);
-  if (!seam_size || *seam_size != effective_canvas_size) {
-    std::cerr << "Seam mask dimensions do not match the effective canvas: " << seam_filename << std::endl;
-    clear_control_masksN(*this);
-    return false;
-  }
   try {
     whole_seam_mask_indexed = imreadPalettedAsIndex(seam_filename);
   } catch (const std::exception& e) {

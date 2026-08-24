@@ -553,6 +553,13 @@ bool ControlMasks::load(std::string game_dir, int max_output_width) {
     clear_control_masks(*this);
     return false;
   }
+  const cv::Size effective_canvas_size = canvas_size(placements);
+  const auto seam_size = read_png_size(whole_seam_mask);
+  if (!seam_size || *seam_size != effective_canvas_size) {
+    std::cerr << "Seam mask dimensions do not match the effective canvas: " << whole_seam_mask << std::endl;
+    clear_control_masks(*this);
+    return false;
+  }
 
   // Load column/row transformations for the first image.
   img1_col = cv::imread(mapping_0_x, cv::IMREAD_ANYDEPTH);
@@ -593,14 +600,6 @@ bool ControlMasks::load(std::string game_dir, int max_output_width) {
   }
   if (img2_row.size() != placements[1].size) {
     img2_row = resize_remap_preserving_unmapped(img2_row, placements[1].size);
-  }
-
-  const cv::Size effective_canvas_size = canvas_size(placements);
-  const auto seam_size = read_png_size(whole_seam_mask);
-  if (!seam_size || *seam_size != effective_canvas_size) {
-    std::cerr << "Seam mask dimensions do not match the effective canvas: " << whole_seam_mask << std::endl;
-    clear_control_masks(*this);
-    return false;
   }
 
   // Load and process the seam mask.

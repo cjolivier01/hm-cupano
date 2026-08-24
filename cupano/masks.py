@@ -89,6 +89,12 @@ def _validate_seam_image_size(path: str | Path, width: int, height: int) -> None
         raise ValueError(f"Invalid seam PNG dimensions in {path}")
 
 
+def _read_seam_shape(path: str | Path) -> tuple[int, int]:
+    with Image.open(path) as image:
+        _validate_seam_image_size(path, image.width, image.height)
+        return image.height, image.width
+
+
 def _indexed_seam_has_all_classes(indexed: np.ndarray, n_images: int) -> bool:
     uniq = np.unique(indexed)
     return bool(uniq.size == n_images and uniq[0] == 0 and uniq[-1] == n_images - 1)
@@ -245,6 +251,12 @@ class ControlMasks:
         canvas_width = _scaled_canvas_size(scaled_positions, shapes)[0]
         if max_output_width > 0 and canvas_width > max_output_width:
             return False
+        seam_shape = tuple(reversed(_scaled_canvas_size(scaled_positions, shapes)))
+        try:
+            if _read_seam_shape(base / "seam_file.png") != seam_shape:
+                return False
+        except Exception:
+            return False
         img1_shape, img2_shape = shapes
         self.img1_col = cv2.imread(str(base / "mapping_0000_x.tif"), cv2.IMREAD_ANYDEPTH)
         if self.img1_col is None or self.img1_col.size == 0:
@@ -267,7 +279,6 @@ class ControlMasks:
         if self.img2_row.shape != img2_shape:
             self.img2_row = _resize_remap_preserving_unmapped(self.img2_row, img2_shape)
         try:
-            seam_shape = tuple(reversed(_scaled_canvas_size(scaled_positions, shapes)))
             self.whole_seam_mask_image = _load_two_image_seam(base / "seam_file.png", seam_shape)
         except Exception:
             self.whole_seam_mask_image = np.empty((0, 0), dtype=np.uint8)
@@ -374,6 +385,12 @@ class ControlMasksN:
         canvas_width = _scaled_canvas_size(scaled_positions, shapes)[0]
         if max_output_width > 0 and canvas_width > max_output_width:
             return False
+        seam_shape = tuple(reversed(_scaled_canvas_size(scaled_positions, shapes)))
+        try:
+            if _read_seam_shape(base / "seam_file.png") != seam_shape:
+                return False
+        except Exception:
+            return False
         for i in range(n_images):
             col = cv2.imread(str(base / f"mapping_{i:04d}_x.tif"), cv2.IMREAD_ANYDEPTH)
             if col is None or col.size == 0:
@@ -390,7 +407,6 @@ class ControlMasksN:
         if any(x is None or x.size == 0 for x in self.img_col + self.img_row):
             return False
         try:
-            seam_shape = tuple(reversed(_scaled_canvas_size(scaled_positions, shapes)))
             self.whole_seam_mask_indexed = _read_indexed_png_or_grayscale(base / "seam_file.png", seam_shape)
         except Exception:
             self.whole_seam_mask_indexed = np.empty((0, 0), dtype=np.uint8)
