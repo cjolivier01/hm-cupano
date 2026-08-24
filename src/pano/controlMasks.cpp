@@ -67,9 +67,20 @@ cv::Mat resize_remap_preserving_unmapped(const cv::Mat& src, const cv::Size& siz
   cv::Mat resized;
   cv::resize(src, resized, size, 0.0, 0.0, cv::INTER_NEAREST);
   cv::Mat invalid_mask_src = src == kUnmappedPositionValue;
-  cv::Mat invalid_mask;
-  cv::resize(invalid_mask_src, invalid_mask, size, 0.0, 0.0, cv::INTER_AREA);
-  cv::threshold(invalid_mask, invalid_mask, 0, 255, cv::THRESH_BINARY);
+  cv::Mat invalid_mask(size, CV_8U, cv::Scalar(0));
+  const double scale_x = static_cast<double>(src.cols) / static_cast<double>(size.width);
+  const double scale_y = static_cast<double>(src.rows) / static_cast<double>(size.height);
+  for (int y = 0; y < size.height; ++y) {
+    const int y0 = std::clamp(static_cast<int>(std::floor(y * scale_y)), 0, src.rows - 1);
+    const int y1 = std::clamp(static_cast<int>(std::ceil((y + 1) * scale_y)), y0 + 1, src.rows);
+    for (int x = 0; x < size.width; ++x) {
+      const int x0 = std::clamp(static_cast<int>(std::floor(x * scale_x)), 0, src.cols - 1);
+      const int x1 = std::clamp(static_cast<int>(std::ceil((x + 1) * scale_x)), x0 + 1, src.cols);
+      if (cv::countNonZero(invalid_mask_src(cv::Range(y0, y1), cv::Range(x0, x1))) > 0) {
+        invalid_mask.at<uint8_t>(y, x) = 255;
+      }
+    }
+  }
   resized.setTo(kUnmappedPositionValue, invalid_mask);
   return resized;
 }

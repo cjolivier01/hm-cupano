@@ -46,6 +46,30 @@ TEST(ControlMasksTest, ScaleToMaxOutputWidthPreservesUnmappedSentinel) {
   EXPECT_EQ(cv::countNonZero(masks.img2_row == kUnmapped), 1);
 }
 
+TEST(ControlMasksTest, ScaleToMaxOutputWidthPreservesSparseUnmappedSentinel) {
+  ControlMasks masks;
+  masks.img1_col = remap(32, 32, 10);
+  masks.img1_row = remap(32, 32, 100);
+  masks.img2_col = remap(32, 32, 200);
+  masks.img2_row = remap(32, 32, 300);
+  masks.img1_col.at<uint16_t>(0, 0) = kUnmapped;
+  masks.img1_row.at<uint16_t>(0, 0) = kUnmapped;
+  masks.img2_col.at<uint16_t>(31, 31) = kUnmapped;
+  masks.img2_row.at<uint16_t>(31, 31) = kUnmapped;
+  masks.whole_seam_mask_image = cv::Mat(32, 64, CV_8U, cv::Scalar(0));
+  masks.whole_seam_mask_image.colRange(32, 64).setTo(1);
+  masks.positions = {{0.0f, 0.0f}, {32.0f, 0.0f}};
+
+  masks.scale_to_max_output_width(2);
+
+  EXPECT_EQ(masks.canvas_width(), 2u);
+  EXPECT_EQ(masks.canvas_height(), 1u);
+  EXPECT_EQ(cv::countNonZero(masks.img1_col == kUnmapped), 1);
+  EXPECT_EQ(cv::countNonZero(masks.img1_row == kUnmapped), 1);
+  EXPECT_EQ(cv::countNonZero(masks.img2_col == kUnmapped), 1);
+  EXPECT_EQ(cv::countNonZero(masks.img2_row == kUnmapped), 1);
+}
+
 TEST(ControlMasksTest, ScaleToMaxOutputWidthKeepsSeamAlignedWithRoundedCanvas) {
   ControlMasks masks;
   masks.img1_col = remap(7, 11, 10);
