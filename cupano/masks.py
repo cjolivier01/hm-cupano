@@ -76,6 +76,17 @@ def _read_tiff_shape(path: str | Path, require_uint16: bool = True) -> tuple[int
     return int(shape[0]), int(shape[1])
 
 
+def _validate_seam_image_size(path: str | Path, width: int, height: int) -> None:
+    if (
+        width <= 0
+        or height <= 0
+        or width > HARD_MAXIMUM_REMAP_DIMENSION
+        or height > HARD_MAXIMUM_REMAP_DIMENSION
+        or width * height > HARD_MAXIMUM_REMAP_PIXELS
+    ):
+        raise ValueError(f"Invalid seam PNG dimensions in {path}")
+
+
 def _indexed_seam_has_all_classes(indexed: np.ndarray, n_images: int) -> bool:
     uniq = np.unique(indexed)
     return bool(uniq.size == n_images and uniq[0] == 0 and uniq[-1] == n_images - 1)
@@ -83,6 +94,7 @@ def _indexed_seam_has_all_classes(indexed: np.ndarray, n_images: int) -> bool:
 
 def _read_indexed_png_or_grayscale(path: str | Path) -> np.ndarray:
     with Image.open(path) as image:
+        _validate_seam_image_size(path, image.width, image.height)
         if image.mode == "P":
             return np.array(image, dtype=np.uint8)
     seam = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
