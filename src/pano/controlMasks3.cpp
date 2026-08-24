@@ -83,9 +83,17 @@ static std::optional<cv::Size> read_tiff_size(const std::string& filename) {
   }
   uint32_t width = 0;
   uint32_t height = 0;
+  uint16_t samples = 0;
+  uint16_t bits = 0;
+  uint16_t sample_format = SAMPLEFORMAT_UINT;
   const bool ok = TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &width) && TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &height);
+  TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLESPERPIXEL, &samples);
+  TIFFGetFieldDefaulted(tif, TIFFTAG_BITSPERSAMPLE, &bits);
+  TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLEFORMAT, &sample_format);
   TIFFClose(tif);
-  if (!ok || width == 0 || height == 0) {
+  if (!ok || width == 0 || height == 0 || width > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
+      height > static_cast<uint32_t>(std::numeric_limits<int>::max()) || samples != 1 || bits != 16 ||
+      sample_format != SAMPLEFORMAT_UINT) {
     return std::nullopt;
   }
   return cv::Size(static_cast<int>(width), static_cast<int>(height));

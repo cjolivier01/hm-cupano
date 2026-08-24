@@ -58,7 +58,10 @@ def _get_geo_tiff(path: str | Path) -> SpatialTiff:
 
 def _read_tiff_shape(path: str | Path) -> tuple[int, int]:
     with tifffile.TiffFile(str(path)) as tif:
-        shape = tif.pages[0].shape
+        page = tif.pages[0]
+        shape = page.shape
+        if len(shape) != 2 or np.dtype(page.dtype) != np.dtype(np.uint16):
+            raise ValueError(f"Invalid remap TIFF type in {path}")
     return int(shape[0]), int(shape[1])
 
 

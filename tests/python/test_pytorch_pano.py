@@ -353,6 +353,15 @@ def test_python_loaders_reject_mismatched_y_remap_metadata(tmp_path) -> None:
     assert not ControlMasksN().load(str(tmp_path), 3, max_output_width=24)
 
 
+def test_python_loaders_reject_non_uint16_remaps(tmp_path) -> None:
+    for i, xpos in enumerate((0, 8, 16)):
+        write_identity_mapping_set(tmp_path, i, 8, 4, xpos)
+    tifffile.imwrite(tmp_path / "mapping_0000_x.tif", np.zeros((4, 8), dtype=np.uint8))
+
+    assert not ControlMasks().load(str(tmp_path))
+    assert not ControlMasksN().load(str(tmp_path), 3)
+
+
 def test_python_loaders_return_false_for_missing_seam(tmp_path) -> None:
     for i, xpos in enumerate((0, 8, 16)):
         write_identity_mapping_set(tmp_path, i, 8, 4, xpos)

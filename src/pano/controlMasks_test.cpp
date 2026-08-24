@@ -189,6 +189,19 @@ TEST(ControlMasksTest, LoadRejectsCorruptSeamAndMismatchedRemapDimensions) {
   std::filesystem::remove_all(root);
 }
 
+TEST(ControlMasksTest, LoadRejectsNonUint16Remaps) {
+  const std::filesystem::path root =
+      std::filesystem::temp_directory_path() / ("cupano-control-masks-u8-remap-test-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(root);
+  ASSERT_TRUE(write_control_masks_files(root, true));
+  ASSERT_TRUE(write_bad_tiff(root / "mapping_0000_x.tif", 8, 4));
+
+  ControlMasks masks(root.string());
+  EXPECT_FALSE(masks.is_valid());
+
+  std::filesystem::remove_all(root);
+}
+
 TEST(ControlMasksNTest, LoadRejectsMismatchedRemapDimensionsBeforeDecode) {
   const std::filesystem::path root =
       std::filesystem::temp_directory_path() / ("cupano-control-masks-n-mismatch-test-" + std::to_string(::getpid()));
@@ -201,6 +214,23 @@ TEST(ControlMasksNTest, LoadRejectsMismatchedRemapDimensionsBeforeDecode) {
   ASSERT_TRUE(cv::imwrite((root / "seam_file.png").string(), seam));
 
   ControlMasksN masks(root.string(), 3, /*max_output_width=*/24);
+  EXPECT_FALSE(masks.is_valid());
+
+  std::filesystem::remove_all(root);
+}
+
+TEST(ControlMasksNTest, LoadRejectsNonUint16Remaps) {
+  const std::filesystem::path root =
+      std::filesystem::temp_directory_path() / ("cupano-control-masks-n-u8-remap-test-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(root);
+  ASSERT_TRUE(write_control_masks3_files(root));
+  ASSERT_TRUE(write_bad_tiff(root / "mapping_0001_x.tif", 8, 4));
+  cv::Mat seam(4, 24, CV_8U, cv::Scalar(0));
+  seam.colRange(8, 16).setTo(1);
+  seam.colRange(16, 24).setTo(2);
+  ASSERT_TRUE(cv::imwrite((root / "seam_file.png").string(), seam));
+
+  ControlMasksN masks(root.string(), 3);
   EXPECT_FALSE(masks.is_valid());
 
   std::filesystem::remove_all(root);
@@ -340,6 +370,20 @@ TEST(ControlMasks3Test, LoadRejectsMismatchedRemapDimensionsBeforeDecode) {
   ASSERT_TRUE(write_text_file(root / "seam_file.png", "not needed"));
 
   ControlMasks3 masks(root.string(), /*max_output_width=*/24);
+  EXPECT_FALSE(masks.is_valid());
+
+  std::filesystem::remove_all(root);
+}
+
+TEST(ControlMasks3Test, LoadRejectsNonUint16Remaps) {
+  const std::filesystem::path root =
+      std::filesystem::temp_directory_path() / ("cupano-control-masks3-u8-remap-test-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(root);
+  ASSERT_TRUE(write_control_masks3_files(root));
+  ASSERT_TRUE(write_bad_tiff(root / "mapping_0002_x.tif", 8, 4));
+  ASSERT_TRUE(write_text_file(root / "seam_file.png", "not needed"));
+
+  ControlMasks3 masks(root.string());
   EXPECT_FALSE(masks.is_valid());
 
   std::filesystem::remove_all(root);
