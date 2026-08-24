@@ -46,6 +46,8 @@ class ControlMasks {
 
   size_t canvas_height() const;
 
+  void scale_to_max_output_width(int max_output_width);
+
   /// Column mapping for image1 (e.g., from row/col transformations).
   cv::Mat img1_col;
   /// Row mapping for image1.

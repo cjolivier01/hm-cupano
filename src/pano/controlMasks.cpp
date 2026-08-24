@@ -1,9 +1,12 @@
 #include "controlMasks.h"
 
+#include <opencv2/imgproc.hpp>
 #include <png.h>
 #include <tiffio.h> // For reading TIFF metadata
 #include <tiffio.h> // For TIFF metadata
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <limits>
 #include <optional>
@@ -18,6 +21,8 @@ namespace pano {
  * @brief Internal structure used to store metadata from TIFF tags.
  */
 namespace {
+
+constexpr uint16_t kUnmappedPositionValue = 65535;
 
 struct TiffInfo {
   bool validResolution = false; ///< Whether resolution tags were valid
@@ -56,6 +61,51 @@ std::vector<SpatialTiff> normalize_positions(std::vector<SpatialTiff>&& position
   });
 
   return positions;
+}
+
+cv::Mat resize_remap_preserving_unmapped(const cv::Mat& src, const cv::Size& size) {
+  cv::Mat resized;
+  cv::resize(src, resized, size, 0.0, 0.0, cv::INTER_NEAREST);
+  cv::Mat invalid_expr = src == kUnmappedPositionValue;
+  cv::Mat invalid_mask_src;
+  invalid_expr.convertTo(invalid_mask_src, CV_32F, 1.0 / 255.0);
+  cv::Mat invalid_mask;
+  cv::resize(invalid_mask_src, invalid_mask, size, 0.0, 0.0, cv::INTER_AREA);
+  cv::threshold(invalid_mask, invalid_mask, 0.0, 255.0, cv::THRESH_BINARY);
+  invalid_mask.convertTo(invalid_mask, CV_8U);
+  resized.setTo(kUnmappedPositionValue, invalid_mask);
+  return resized;
+}
+
+cv::Mat resize_mask_nearest(const cv::Mat& src, const cv::Size& size) {
+  cv::Mat resized;
+  cv::resize(src, resized, size, 0.0, 0.0, cv::INTER_NEAREST);
+  return resized;
+}
+
+struct ScaledPlacement {
+  SpatialTiff position;
+  cv::Size size;
+};
+
+ScaledPlacement scaled_placement(const SpatialTiff& position, const cv::Size& size, double scale) {
+  const auto scaled_x = static_cast<int>(std::floor(position.xpos * scale));
+  const auto scaled_y = static_cast<int>(std::floor(position.ypos * scale));
+  const auto scaled_right = static_cast<int>(std::ceil((position.xpos + size.width) * scale));
+  const auto scaled_bottom = static_cast<int>(std::ceil((position.ypos + size.height) * scale));
+  return ScaledPlacement{
+      .position = SpatialTiff{.xpos = static_cast<float>(scaled_x), .ypos = static_cast<float>(scaled_y)},
+      .size = cv::Size(std::max(1, scaled_right - scaled_x), std::max(1, scaled_bottom - scaled_y))};
+}
+
+cv::Size canvas_size(const std::vector<ScaledPlacement>& placements) {
+  int width = 1;
+  int height = 1;
+  for (const ScaledPlacement& placement : placements) {
+    width = std::max(width, static_cast<int>(placement.position.xpos) + placement.size.width);
+    height = std::max(height, static_cast<int>(placement.position.ypos) + placement.size.height);
+  }
+  return cv::Size(width, height);
 }
 
 /**
@@ -268,6 +318,24 @@ size_t ControlMasks::canvas_width() const {
 
 size_t ControlMasks::canvas_height() const {
   return std::max(positions.at(0).ypos + img1_col.rows, positions.at(1).ypos + img2_col.rows);
+}
+
+void ControlMasks::scale_to_max_output_width(int max_output_width) {
+  if (!is_valid() || max_output_width <= 0 || canvas_width() <= static_cast<size_t>(max_output_width)) {
+    return;
+  }
+
+  const double scale = static_cast<double>(max_output_width) / static_cast<double>(canvas_width());
+  const std::vector<ScaledPlacement> placements{
+      scaled_placement(positions[0], img1_col.size(), scale),
+      scaled_placement(positions[1], img2_col.size(), scale),
+  };
+  img1_col = resize_remap_preserving_unmapped(img1_col, placements[0].size);
+  img1_row = resize_remap_preserving_unmapped(img1_row, img1_col.size());
+  img2_col = resize_remap_preserving_unmapped(img2_col, placements[1].size);
+  img2_row = resize_remap_preserving_unmapped(img2_row, img2_col.size());
+  whole_seam_mask_image = resize_mask_nearest(whole_seam_mask_image, canvas_size(placements));
+  positions = {placements[0].position, placements[1].position};
 }
 
 bool ControlMasks::load(std::string game_dir) {

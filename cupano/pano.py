@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
@@ -22,6 +24,12 @@ from .ops import (
     remap_to_canvas_with_dest_map,
 )
 from .status import CudaStatus, CudaStatusError
+
+
+def _scaled_overlap_padding(original_canvas_width: int, scaled_canvas_width: int, base_pad: int = 128) -> int:
+    if original_canvas_width <= 0 or scaled_canvas_width <= 0 or scaled_canvas_width >= original_canvas_width:
+        return base_pad
+    return max(1, int(math.floor(base_pad * scaled_canvas_width / original_canvas_width)))
 
 
 @dataclass
@@ -136,7 +144,6 @@ class CudaStitchPano:
         backend: Backend = "auto",
         enable_cuda_graphs: bool = True,
     ) -> None:
-        del max_output_width
         self._status = CudaStatus()
         self._num_levels = num_levels
         self._minimize_blend = bool(minimize_blend and num_levels > 0)
@@ -149,6 +156,9 @@ class CudaStitchPano:
         if not control_masks.is_valid():
             self._status = CudaStatus(1, "Stitching masks were not able to be loaded")
             return
+        original_canvas_width = control_masks.canvas_width()
+        control_masks = copy.copy(control_masks)
+        control_masks.scale_to_max_output_width(max_output_width)
 
         self._context = StitchingContext(
             batch_size=batch_size, is_hard_seam=(num_levels == 0)
@@ -157,6 +167,10 @@ class CudaStitchPano:
         canvas_h = control_masks.canvas_height()
         if not quiet:
             print(f"Stitched canvas size: {canvas_w} x {canvas_h}")
+        scaled_overlap = int(control_masks.positions[0].xpos) + control_masks.img1_col.shape[1] - int(control_masks.positions[1].xpos)
+        if scaled_overlap <= 0:
+            self._status = CudaStatus(2, "max_output_width is too small for a positive stitched overlap")
+            return
 
         self._canvas_manager = CanvasManager(
             CanvasInfo(
@@ -174,6 +188,7 @@ class CudaStitchPano:
                 ],
             ),
             minimize_blend=self._minimize_blend,
+            overlap_pad=_scaled_overlap_padding(original_canvas_width, canvas_w),
         )
         self._canvas_manager._remapper_1.width = control_masks.img1_col.shape[1]
         self._canvas_manager._remapper_1.height = control_masks.img1_col.shape[0]
@@ -560,6 +575,7 @@ class CudaStitchPanoN:
         minimize_blend: bool = True,
         backend: Backend = "auto",
         enable_cuda_graphs: bool = True,
+        max_output_width: int = 0,
     ) -> None:
         self._status = CudaStatus()
         self._num_levels = num_levels
@@ -579,6 +595,9 @@ class CudaStitchPanoN:
                 1, "Stitching masks (N-image) could not be loaded"
             )
             return
+        original_canvas_width = control_masks.canvas_width()
+        control_masks = copy.copy(control_masks)
+        control_masks.scale_to_max_output_width(max_output_width)
 
         n = len(control_masks.img_col)
         if n < 2 or n > 8:
@@ -593,6 +612,7 @@ class CudaStitchPanoN:
         self._canvas_manager = CanvasManagerN(
             CanvasInfo(canvas_w, canvas_h, positions),
             minimize_blend=self._minimize_blend,
+            overlap_pad=_scaled_overlap_padding(original_canvas_width, canvas_w),
         )
         for idx, remap in enumerate(control_masks.img_col):
             self._canvas_manager.set_remap_size(idx, (remap.shape[1], remap.shape[0]))

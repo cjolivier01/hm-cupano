@@ -2,6 +2,7 @@
 
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
+#include <cmath>
 
 #include "cupano/cuda/cudaMakeFull.h"
 
@@ -10,6 +11,18 @@ namespace pano {
 namespace cuda {
 
 namespace detailN {
+inline int scaled_overlap_padding(size_t original_canvas_width, int scaled_canvas_width, int base_pad = 128) {
+  if (original_canvas_width == 0 || scaled_canvas_width <= 0 ||
+      static_cast<size_t>(scaled_canvas_width) >= original_canvas_width) {
+    return base_pad;
+  }
+  return std::max(
+      1,
+      static_cast<int>(
+          std::floor(static_cast<double>(base_pad) * static_cast<double>(scaled_canvas_width) /
+              static_cast<double>(original_canvas_width))));
+}
+
 inline float3 neg(const float3& f) {
   return make_float3(-f.x, -f.y, -f.z);
 }
@@ -112,22 +125,27 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
     int num_levels,
     const ControlMasksN& control_masks,
     bool minimize_blend,
-    bool quiet)
+    bool quiet,
+    int max_output_width)
     : minimize_blend_(minimize_blend && num_levels > 0) {
   if (!control_masks.is_valid()) {
     status_ = CudaStatus(cudaErrorFileNotFound, "Stitching masks (N-image) could not be loaded");
     return;
   }
 
-  const int n = static_cast<int>(control_masks.img_col.size());
+  ControlMasksN scaled_control_masks = control_masks;
+  scaled_control_masks.scale_to_max_output_width(max_output_width);
+  const ControlMasksN& masks = scaled_control_masks;
+
+  const int n = static_cast<int>(masks.img_col.size());
   stitch_context_ =
       std::make_unique<StitchingContextN<T_pipeline, T_compute>>(batch_size, /*is_hard=*/(num_levels == 0));
   stitch_context_->n_images = n;
   stitch_context_->remap_x.resize(n);
   stitch_context_->remap_y.resize(n);
 
-  const int canvas_w = static_cast<int>(control_masks.canvas_width());
-  const int canvas_h = static_cast<int>(control_masks.canvas_height());
+  const int canvas_w = static_cast<int>(masks.canvas_width());
+  const int canvas_h = static_cast<int>(masks.canvas_height());
   if (!quiet) {
     std::cout << "Stitched (N-image) canvas size: " << canvas_w << " x " << canvas_h << std::endl;
   }
@@ -136,14 +154,15 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
   std::vector<cv::Point> positions;
   positions.reserve(n);
   for (int i = 0; i < n; ++i)
-    positions.emplace_back(control_masks.positions[i].xpos, control_masks.positions[i].ypos);
+    positions.emplace_back(masks.positions[i].xpos, masks.positions[i].ypos);
   canvas_manager_ = std::make_unique<CanvasManagerN>(
       CanvasInfo{.width = canvas_w, .height = canvas_h, .positions = positions},
-      /*minimize_blend=*/minimize_blend_);
+      /*minimize_blend=*/minimize_blend_,
+      /*overlap_pad=*/detailN::scaled_overlap_padding(control_masks.canvas_width(), canvas_w));
   for (int i = 0; i < n; ++i)
-    canvas_manager_->set_remap_size(i, control_masks.img_col[i].size());
+    canvas_manager_->set_remap_size(i, masks.img_col[i].size());
 
-  cv::Mat seam_index_padded = canvas_manager_->convertMaskMat(control_masks.whole_seam_mask_indexed);
+  cv::Mat seam_index_padded = canvas_manager_->convertMaskMat(masks.whole_seam_mask_indexed);
   assert(!seam_index_padded.empty());
   seam_index_padded = seam_index_padded.clone();
 
@@ -177,7 +196,7 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
         remap_rois_.resize(n);
         for (int i = 0; i < n; ++i) {
           const cv::Point pos = canvas_manager_->canvas_positions()[i];
-          const cv::Size sz = control_masks.img_col[i].size();
+          const cv::Size sz = masks.img_col[i].size();
           const cv::Rect img_rect(pos.x, pos.y, sz.width, sz.height);
           const cv::Rect inter = img_rect & blend_roi_canvas_;
           remap_rois_[i].offset_x = pos.x - blend_roi_canvas_.x;
@@ -270,8 +289,8 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
 
   // Load remappers to device
   for (int i = 0; i < n; ++i) {
-    stitch_context_->remap_x[i] = std::make_unique<CudaMat<uint16_t>>(control_masks.img_col[i]);
-    stitch_context_->remap_y[i] = std::make_unique<CudaMat<uint16_t>>(control_masks.img_row[i]);
+    stitch_context_->remap_x[i] = std::make_unique<CudaMat<uint16_t>>(masks.img_col[i]);
+    stitch_context_->remap_y[i] = std::make_unique<CudaMat<uint16_t>>(masks.img_row[i]);
   }
 
   // Device-resident metadata for the fused hard-seam kernel (used when num_levels == 0).

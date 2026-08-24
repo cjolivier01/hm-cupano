@@ -1,8 +1,12 @@
 #include "controlMasks3.h"
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 #include <png.h>
 #include <tiffio.h> // For TIFF metadata
+#include <algorithm>
+#include <cmath>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -14,6 +18,8 @@ namespace pano {
  * A small helper to load and normalize TIFF tag positions into “SpatialTiff3”:
  */
 namespace {
+
+constexpr uint16_t kUnmappedPositionValue = 65535;
 
 struct TiffInfo3 {
   bool validResolution = false;
@@ -197,6 +203,51 @@ cv::Mat load_seam_mask3(const std::string& filename) {
   return seam_mask;
 }
 
+cv::Mat resize_remap_preserving_unmapped3(const cv::Mat& src, const cv::Size& size) {
+  cv::Mat resized;
+  cv::resize(src, resized, size, 0.0, 0.0, cv::INTER_NEAREST);
+  cv::Mat invalid_expr = src == kUnmappedPositionValue;
+  cv::Mat invalid_mask_src;
+  invalid_expr.convertTo(invalid_mask_src, CV_32F, 1.0 / 255.0);
+  cv::Mat invalid_mask;
+  cv::resize(invalid_mask_src, invalid_mask, size, 0.0, 0.0, cv::INTER_AREA);
+  cv::threshold(invalid_mask, invalid_mask, 0.0, 255.0, cv::THRESH_BINARY);
+  invalid_mask.convertTo(invalid_mask, CV_8U);
+  resized.setTo(kUnmappedPositionValue, invalid_mask);
+  return resized;
+}
+
+cv::Mat resize_nearest3(const cv::Mat& src, const cv::Size& size) {
+  cv::Mat resized;
+  cv::resize(src, resized, size, 0.0, 0.0, cv::INTER_NEAREST);
+  return resized;
+}
+
+struct ScaledPlacement3 {
+  SpatialTiff position;
+  cv::Size size;
+};
+
+ScaledPlacement3 scaled_placement3(const SpatialTiff& position, const cv::Size& size, double scale) {
+  const auto scaled_x = static_cast<int>(std::floor(position.xpos * scale));
+  const auto scaled_y = static_cast<int>(std::floor(position.ypos * scale));
+  const auto scaled_right = static_cast<int>(std::ceil((position.xpos + size.width) * scale));
+  const auto scaled_bottom = static_cast<int>(std::ceil((position.ypos + size.height) * scale));
+  return ScaledPlacement3{
+      .position = SpatialTiff{.xpos = static_cast<float>(scaled_x), .ypos = static_cast<float>(scaled_y)},
+      .size = cv::Size(std::max(1, scaled_right - scaled_x), std::max(1, scaled_bottom - scaled_y))};
+}
+
+cv::Size canvas_size3(const std::vector<ScaledPlacement3>& placements) {
+  int width = 1;
+  int height = 1;
+  for (const ScaledPlacement3& placement : placements) {
+    width = std::max(width, static_cast<int>(placement.position.xpos) + placement.size.width);
+    height = std::max(height, static_cast<int>(placement.position.ypos) + placement.size.height);
+  }
+  return cv::Size(width, height);
+}
+
 } // namespace
 
 ControlMasks3::ControlMasks3(const std::string& game_dir) {
@@ -314,6 +365,27 @@ size_t ControlMasks3::canvas_height() const {
   float h1 = positions[1].ypos + img1_col.rows;
   float h2 = positions[2].ypos + img2_col.rows;
   return static_cast<size_t>(std::max({h0, h1, h2}));
+}
+
+void ControlMasks3::scale_to_max_output_width(int max_output_width) {
+  if (!is_valid() || max_output_width <= 0 || canvas_width() <= static_cast<size_t>(max_output_width)) {
+    return;
+  }
+
+  const double scale = static_cast<double>(max_output_width) / static_cast<double>(canvas_width());
+  const std::vector<ScaledPlacement3> placements{
+      scaled_placement3(positions[0], img0_col.size(), scale),
+      scaled_placement3(positions[1], img1_col.size(), scale),
+      scaled_placement3(positions[2], img2_col.size(), scale),
+  };
+  img0_col = resize_remap_preserving_unmapped3(img0_col, placements[0].size);
+  img0_row = resize_remap_preserving_unmapped3(img0_row, img0_col.size());
+  img1_col = resize_remap_preserving_unmapped3(img1_col, placements[1].size);
+  img1_row = resize_remap_preserving_unmapped3(img1_row, img1_col.size());
+  img2_col = resize_remap_preserving_unmapped3(img2_col, placements[2].size);
+  img2_row = resize_remap_preserving_unmapped3(img2_row, img2_col.size());
+  whole_seam_mask_image = resize_nearest3(whole_seam_mask_image, canvas_size3(placements));
+  positions = {placements[0].position, placements[1].position, placements[2].position};
 }
 
 } // namespace pano

@@ -6,6 +6,8 @@
 #include "cupano/cuda/cudaTypes.h"
 #include "cupano/pano/cudaPano.h"
 
+#include <algorithm>
+#include <cmath>
 #include <csignal>
 #include <filesystem>
 #include <fstream>
@@ -16,6 +18,20 @@ namespace hm {
 namespace pano {
 namespace cuda {
 
+namespace detail {
+inline int scaled_overlap_padding(size_t original_canvas_width, int scaled_canvas_width, int base_pad = 128) {
+  if (original_canvas_width == 0 || scaled_canvas_width <= 0 ||
+      static_cast<size_t>(scaled_canvas_width) >= original_canvas_width) {
+    return base_pad;
+  }
+  return std::max(
+      1,
+      static_cast<int>(std::floor(
+          static_cast<double>(base_pad) * static_cast<double>(scaled_canvas_width) /
+          static_cast<double>(original_canvas_width))));
+}
+} // namespace detail
+
 template <typename T_pipeline, typename T_compute>
 CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
     int batch_size,
@@ -24,20 +40,29 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
     bool quiet,
     bool minimize_blend,
     int max_output_width) {
-  (void)max_output_width;
   if (!control_masks.is_valid()) {
     status_ = CudaStatus(cudaErrorFileNotFound, "Stitching masks were not able to be loaded");
     return;
   }
+  const size_t original_canvas_width = control_masks.canvas_width();
+  ControlMasks scaled_control_masks = control_masks;
+  scaled_control_masks.scale_to_max_output_width(max_output_width);
+  const ControlMasks& masks = scaled_control_masks;
   stitch_context_ = std::make_unique<StitchingContext<T_pipeline, T_compute>>(
       /*batch_size=*/batch_size, /*is_hard_seam=*/num_levels == 0);
-  assert(!control_masks.positions.empty());
+  assert(!masks.positions.empty());
   // Compute canvas size
-  const int canvas_width = control_masks.canvas_width();
-  const int canvas_height = control_masks.canvas_height();
+  const int canvas_width = masks.canvas_width();
+  const int canvas_height = masks.canvas_height();
 
   if (!quiet) {
     std::cout << "Stitched canvas size: " << canvas_width << " x " << canvas_height << std::endl;
+  }
+  const int scaled_overlap =
+      static_cast<int>(masks.positions[0].xpos) + masks.img1_col.cols - static_cast<int>(masks.positions[1].xpos);
+  if (scaled_overlap <= 0) {
+    status_ = CudaStatus(cudaErrorInvalidValue, "max_output_width is too small for a positive stitched overlap");
+    return;
   }
 
   //
@@ -48,30 +73,31 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
           .width = canvas_width,
           .height = canvas_height,
           .positions =
-              {cv::Point(control_masks.positions[0].xpos, control_masks.positions[0].ypos),
-               cv::Point(control_masks.positions[1].xpos, control_masks.positions[1].ypos)}},
-      /*minimize_blend=*/(minimize_blend && !stitch_context_->is_hard_seam()));
+              {cv::Point(masks.positions[0].xpos, masks.positions[0].ypos),
+               cv::Point(masks.positions[1].xpos, masks.positions[1].ypos)}},
+      /*minimize_blend=*/(minimize_blend && !stitch_context_->is_hard_seam()),
+      /*overlap_pad=*/detail::scaled_overlap_padding(original_canvas_width, canvas_width));
 
-  canvas_manager_->_remapper_1.width = control_masks.img1_col.cols;
-  canvas_manager_->_remapper_1.height = control_masks.img1_col.rows;
-  canvas_manager_->_remapper_2.width = control_masks.img2_col.cols;
-  canvas_manager_->_remapper_2.height = control_masks.img2_col.rows;
+  canvas_manager_->_remapper_1.width = masks.img1_col.cols;
+  canvas_manager_->_remapper_1.height = masks.img1_col.rows;
+  canvas_manager_->_remapper_2.width = masks.img2_col.cols;
+  canvas_manager_->_remapper_2.height = masks.img2_col.rows;
 
-  canvas_manager_->updateMinimizeBlend(control_masks.img1_col.size(), control_masks.img2_col.size());
+  canvas_manager_->updateMinimizeBlend(masks.img1_col.size(), masks.img2_col.size());
 
-  cv::Mat blend_seam = canvas_manager_->convertMaskMat(control_masks.whole_seam_mask_image);
+  cv::Mat blend_seam = canvas_manager_->convertMaskMat(masks.whole_seam_mask_image);
   assert(!blend_seam.empty());
   blend_seam = blend_seam.clone();
 
   auto canvas = std::make_unique<CudaMat<T_pipeline>>(
       stitch_context_->batch_size(), canvas_manager_->canvas_width(), canvas_manager_->canvas_height());
 
-  assert(control_masks.img1_col.type() == CV_16U);
-  stitch_context_->remap_1_x = std::make_unique<CudaMat<uint16_t>>(control_masks.img1_col);
-  stitch_context_->remap_1_y = std::make_unique<CudaMat<uint16_t>>(control_masks.img1_row);
+  assert(masks.img1_col.type() == CV_16U);
+  stitch_context_->remap_1_x = std::make_unique<CudaMat<uint16_t>>(masks.img1_col);
+  stitch_context_->remap_1_y = std::make_unique<CudaMat<uint16_t>>(masks.img1_row);
 
-  stitch_context_->remap_2_x = std::make_unique<CudaMat<uint16_t>>(control_masks.img2_col);
-  stitch_context_->remap_2_y = std::make_unique<CudaMat<uint16_t>>(control_masks.img2_row);
+  stitch_context_->remap_2_x = std::make_unique<CudaMat<uint16_t>>(masks.img2_col);
+  stitch_context_->remap_2_y = std::make_unique<CudaMat<uint16_t>>(masks.img2_row);
 
   if (!stitch_context_->is_hard_seam()) {
     blend_seam.convertTo(blend_seam, cudaPixelTypeToCvType(CudaTypeToPixelType<T_compute>::value));

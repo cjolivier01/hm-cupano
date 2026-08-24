@@ -67,7 +67,12 @@ class CudaStitchPano3 {
   using pipeline_type = T_pipeline;
   using compute_type = T_compute;
 
-  CudaStitchPano3(int batch_size, int num_levels, const ControlMasks3& control_masks, bool quiet = false);
+  CudaStitchPano3(
+      int batch_size,
+      int num_levels,
+      const ControlMasks3& control_masks,
+      bool quiet = false,
+      int max_output_width = 0);
 
   int canvas_width() const {
     return canvas_manager_->canvas_width();

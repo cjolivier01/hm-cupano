@@ -37,6 +37,7 @@ class CanvasManager:
         self._overlapping_width = width_1 - self._x2
         if self._overlapping_width <= 0:
             raise ValueError("Images do not overlap; invalid two-image minimize_blend configuration")
+        self.overlap_pad = min(self.overlap_pad, max(0, min(self._x2 - self._x1, self.canvas_info.width - width_1)))
 
         blend_width = self._overlapping_width + 2 * self.overlap_pad
         if self.minimize_blend:

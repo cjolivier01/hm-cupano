@@ -152,6 +152,37 @@ def test_cuda_pano_soft_seam_single_level_matches_binary_mask(
     assert_tensor_equal(out, expected, tol=1e-5)
 
 
+def test_cuda_pano_max_output_width_does_not_mutate_input_masks(device: torch.device) -> None:
+    width = 64
+    height = 16
+    x2 = 32
+    canvas_width = width + x2
+    seam = np.zeros((height, canvas_width), dtype=np.uint8)
+    seam[:, :48] = 1
+    masks = make_two_masks(width, height, seam, x2)
+
+    pano = CudaStitchPano(1, 0, masks, quiet=True, max_output_width=48)
+
+    assert pano.canvas_width() == 48
+    assert masks.canvas_width() == canvas_width
+    assert masks.canvas_height() == height
+
+
+def test_cuda_pano_legacy_positional_max_output_width(device: torch.device) -> None:
+    width = 64
+    height = 16
+    x2 = 32
+    canvas_width = width + x2
+    seam = np.zeros((height, canvas_width), dtype=np.uint8)
+    seam[:, :48] = 1
+    masks = make_two_masks(width, height, seam, x2)
+
+    pano = CudaStitchPano(1, 0, masks, True, True, 48)
+
+    assert pano.status.ok()
+    assert pano.canvas_width() == 48
+
+
 def test_cuda_pano_minimize_blend_changes_workspace_size(
     device: torch.device, tmp_path
 ) -> None:
@@ -244,3 +275,22 @@ def test_cuda_pano_n_hard_seam_selects_indexed_image(device: torch.device) -> No
     expected[:, :, 16:32, :] = images[1][:, :, 16:32, :]
     expected[:, :, 32:, :] = images[2][:, :, 32:, :]
     assert_tensor_equal(out, expected)
+
+
+def test_cuda_pano_n_max_output_width_does_not_mutate_input_masks(device: torch.device) -> None:
+    width = 48
+    height = 24
+    seam = np.zeros((height, 120), dtype=np.uint8)
+    seam[:, 40:80] = 1
+    seam[:, 80:] = 2
+    masks = make_n_masks(
+        [(width, height), (width, height), (width, height)],
+        [(0, 0), (36, 0), (72, 0)],
+        seam,
+    )
+
+    pano = CudaStitchPanoN(1, 0, masks, quiet=True, max_output_width=60)
+
+    assert pano.canvas_width() == 60
+    assert masks.canvas_width() == 120
+    assert masks.canvas_height() == height

@@ -27,20 +27,25 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
     int batch_size,
     int num_levels,
     const ControlMasks3& control_masks,
-    bool quiet) {
+    bool quiet,
+    int max_output_width) {
   if (!control_masks.is_valid()) {
     status_ = CudaStatus(cudaErrorFileNotFound, "Stitching masks (3‐image) were not able to be loaded");
     return;
   }
+  ControlMasks3 scaled_control_masks = control_masks;
+  scaled_control_masks.scale_to_max_output_width(max_output_width);
+  const ControlMasks3& masks = scaled_control_masks;
+
   // 1) Create stitch_context:
   stitch_context_ = std::make_unique<StitchingContext3<T_pipeline, T_compute>>(
       /*batch_size=*/batch_size,
       /*is_hard_seam=*/(num_levels == 0));
 
   // 2) CanvasManager3:
-  assert(control_masks.positions.size() == 3);
-  const int canvas_w = static_cast<int>(control_masks.canvas_width());
-  const int canvas_h = static_cast<int>(control_masks.canvas_height());
+  assert(masks.positions.size() == 3);
+  const int canvas_w = static_cast<int>(masks.canvas_width());
+  const int canvas_h = static_cast<int>(masks.canvas_height());
 
   if (!quiet) {
     std::cout << "Stitched (3‐image) canvas size: " << canvas_w << " x " << canvas_h << std::endl;
@@ -51,24 +56,24 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
           .width = canvas_w,
           .height = canvas_h,
           .positions =
-              {cv::Point(control_masks.positions[0].xpos, control_masks.positions[0].ypos),
-               cv::Point(control_masks.positions[1].xpos, control_masks.positions[1].ypos),
-               cv::Point(control_masks.positions[2].xpos, control_masks.positions[2].ypos)}},
+	              {cv::Point(masks.positions[0].xpos, masks.positions[0].ypos),
+	               cv::Point(masks.positions[1].xpos, masks.positions[1].ypos),
+	               cv::Point(masks.positions[2].xpos, masks.positions[2].ypos)}},
       /*minimize_blend=*/!stitch_context_->is_hard_seam());
 
   // Remapping image sizes:
-  canvas_manager_->_remapper_0.width = control_masks.img0_col.cols;
-  canvas_manager_->_remapper_0.height = control_masks.img0_col.rows;
-  canvas_manager_->_remapper_1.width = control_masks.img1_col.cols;
-  canvas_manager_->_remapper_1.height = control_masks.img1_col.rows;
-  canvas_manager_->_remapper_2.width = control_masks.img2_col.cols;
-  canvas_manager_->_remapper_2.height = control_masks.img2_col.rows;
+  canvas_manager_->_remapper_0.width = masks.img0_col.cols;
+  canvas_manager_->_remapper_0.height = masks.img0_col.rows;
+  canvas_manager_->_remapper_1.width = masks.img1_col.cols;
+  canvas_manager_->_remapper_1.height = masks.img1_col.rows;
+  canvas_manager_->_remapper_2.width = masks.img2_col.cols;
+  canvas_manager_->_remapper_2.height = masks.img2_col.rows;
 
   canvas_manager_->updateMinimizeBlend(
-      control_masks.img0_col.size(), control_masks.img1_col.size(), control_masks.img2_col.size());
+      masks.img0_col.size(), masks.img1_col.size(), masks.img2_col.size());
 
   // Load the seam mask (3‐channel) if soft‐seam, else load single‐channel:
-  cv::Mat seam_indexed = control_masks.whole_seam_mask_image; // CV_8UC3 if soft-seam
+  cv::Mat seam_indexed = masks.whole_seam_mask_image; // CV_8UC3 if soft-seam
   assert(seam_indexed.type() == CV_8UC1);
 
   if (!stitch_context_->is_hard_seam()) {
@@ -93,13 +98,13 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
   }
 
   // Now load the remappers into context:
-  assert(control_masks.img0_col.type() == CV_16U);
-  stitch_context_->remap_0_x = std::make_unique<CudaMat<uint16_t>>(control_masks.img0_col);
-  stitch_context_->remap_0_y = std::make_unique<CudaMat<uint16_t>>(control_masks.img0_row);
-  stitch_context_->remap_1_x = std::make_unique<CudaMat<uint16_t>>(control_masks.img1_col);
-  stitch_context_->remap_1_y = std::make_unique<CudaMat<uint16_t>>(control_masks.img1_row);
-  stitch_context_->remap_2_x = std::make_unique<CudaMat<uint16_t>>(control_masks.img2_col);
-  stitch_context_->remap_2_y = std::make_unique<CudaMat<uint16_t>>(control_masks.img2_row);
+  assert(masks.img0_col.type() == CV_16U);
+  stitch_context_->remap_0_x = std::make_unique<CudaMat<uint16_t>>(masks.img0_col);
+  stitch_context_->remap_0_y = std::make_unique<CudaMat<uint16_t>>(masks.img0_row);
+  stitch_context_->remap_1_x = std::make_unique<CudaMat<uint16_t>>(masks.img1_col);
+  stitch_context_->remap_1_y = std::make_unique<CudaMat<uint16_t>>(masks.img1_row);
+  stitch_context_->remap_2_x = std::make_unique<CudaMat<uint16_t>>(masks.img2_col);
+  stitch_context_->remap_2_y = std::make_unique<CudaMat<uint16_t>>(masks.img2_row);
 }
 
 namespace tmp3 {

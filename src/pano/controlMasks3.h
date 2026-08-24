@@ -21,6 +21,7 @@ class ControlMasks3 {
 
   size_t canvas_width() const;
   size_t canvas_height() const;
+  void scale_to_max_output_width(int max_output_width);
 
   // Per-pixel remapping for image #0 (16U each)
   cv::Mat img0_col;

@@ -195,6 +195,38 @@ TEST(CudaStitchPano3_SoftSeamTrivial, OneHotLabelSelectsMiddleImage) {
   EXPECT_NEAR(pixel[3], 255.0f, 1e-3f);
 }
 
+TEST(CudaStitchPano3_MaxOutputWidth, ConstructorScalesMasksBeforeCanvasAllocation) {
+  constexpr int W = 64;
+  constexpr int H = 32;
+  cv::Mat seam_mask(H, 160, CV_8U, cv::Scalar(0));
+  seam_mask.colRange(48, 96).setTo(1);
+  seam_mask.colRange(96, 160).setTo(2);
+
+  ControlMasks3 masks;
+  masks.img0_col = cv::Mat(H, W, CV_16U, cv::Scalar(0));
+  masks.img0_row = cv::Mat(H, W, CV_16U, cv::Scalar(0));
+  masks.img1_col = cv::Mat(H, W, CV_16U, cv::Scalar(0));
+  masks.img1_row = cv::Mat(H, W, CV_16U, cv::Scalar(0));
+  masks.img2_col = cv::Mat(H, W, CV_16U, cv::Scalar(0));
+  masks.img2_row = cv::Mat(H, W, CV_16U, cv::Scalar(0));
+  masks.whole_seam_mask_image = seam_mask;
+  masks.positions = {SpatialTiff{0.0f, 0.0f}, SpatialTiff{48.0f, 0.0f}, SpatialTiff{96.0f, 0.0f}};
+  ASSERT_TRUE(masks.is_valid());
+
+  hm::pano::cuda::CudaStitchPano3<float4, float4> stitch(
+      /*batch_size=*/1,
+      /*num_levels=*/0,
+      masks,
+      /*quiet=*/true,
+      /*max_output_width=*/80);
+
+  ASSERT_TRUE(stitch.status().ok()) << stitch.status().message();
+  EXPECT_EQ(stitch.canvas_width(), 80);
+  EXPECT_EQ(stitch.canvas_height(), 16);
+  EXPECT_EQ(masks.canvas_width(), 160u);
+  EXPECT_EQ(masks.canvas_height(), 32u);
+}
+
 #if 0
 // Helper to compute expected average (integer truncation for uchar, exact for float)
 template <typename T>

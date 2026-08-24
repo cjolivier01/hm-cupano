@@ -80,7 +80,13 @@ struct StitchingContextN {
 template <typename T_pipeline, typename T_compute>
 class CudaStitchPanoN {
  public:
-  CudaStitchPanoN(int batch_size, int num_levels, const ControlMasksN& control_masks, bool minimize_blend, bool quiet);
+  CudaStitchPanoN(
+      int batch_size,
+      int num_levels,
+      const ControlMasksN& control_masks,
+      bool minimize_blend,
+      bool quiet,
+      int max_output_width = 0);
   int canvas_width() const {
     return canvas_manager_->canvas_width();
   }
