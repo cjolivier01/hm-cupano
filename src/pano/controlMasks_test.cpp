@@ -5,7 +5,9 @@
 
 #include <gtest/gtest.h>
 #include <tiffio.h>
+#include <unistd.h>
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 namespace hm::pano {
@@ -89,6 +91,28 @@ bool write_control_masks_files(const std::filesystem::path& dir, bool valid_posi
   return cv::imwrite((dir / "seam_file.png").string(), seam);
 }
 
+bool write_control_masks3_files(const std::filesystem::path& dir) {
+  std::filesystem::create_directories(dir);
+  if (!write_tiff(dir / "mapping_0000.tif", 8, 4, 0.0f, 0.0f) ||
+      !write_tiff(dir / "mapping_0001.tif", 8, 4, 8.0f, 0.0f) ||
+      !write_tiff(dir / "mapping_0002.tif", 8, 4, 16.0f, 0.0f)) {
+    return false;
+  }
+  for (int index = 0; index < 3; ++index) {
+    if (!cv::imwrite((dir / ("mapping_000" + std::to_string(index) + "_x.tif")).string(), remap(4, 8, 10)) ||
+        !cv::imwrite((dir / ("mapping_000" + std::to_string(index) + "_y.tif")).string(), remap(4, 8, 100))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool write_text_file(const std::filesystem::path& path, const std::string& text) {
+  std::ofstream out(path, std::ios::binary);
+  out << text;
+  return out.good();
+}
+
 TEST(ControlMasksTest, ScaleToMaxOutputWidthPreservesUnmappedSentinel) {
   ControlMasks masks;
   masks.img1_col = remap(8, 8, 10);
@@ -143,6 +167,40 @@ TEST(ControlMasksTest, FailedLoadClearsPreviousState) {
   EXPECT_TRUE(masks.load(valid.string()));
   EXPECT_TRUE(masks.is_valid());
   EXPECT_FALSE(masks.load(invalid.string()));
+  EXPECT_FALSE(masks.is_valid());
+
+  std::filesystem::remove_all(root);
+}
+
+TEST(ControlMasksTest, LoadRejectsCorruptSeamAndMismatchedRemapDimensions) {
+  const std::filesystem::path root =
+      std::filesystem::temp_directory_path() / ("cupano-control-masks-corrupt-test-" + std::to_string(::getpid()));
+  const std::filesystem::path corrupt = root / "corrupt";
+  const std::filesystem::path mismatch = root / "mismatch";
+  std::filesystem::remove_all(root);
+  ASSERT_TRUE(write_control_masks_files(corrupt, true));
+  ASSERT_TRUE(write_text_file(corrupt / "seam_file.png", "not a png"));
+  EXPECT_FALSE(ControlMasks(corrupt.string()).is_valid());
+
+  ASSERT_TRUE(write_control_masks_files(mismatch, true));
+  ASSERT_TRUE(cv::imwrite((mismatch / "mapping_0001_y.tif").string(), remap(400, 400, 300)));
+  EXPECT_FALSE(ControlMasks(mismatch.string(), /*max_output_width=*/16).is_valid());
+
+  std::filesystem::remove_all(root);
+}
+
+TEST(ControlMasksNTest, LoadRejectsMismatchedRemapDimensionsBeforeDecode) {
+  const std::filesystem::path root =
+      std::filesystem::temp_directory_path() / ("cupano-control-masks-n-mismatch-test-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(root);
+  ASSERT_TRUE(write_control_masks3_files(root));
+  ASSERT_TRUE(cv::imwrite((root / "mapping_0002_y.tif").string(), remap(400, 400, 300)));
+  cv::Mat seam(4, 24, CV_8U, cv::Scalar(0));
+  seam.colRange(8, 16).setTo(1);
+  seam.colRange(16, 24).setTo(2);
+  ASSERT_TRUE(cv::imwrite((root / "seam_file.png").string(), seam));
+
+  ControlMasksN masks(root.string(), 3, /*max_output_width=*/24);
   EXPECT_FALSE(masks.is_valid());
 
   std::filesystem::remove_all(root);
@@ -258,6 +316,33 @@ TEST(ControlMasks3Test, ScaleToMaxOutputWidthRejectsCollapsedSeamClass) {
 
   EXPECT_FALSE(masks.scale_to_max_output_width(2));
   EXPECT_FALSE(masks.is_valid());
+}
+
+TEST(ControlMasks3Test, LoadRejectsCorruptSeam) {
+  const std::filesystem::path root =
+      std::filesystem::temp_directory_path() / ("cupano-control-masks3-corrupt-test-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(root);
+  ASSERT_TRUE(write_control_masks3_files(root));
+  ASSERT_TRUE(write_text_file(root / "seam_file.png", "not a png"));
+
+  ControlMasks3 masks(root.string());
+  EXPECT_FALSE(masks.is_valid());
+
+  std::filesystem::remove_all(root);
+}
+
+TEST(ControlMasks3Test, LoadRejectsMismatchedRemapDimensionsBeforeDecode) {
+  const std::filesystem::path root =
+      std::filesystem::temp_directory_path() / ("cupano-control-masks3-mismatch-test-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(root);
+  ASSERT_TRUE(write_control_masks3_files(root));
+  ASSERT_TRUE(cv::imwrite((root / "mapping_0002_y.tif").string(), remap(400, 400, 300)));
+  ASSERT_TRUE(write_text_file(root / "seam_file.png", "not needed"));
+
+  ControlMasks3 masks(root.string(), /*max_output_width=*/24);
+  EXPECT_FALSE(masks.is_valid());
+
+  std::filesystem::remove_all(root);
 }
 
 TEST(CanvasManagerTest, MinimizeBlendClampsPaddingToScaledCanvas) {

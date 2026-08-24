@@ -43,10 +43,17 @@ static std::optional<SpatialTiff> get_geo_tiffN(const std::string& filename) {
   info.xPosition = xpos;
   info.yPosition = ypos;
   TIFFClose(tif);
-  if (!has_resolution || !has_position) {
+  if (!has_resolution || !has_position || !std::isfinite(info.xResolution) || !std::isfinite(info.yResolution) ||
+      info.xResolution <= 0.0f || info.yResolution <= 0.0f || !std::isfinite(info.xPosition) ||
+      !std::isfinite(info.yPosition)) {
     return std::nullopt;
   }
-  return SpatialTiff{.xpos = info.xPosition * info.xResolution, .ypos = info.yPosition * info.yResolution};
+  const float scaled_xpos = info.xPosition * info.xResolution;
+  const float scaled_ypos = info.yPosition * info.yResolution;
+  if (!std::isfinite(scaled_xpos) || !std::isfinite(scaled_ypos)) {
+    return std::nullopt;
+  }
+  return SpatialTiff{.xpos = scaled_xpos, .ypos = scaled_ypos};
 }
 
 static std::optional<cv::Size> read_tiff_size(const std::string& filename) {
@@ -281,8 +288,14 @@ bool ControlMasksN::load(const std::string& dirIn, int n_images, int max_output_
     std::string mapping_y = dir + buf_y;
 
     const auto size = read_tiff_size(mapping_x);
-    if (!size) {
+    const auto row_size = read_tiff_size(mapping_y);
+    if (!size || !row_size) {
       std::cerr << "Unable to load remap metadata for index " << i << " from " << mapping_x << std::endl;
+      clear_control_masksN(*this);
+      return false;
+    }
+    if (*size != *row_size) {
+      std::cerr << "Remap X/Y dimensions do not match for index " << i << std::endl;
       clear_control_masksN(*this);
       return false;
     }

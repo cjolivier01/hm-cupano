@@ -63,10 +63,17 @@ static std::optional<SpatialTiff> get_geo_tiff3(const std::string& filename) {
   }
 
   TIFFClose(tif);
-  if (!info.validResolution || !has_x_position || !has_y_position) {
+  if (!info.validResolution || !has_x_position || !has_y_position || !std::isfinite(info.xResolution) ||
+      !std::isfinite(info.yResolution) || info.xResolution <= 0.0f || info.yResolution <= 0.0f ||
+      !std::isfinite(info.xPosition) || !std::isfinite(info.yPosition)) {
     return std::nullopt;
   }
-  return SpatialTiff{.xpos = info.xPosition * info.xResolution, .ypos = info.yPosition * info.yResolution};
+  const float scaled_xpos = info.xPosition * info.xResolution;
+  const float scaled_ypos = info.yPosition * info.yResolution;
+  if (!std::isfinite(scaled_xpos) || !std::isfinite(scaled_ypos)) {
+    return std::nullopt;
+  }
+  return SpatialTiff{.xpos = scaled_xpos, .ypos = scaled_ypos};
 }
 
 static std::optional<cv::Size> read_tiff_size(const std::string& filename) {
@@ -221,10 +228,9 @@ cv::Mat load_seam_mask3(const std::string& filename) {
   cv::Mat seam_mask = imreadPalettedAsIndex(filename);
   // cv::Mat seam_mask_dest = seam_mask.clone();
   if (!seam_mask.empty()) {
-    std::vector<int> unique_values = get_unique_values(seam_mask);
-    assert(*unique_values.begin() == 0);
-    assert(*unique_values.rbegin() == unique_values.size() - 1);
-    assert(unique_values.size() == 3);
+    if (!indexed_seam_has_all_classes3(seam_mask)) {
+      throw std::runtime_error("3-image seam mask does not contain exactly labels 0, 1, and 2");
+    }
   }
   return seam_mask;
 }
@@ -393,8 +399,16 @@ bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
   const auto img0_size = read_tiff_size(mapping0_x);
   const auto img1_size = read_tiff_size(mapping1_x);
   const auto img2_size = read_tiff_size(mapping2_x);
-  if (!img0_size || !img1_size || !img2_size) {
+  const auto img0_row_size = read_tiff_size(mapping0_y);
+  const auto img1_row_size = read_tiff_size(mapping1_y);
+  const auto img2_row_size = read_tiff_size(mapping2_y);
+  if (!img0_size || !img1_size || !img2_size || !img0_row_size || !img1_row_size || !img2_row_size) {
     std::cerr << "Unable to load 3-image remap metadata" << std::endl;
+    clear_control_masks3(*this);
+    return false;
+  }
+  if (*img0_size != *img0_row_size || *img1_size != *img1_row_size || *img2_size != *img2_row_size) {
+    std::cerr << "3-image remap X/Y dimensions do not match" << std::endl;
     clear_control_masks3(*this);
     return false;
   }

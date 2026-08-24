@@ -232,10 +232,17 @@ TiffInfo getTiffInfo(const std::string& filename) {
  */
 std::optional<SpatialTiff> get_geo_tiff(const std::string& filename) {
   TiffInfo info = getTiffInfo(filename);
-  if (!info.validResolution || !info.hasGeoTiePoints) {
+  if (!info.validResolution || !info.hasGeoTiePoints || !std::isfinite(info.xResolution) ||
+      !std::isfinite(info.yResolution) || info.xResolution <= 0.0f || info.yResolution <= 0.0f ||
+      !std::isfinite(info.xPosition) || !std::isfinite(info.yPosition)) {
     return std::nullopt;
   }
-  return SpatialTiff{.xpos = info.xPosition * info.xResolution, .ypos = info.yPosition * info.yResolution};
+  const float xpos = info.xPosition * info.xResolution;
+  const float ypos = info.yPosition * info.yResolution;
+  if (!std::isfinite(xpos) || !std::isfinite(ypos)) {
+    return std::nullopt;
+  }
+  return SpatialTiff{.xpos = xpos, .ypos = ypos};
 }
 
 /**
@@ -463,8 +470,15 @@ bool ControlMasks::load(std::string game_dir, int max_output_width) {
   positions = normalize_positions({*p0, *p1});
   const auto img1_size = read_tiff_size(mapping_0_x);
   const auto img2_size = read_tiff_size(mapping_1_x);
-  if (!img1_size || !img2_size) {
+  const auto img1_row_size = read_tiff_size(mapping_0_y);
+  const auto img2_row_size = read_tiff_size(mapping_1_y);
+  if (!img1_size || !img2_size || !img1_row_size || !img2_row_size) {
     std::cerr << "Unable to load remap metadata from " << mapping_0_x << " / " << mapping_1_x << std::endl;
+    clear_control_masks(*this);
+    return false;
+  }
+  if (*img1_size != *img1_row_size || *img2_size != *img2_row_size) {
+    std::cerr << "Remap X/Y dimensions do not match" << std::endl;
     clear_control_masks(*this);
     return false;
   }
@@ -522,7 +536,14 @@ bool ControlMasks::load(std::string game_dir, int max_output_width) {
   }
 
   // Load and process the seam mask.
-  auto optional_whole_seam_mask_image = load_seam_mask(whole_seam_mask);
+  std::optional<cv::Mat> optional_whole_seam_mask_image;
+  try {
+    optional_whole_seam_mask_image = load_seam_mask(whole_seam_mask);
+  } catch (const std::exception& e) {
+    std::cerr << "Unable to load seam or masking file: " << whole_seam_mask << " (" << e.what() << ")" << std::endl;
+    clear_control_masks(*this);
+    return false;
+  }
   if (!optional_whole_seam_mask_image || optional_whole_seam_mask_image->empty()) {
     std::cerr << "Unable to load seam or masking file: " << whole_seam_mask << std::endl;
     clear_control_masks(*this);
