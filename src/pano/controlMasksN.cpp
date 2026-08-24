@@ -171,6 +171,37 @@ cv::Size canvas_sizeN(const std::vector<ScaledPlacementN>& placements) {
   return cv::Size(width, height);
 }
 
+double scale_to_fit_max_widthN(
+    const std::vector<SpatialTiff>& positions,
+    const std::vector<cv::Size>& sizes,
+    size_t native_width,
+    int max_output_width) {
+  double low = 0.0;
+  double high = static_cast<double>(max_output_width) / static_cast<double>(native_width);
+  std::vector<ScaledPlacementN> direct_placements;
+  direct_placements.reserve(positions.size());
+  for (size_t i = 0; i < positions.size(); ++i) {
+    direct_placements.push_back(scaled_placementN(positions[i], sizes[i], high));
+  }
+  if (canvas_sizeN(direct_placements).width <= max_output_width) {
+    return high;
+  }
+  for (int iteration = 0; iteration < 32; ++iteration) {
+    const double mid = (low + high) / 2.0;
+    std::vector<ScaledPlacementN> placements;
+    placements.reserve(positions.size());
+    for (size_t i = 0; i < positions.size(); ++i) {
+      placements.push_back(scaled_placementN(positions[i], sizes[i], mid));
+    }
+    if (canvas_sizeN(placements).width <= max_output_width) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+  return low > 0.0 ? low : high;
+}
+
 } // namespace
 
 bool ControlMasksN::load(const std::string& dirIn, int n_images) {
@@ -273,7 +304,13 @@ void ControlMasksN::scale_to_max_output_width(int max_output_width) {
   if (!is_valid() || max_output_width <= 0 || canvas_width() <= static_cast<size_t>(max_output_width)) {
     return;
   }
-  const double scale = static_cast<double>(max_output_width) / static_cast<double>(canvas_width());
+  const size_t native_width = canvas_width();
+  std::vector<cv::Size> native_sizes;
+  native_sizes.reserve(img_col.size());
+  for (const auto& remap : img_col) {
+    native_sizes.push_back(remap.size());
+  }
+  const double scale = scale_to_fit_max_widthN(positions, native_sizes, native_width, max_output_width);
   std::vector<ScaledPlacementN> placements;
   placements.reserve(img_col.size());
   for (size_t i = 0; i < img_col.size(); ++i) {

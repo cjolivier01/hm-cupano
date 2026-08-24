@@ -108,6 +108,37 @@ cv::Size canvas_size(const std::vector<ScaledPlacement>& placements) {
   return cv::Size(width, height);
 }
 
+double scale_to_fit_max_width(
+    const std::vector<SpatialTiff>& positions,
+    const std::vector<cv::Size>& sizes,
+    size_t native_width,
+    int max_output_width) {
+  double low = 0.0;
+  double high = static_cast<double>(max_output_width) / static_cast<double>(native_width);
+  std::vector<ScaledPlacement> direct_placements;
+  direct_placements.reserve(positions.size());
+  for (size_t i = 0; i < positions.size(); ++i) {
+    direct_placements.push_back(scaled_placement(positions[i], sizes[i], high));
+  }
+  if (canvas_size(direct_placements).width <= max_output_width) {
+    return high;
+  }
+  for (int iteration = 0; iteration < 32; ++iteration) {
+    const double mid = (low + high) / 2.0;
+    std::vector<ScaledPlacement> placements;
+    placements.reserve(positions.size());
+    for (size_t i = 0; i < positions.size(); ++i) {
+      placements.push_back(scaled_placement(positions[i], sizes[i], mid));
+    }
+    if (canvas_size(placements).width <= max_output_width) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+  return low > 0.0 ? low : high;
+}
+
 /**
  * @brief Reads TIFF metadata such as resolution and X/Y positions from a file.
  *
@@ -325,7 +356,12 @@ void ControlMasks::scale_to_max_output_width(int max_output_width) {
     return;
   }
 
-  const double scale = static_cast<double>(max_output_width) / static_cast<double>(canvas_width());
+  const size_t native_width = canvas_width();
+  const double scale = scale_to_fit_max_width(
+      positions,
+      {img1_col.size(), img2_col.size()},
+      native_width,
+      max_output_width);
   const std::vector<ScaledPlacement> placements{
       scaled_placement(positions[0], img1_col.size(), scale),
       scaled_placement(positions[1], img2_col.size(), scale),

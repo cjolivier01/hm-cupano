@@ -86,6 +86,39 @@ def _scaled_canvas_size(positions: list[SpatialTiff], shapes: list[tuple[int, in
     return max(1, width), max(1, height)
 
 
+def _scale_to_fit_max_width(
+    positions: list[SpatialTiff],
+    shapes: list[tuple[int, int]],
+    native_width: int,
+    max_output_width: int,
+) -> float:
+    low = 0.0
+    high = float(max_output_width) / float(native_width)
+    direct_positions: list[SpatialTiff] = []
+    direct_shapes: list[tuple[int, int]] = []
+    for position, shape in zip(positions, shapes, strict=True):
+        xpos, width = _scale_span(position.xpos, shape[1], high)
+        ypos, height = _scale_span(position.ypos, shape[0], high)
+        direct_positions.append(SpatialTiff(xpos=xpos, ypos=ypos))
+        direct_shapes.append((height, width))
+    if _scaled_canvas_size(direct_positions, direct_shapes)[0] <= max_output_width:
+        return high
+    for _ in range(32):
+        mid = (low + high) / 2.0
+        scaled_positions: list[SpatialTiff] = []
+        scaled_shapes: list[tuple[int, int]] = []
+        for position, shape in zip(positions, shapes, strict=True):
+            xpos, width = _scale_span(position.xpos, shape[1], mid)
+            ypos, height = _scale_span(position.ypos, shape[0], mid)
+            scaled_positions.append(SpatialTiff(xpos=xpos, ypos=ypos))
+            scaled_shapes.append((height, width))
+        if _scaled_canvas_size(scaled_positions, scaled_shapes)[0] <= max_output_width:
+            low = mid
+        else:
+            high = mid
+    return low if low > 0.0 else high
+
+
 def _resize_nearest(array: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
     resized = cv2.resize(array, (shape[1], shape[0]), interpolation=cv2.INTER_NEAREST)
     return resized.astype(array.dtype, copy=False)
@@ -157,7 +190,8 @@ class ControlMasks:
         canvas_width = self.canvas_width()
         if canvas_width <= max_output_width:
             return
-        scale = float(max_output_width) / float(canvas_width)
+        native_shapes = [self.img1_col.shape, self.img2_col.shape]
+        scale = _scale_to_fit_max_width(self.positions, native_shapes, canvas_width, max_output_width)
         scaled_positions: list[SpatialTiff] = []
         shapes: list[tuple[int, int]] = []
         for position, remap in (
@@ -236,7 +270,8 @@ class ControlMasksN:
         canvas_width = self.canvas_width()
         if canvas_width <= max_output_width:
             return
-        scale = float(max_output_width) / float(canvas_width)
+        native_shapes = [remap.shape for remap in self.img_col]
+        scale = _scale_to_fit_max_width(self.positions, native_shapes, canvas_width, max_output_width)
         scaled_positions: list[SpatialTiff] = []
         shapes: list[tuple[int, int]] = []
         for position, remap in zip(self.positions, self.img_col, strict=True):
