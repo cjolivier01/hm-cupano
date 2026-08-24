@@ -111,6 +111,11 @@ std::vector<int> get_unique_values(const cv::Mat& gray) {
   return std::vector<int>(uniq.begin(), uniq.end());
 }
 
+bool indexed_seam_has_all_classes3(const cv::Mat& indexed) {
+  const auto uniq = get_unique_values(indexed);
+  return uniq.size() == 3 && uniq.front() == 0 && uniq.back() == 2;
+}
+
 /**
  * Load a paletted (indexed) PNG as a single‐channel 8-bit Mat of palette‐indices.
  * Throws std::runtime_error on any error (non-paletted, file not found, etc.).
@@ -452,6 +457,10 @@ bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
   if (whole_seam_mask_image.size() != effective_canvas_size) {
     whole_seam_mask_image = resize_nearest3(whole_seam_mask_image, effective_canvas_size);
   }
+  if (!indexed_seam_has_all_classes3(whole_seam_mask_image)) {
+    std::cerr << "Scaled 3-image seam mask lost one or more image classes: " << seam_filename << std::endl;
+    return false;
+  }
   positions = {placements[0].position, placements[1].position, placements[2].position};
 
   return true;
@@ -479,9 +488,9 @@ size_t ControlMasks3::canvas_height() const {
   return static_cast<size_t>(std::max({h0, h1, h2}));
 }
 
-void ControlMasks3::scale_to_max_output_width(int max_output_width) {
+bool ControlMasks3::scale_to_max_output_width(int max_output_width) {
   if (!is_valid() || max_output_width <= 0 || canvas_width() <= static_cast<size_t>(max_output_width)) {
-    return;
+    return is_valid();
   }
 
   const size_t native_width = canvas_width();
@@ -499,7 +508,11 @@ void ControlMasks3::scale_to_max_output_width(int max_output_width) {
   img2_col = resize_remap_preserving_unmapped3(img2_col, placements[2].size);
   img2_row = resize_remap_preserving_unmapped3(img2_row, img2_col.size());
   whole_seam_mask_image = resize_nearest3(whole_seam_mask_image, canvas_size3(placements));
+  if (!indexed_seam_has_all_classes3(whole_seam_mask_image)) {
+    return false;
+  }
   positions = {placements[0].position, placements[1].position, placements[2].position};
+  return true;
 }
 
 } // namespace pano

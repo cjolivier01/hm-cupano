@@ -137,7 +137,10 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
   std::optional<ControlMasksN> scaled_control_masks;
   if (max_output_width > 0 && control_masks.canvas_width() > static_cast<size_t>(max_output_width)) {
     scaled_control_masks = control_masks;
-    scaled_control_masks->scale_to_max_output_width(max_output_width);
+    if (!scaled_control_masks->scale_to_max_output_width(max_output_width)) {
+      status_ = CudaStatus(cudaErrorInvalidValue, "max_output_width removes one or more N-image seam classes");
+      return;
+    }
   }
   const ControlMasksN& masks = scaled_control_masks ? *scaled_control_masks : control_masks;
 

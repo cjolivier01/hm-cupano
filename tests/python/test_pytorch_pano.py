@@ -294,3 +294,24 @@ def test_cuda_pano_n_max_output_width_does_not_mutate_input_masks(device: torch.
     assert pano.canvas_width() == 60
     assert masks.canvas_width() == 120
     assert masks.canvas_height() == height
+
+
+def test_python_loaders_return_false_for_missing_mapping_metadata(tmp_path) -> None:
+    assert not ControlMasks().load(str(tmp_path), max_output_width=48)
+    assert not ControlMasksN().load(str(tmp_path), 3, max_output_width=48)
+
+
+def test_cuda_pano_n_max_output_width_rejects_collapsed_seam_class(device: torch.device) -> None:
+    height = 4
+    seam = np.zeros((height, 120), dtype=np.uint8)
+    seam[:, 40:80] = 1
+    seam[:, 80:] = 2
+    masks = make_n_masks(
+        [(40, height), (40, height), (40, height)],
+        [(0, 0), (40, 0), (80, 0)],
+        seam,
+    )
+
+    pano = CudaStitchPanoN(1, 0, masks, quiet=True, max_output_width=2)
+
+    assert not pano.status.ok()

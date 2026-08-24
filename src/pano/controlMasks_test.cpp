@@ -128,6 +128,18 @@ TEST(ControlMasksNTest, ScaleToMaxOutputWidthKeepsIndexedSeamAlignedWithRoundedC
   EXPECT_EQ(masks.positions[2].xpos, 6.0f);
 }
 
+TEST(ControlMasksNTest, ScaleToMaxOutputWidthRejectsCollapsedSeamClass) {
+  ControlMasksN masks;
+  masks.img_col = {remap(4, 40, 10), remap(4, 40, 100), remap(4, 40, 200)};
+  masks.img_row = {remap(4, 40, 300), remap(4, 40, 400), remap(4, 40, 500)};
+  masks.whole_seam_mask_indexed = cv::Mat(4, 120, CV_8U, cv::Scalar(0));
+  masks.whole_seam_mask_indexed.colRange(40, 80).setTo(1);
+  masks.whole_seam_mask_indexed.colRange(80, 120).setTo(2);
+  masks.positions = {{0.0f, 0.0f}, {40.0f, 0.0f}, {80.0f, 0.0f}};
+
+  EXPECT_FALSE(masks.scale_to_max_output_width(2));
+}
+
 TEST(CanvasManagerTest, MinimizeBlendClampsPaddingToScaledCanvas) {
   CanvasInfo canvas_info;
   canvas_info.width = 10;

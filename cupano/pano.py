@@ -599,7 +599,11 @@ class CudaStitchPanoN:
         original_canvas_width = control_masks.canvas_width()
         if max_output_width > 0 and original_canvas_width > max_output_width:
             control_masks = copy.copy(control_masks)
-            control_masks.scale_to_max_output_width(max_output_width)
+            if not control_masks.scale_to_max_output_width(max_output_width):
+                self._status = CudaStatus(
+                    2, "max_output_width removes one or more N-image seam classes"
+                )
+                return
 
         n = len(control_masks.img_col)
         if n < 2 or n > 8:

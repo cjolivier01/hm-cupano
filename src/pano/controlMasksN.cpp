@@ -88,6 +88,11 @@ static std::vector<int> get_unique_values(const cv::Mat& gray) {
   return std::vector<int>(uniq.begin(), uniq.end());
 }
 
+static bool indexed_seam_has_all_classes(const cv::Mat& indexed, int n_images) {
+  const auto uniq = get_unique_values(indexed);
+  return !uniq.empty() && static_cast<int>(uniq.size()) == n_images && uniq.front() == 0 && uniq.back() == n_images - 1;
+}
+
 static cv::Mat imreadPalettedAsIndex(const std::string& filename) {
   FILE* fp = fopen(filename.c_str(), "rb");
   if (!fp) {
@@ -383,9 +388,9 @@ size_t ControlMasksN::canvas_height() const {
   return static_cast<size_t>(maxh);
 }
 
-void ControlMasksN::scale_to_max_output_width(int max_output_width) {
+bool ControlMasksN::scale_to_max_output_width(int max_output_width) {
   if (!is_valid() || max_output_width <= 0 || canvas_width() <= static_cast<size_t>(max_output_width)) {
-    return;
+    return is_valid();
   }
   const size_t native_width = canvas_width();
   std::vector<cv::Size> native_sizes;
@@ -405,6 +410,10 @@ void ControlMasksN::scale_to_max_output_width(int max_output_width) {
     positions[i] = placements[i].position;
   }
   whole_seam_mask_indexed = resize_nearest(whole_seam_mask_indexed, canvas_sizeN(placements));
+  if (!indexed_seam_has_all_classes(whole_seam_mask_indexed, static_cast<int>(img_col.size()))) {
+    return false;
+  }
+  return true;
 }
 
 cv::Mat ControlMasksN::split_to_channels(const cv::Mat& indexed, int n_images) {

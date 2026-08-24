@@ -24,7 +24,7 @@ class ControlMasksN {
 
   size_t canvas_width() const;
   size_t canvas_height() const;
-  void scale_to_max_output_width(int max_output_width);
+  bool scale_to_max_output_width(int max_output_width);
 
   // Per-image remap col/row (CV_16U)
   std::vector<cv::Mat> img_col; // size N

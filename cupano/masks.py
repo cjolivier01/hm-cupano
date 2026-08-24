@@ -56,6 +56,11 @@ def _read_tiff_shape(path: str | Path) -> tuple[int, int]:
     return int(shape[0]), int(shape[1])
 
 
+def _indexed_seam_has_all_classes(indexed: np.ndarray, n_images: int) -> bool:
+    uniq = np.unique(indexed)
+    return bool(uniq.size == n_images and uniq[0] == 0 and uniq[-1] == n_images - 1)
+
+
 def _read_indexed_png_or_grayscale(path: str | Path) -> np.ndarray:
     with Image.open(path) as image:
         if image.mode == "P":
@@ -170,13 +175,19 @@ class ControlMasks:
 
     def load(self, game_dir: str, max_output_width: int = 0) -> bool:
         base = Path(game_dir)
-        self.positions = _normalize_positions(
-            [
-                _get_geo_tiff(base / "mapping_0000.tif"),
-                _get_geo_tiff(base / "mapping_0001.tif"),
+        try:
+            self.positions = _normalize_positions(
+                [
+                    _get_geo_tiff(base / "mapping_0000.tif"),
+                    _get_geo_tiff(base / "mapping_0001.tif"),
+                ]
+            )
+            native_shapes = [
+                _read_tiff_shape(base / "mapping_0000_x.tif"),
+                _read_tiff_shape(base / "mapping_0001_x.tif"),
             ]
-        )
-        native_shapes = [_read_tiff_shape(base / "mapping_0000_x.tif"), _read_tiff_shape(base / "mapping_0001_x.tif")]
+        except Exception:
+            return False
         scaled_positions = list(self.positions)
         shapes = list(native_shapes)
         canvas_width = _scaled_canvas_size(scaled_positions, shapes)[0]
@@ -280,9 +291,12 @@ class ControlMasksN:
         base = Path(directory)
         self.img_col = []
         self.img_row = []
-        self.positions = [_get_geo_tiff(base / f"mapping_{i:04d}.tif") for i in range(n_images)]
-        self.positions = _normalize_positions(self.positions)
-        native_shapes = [_read_tiff_shape(base / f"mapping_{i:04d}_x.tif") for i in range(n_images)]
+        try:
+            self.positions = [_get_geo_tiff(base / f"mapping_{i:04d}.tif") for i in range(n_images)]
+            self.positions = _normalize_positions(self.positions)
+            native_shapes = [_read_tiff_shape(base / f"mapping_{i:04d}_x.tif") for i in range(n_images)]
+        except Exception:
+            return False
         scaled_positions = list(self.positions)
         shapes = list(native_shapes)
         canvas_width = _scaled_canvas_size(scaled_positions, shapes)[0]
@@ -339,12 +353,12 @@ class ControlMasksN:
     def canvas_height(self) -> int:
         return int(max(pos.ypos + remap.shape[0] for pos, remap in zip(self.positions, self.img_row, strict=True)))
 
-    def scale_to_max_output_width(self, max_output_width: int) -> None:
+    def scale_to_max_output_width(self, max_output_width: int) -> bool:
         if max_output_width <= 0 or not self.is_valid():
-            return
+            return self.is_valid()
         canvas_width = self.canvas_width()
         if canvas_width <= max_output_width:
-            return
+            return True
         native_shapes = [remap.shape for remap in self.img_col]
         scale = _scale_to_fit_max_width(self.positions, native_shapes, canvas_width, max_output_width)
         scaled_positions: list[SpatialTiff] = []
@@ -364,7 +378,10 @@ class ControlMasksN:
         self.whole_seam_mask_indexed = _resize_nearest(
             self.whole_seam_mask_indexed, (canvas_size[1], canvas_size[0])
         )
+        if not _indexed_seam_has_all_classes(self.whole_seam_mask_indexed, len(self.img_col)):
+            return False
         self.positions = scaled_positions
+        return True
 
     @staticmethod
     def split_to_channels(indexed: np.ndarray, n_images: int) -> np.ndarray:
