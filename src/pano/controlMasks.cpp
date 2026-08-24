@@ -66,7 +66,6 @@ std::vector<SpatialTiff> normalize_positions(std::vector<SpatialTiff>&& position
 cv::Mat resize_remap_preserving_unmapped(const cv::Mat& src, const cv::Size& size) {
   cv::Mat resized;
   cv::resize(src, resized, size, 0.0, 0.0, cv::INTER_NEAREST);
-  cv::Mat invalid_mask_src = src == kUnmappedPositionValue;
   cv::Mat invalid_mask(size, CV_8U, cv::Scalar(0));
   const double scale_x = static_cast<double>(src.cols) / static_cast<double>(size.width);
   const double scale_y = static_cast<double>(src.rows) / static_cast<double>(size.height);
@@ -76,7 +75,17 @@ cv::Mat resize_remap_preserving_unmapped(const cv::Mat& src, const cv::Size& siz
     for (int x = 0; x < size.width; ++x) {
       const int x0 = std::clamp(static_cast<int>(std::floor(x * scale_x)), 0, src.cols - 1);
       const int x1 = std::clamp(static_cast<int>(std::ceil((x + 1) * scale_x)), x0 + 1, src.cols);
-      if (cv::countNonZero(invalid_mask_src(cv::Range(y0, y1), cv::Range(x0, x1))) > 0) {
+      bool has_unmapped = false;
+      for (int source_y = y0; source_y < y1 && !has_unmapped; ++source_y) {
+        const auto* row = src.ptr<uint16_t>(source_y);
+        for (int source_x = x0; source_x < x1; ++source_x) {
+          if (row[source_x] == kUnmappedPositionValue) {
+            has_unmapped = true;
+            break;
+          }
+        }
+      }
+      if (has_unmapped) {
         invalid_mask.at<uint8_t>(y, x) = 255;
       }
     }
