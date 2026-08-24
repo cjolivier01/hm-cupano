@@ -92,9 +92,11 @@ def _indexed_seam_has_all_classes(indexed: np.ndarray, n_images: int) -> bool:
     return bool(uniq.size == n_images and uniq[0] == 0 and uniq[-1] == n_images - 1)
 
 
-def _read_indexed_png_or_grayscale(path: str | Path) -> np.ndarray:
+def _read_indexed_png_or_grayscale(path: str | Path, expected_shape: tuple[int, int] | None = None) -> np.ndarray:
     with Image.open(path) as image:
         _validate_seam_image_size(path, image.width, image.height)
+        if expected_shape is not None and (image.height, image.width) != expected_shape:
+            raise ValueError(f"Seam PNG dimensions do not match the effective canvas in {path}")
         if image.mode == "P":
             return np.array(image, dtype=np.uint8)
     seam = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
@@ -103,8 +105,8 @@ def _read_indexed_png_or_grayscale(path: str | Path) -> np.ndarray:
     return seam.astype(np.uint8, copy=False)
 
 
-def _load_two_image_seam(path: str | Path) -> np.ndarray:
-    seam = _read_indexed_png_or_grayscale(path)
+def _load_two_image_seam(path: str | Path, expected_shape: tuple[int, int] | None = None) -> np.ndarray:
+    seam = _read_indexed_png_or_grayscale(path, expected_shape)
     min_val = int(seam.min())
     max_val = int(seam.max())
     out = seam.copy()
@@ -263,10 +265,8 @@ class ControlMasks:
         if self.img2_row.shape != img2_shape:
             self.img2_row = _resize_remap_preserving_unmapped(self.img2_row, img2_shape)
         try:
-            self.whole_seam_mask_image = _load_two_image_seam(base / "seam_file.png")
             seam_shape = tuple(reversed(_scaled_canvas_size(scaled_positions, shapes)))
-            if self.whole_seam_mask_image.shape != seam_shape:
-                self.whole_seam_mask_image = _resize_nearest(self.whole_seam_mask_image, seam_shape)
+            self.whole_seam_mask_image = _load_two_image_seam(base / "seam_file.png", seam_shape)
         except Exception:
             self.whole_seam_mask_image = np.empty((0, 0), dtype=np.uint8)
             return False
@@ -388,10 +388,8 @@ class ControlMasksN:
         if any(x is None or x.size == 0 for x in self.img_col + self.img_row):
             return False
         try:
-            self.whole_seam_mask_indexed = _read_indexed_png_or_grayscale(base / "seam_file.png")
             seam_shape = tuple(reversed(_scaled_canvas_size(scaled_positions, shapes)))
-            if self.whole_seam_mask_indexed.shape != seam_shape:
-                self.whole_seam_mask_indexed = _resize_nearest(self.whole_seam_mask_indexed, seam_shape)
+            self.whole_seam_mask_indexed = _read_indexed_png_or_grayscale(base / "seam_file.png", seam_shape)
         except Exception:
             self.whole_seam_mask_indexed = np.empty((0, 0), dtype=np.uint8)
             return False

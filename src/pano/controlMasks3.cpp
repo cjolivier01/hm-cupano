@@ -240,6 +240,46 @@ cv::Mat imreadPalettedAsIndex(const std::string& filename) {
   return indexed.clone();
 }
 
+std::optional<cv::Size> read_png_size3(const std::string& filename) {
+  FILE* fp = fopen(filename.c_str(), "rb");
+  if (!fp) {
+    return std::nullopt;
+  }
+  png_byte sig[8];
+  if (fread(sig, 1, 8, fp) != 8 || png_sig_cmp(sig, 0, 8)) {
+    fclose(fp);
+    return std::nullopt;
+  }
+  png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+  if (!png_ptr) {
+    fclose(fp);
+    return std::nullopt;
+  }
+  png_infop info_ptr = png_create_info_struct(png_ptr);
+  if (!info_ptr) {
+    png_destroy_read_struct(&png_ptr, (png_infopp) nullptr, (png_infopp) nullptr);
+    fclose(fp);
+    return std::nullopt;
+  }
+  if (setjmp(png_jmpbuf(png_ptr))) {
+    png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp) nullptr);
+    fclose(fp);
+    return std::nullopt;
+  }
+  png_init_io(png_ptr, fp);
+  png_set_sig_bytes(png_ptr, 8);
+  png_read_info(png_ptr, info_ptr);
+  const png_uint_32 width = png_get_image_width(png_ptr, info_ptr);
+  const png_uint_32 height = png_get_image_height(png_ptr, info_ptr);
+  png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp) nullptr);
+  fclose(fp);
+  if (width == 0 || height == 0 || width > kHardMaximumRemapDimension || height > kHardMaximumRemapDimension ||
+      static_cast<uint64_t>(width) * height > kHardMaximumRemapPixels) {
+    return std::nullopt;
+  }
+  return cv::Size(static_cast<int>(width), static_cast<int>(height));
+}
+
 cv::Mat load_seam_mask3(const std::string& filename) {
   // cv::Mat seam_mask = cv::imread(filename, cv::IMREAD_ANYDEPTH);
   cv::Mat seam_mask = imreadPalettedAsIndex(filename);
@@ -507,6 +547,14 @@ bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
     img2_row = resize_remap_preserving_unmapped3(img2_row, placements[2].size);
   }
 
+  const cv::Size effective_canvas_size = canvas_size3(placements);
+  const auto seam_size = read_png_size3(seam_filename);
+  if (!seam_size || *seam_size != effective_canvas_size) {
+    std::cerr << "3-image seam mask dimensions do not match the effective canvas: " << seam_filename << std::endl;
+    clear_control_masks3(*this);
+    return false;
+  }
+
   // Load the seam mask:
   try {
     whole_seam_mask_image = load_seam_mask3(seam_filename);
@@ -520,10 +568,6 @@ bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
     std::cerr << "Unable to load seam mask: " << seam_filename << std::endl;
     clear_control_masks3(*this);
     return false;
-  }
-  const cv::Size effective_canvas_size = canvas_size3(placements);
-  if (whole_seam_mask_image.size() != effective_canvas_size) {
-    whole_seam_mask_image = resize_nearest3(whole_seam_mask_image, effective_canvas_size);
   }
   if (!indexed_seam_has_all_classes3(whole_seam_mask_image)) {
     std::cerr << "Scaled 3-image seam mask lost one or more image classes: " << seam_filename << std::endl;

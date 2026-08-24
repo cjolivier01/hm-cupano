@@ -172,31 +172,31 @@ static cv::Mat imreadPalettedAsIndex(const std::string& filename) {
   return indexed.clone();
 }
 
-static bool png_dimensions_within_safety_limits(const std::string& filename) {
+static std::optional<cv::Size> read_png_size(const std::string& filename) {
   FILE* fp = fopen(filename.c_str(), "rb");
   if (!fp) {
-    return false;
+    return std::nullopt;
   }
   png_byte sig[8];
   if (fread(sig, 1, 8, fp) != 8 || png_sig_cmp(sig, 0, 8)) {
     fclose(fp);
-    return false;
+    return std::nullopt;
   }
   png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
   if (!png_ptr) {
     fclose(fp);
-    return false;
+    return std::nullopt;
   }
   png_infop info_ptr = png_create_info_struct(png_ptr);
   if (!info_ptr) {
     png_destroy_read_struct(&png_ptr, (png_infopp) nullptr, (png_infopp) nullptr);
     fclose(fp);
-    return false;
+    return std::nullopt;
   }
   if (setjmp(png_jmpbuf(png_ptr))) {
     png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp) nullptr);
     fclose(fp);
-    return false;
+    return std::nullopt;
   }
   png_init_io(png_ptr, fp);
   png_set_sig_bytes(png_ptr, 8);
@@ -205,8 +205,11 @@ static bool png_dimensions_within_safety_limits(const std::string& filename) {
   const png_uint_32 height = png_get_image_height(png_ptr, info_ptr);
   png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp) nullptr);
   fclose(fp);
-  return width > 0 && height > 0 && width <= kHardMaximumRemapDimension && height <= kHardMaximumRemapDimension &&
-      static_cast<uint64_t>(width) * height <= kHardMaximumRemapPixels;
+  if (width == 0 || height == 0 || width > kHardMaximumRemapDimension || height > kHardMaximumRemapDimension ||
+      static_cast<uint64_t>(width) * height > kHardMaximumRemapPixels) {
+    return std::nullopt;
+  }
+  return cv::Size(static_cast<int>(width), static_cast<int>(height));
 }
 
 cv::Mat resize_remap_preserving_unmapped(const cv::Mat& src, const cv::Size& size) {
@@ -402,17 +405,18 @@ bool ControlMasksN::load(const std::string& dirIn, int n_images, int max_output_
   }
 
   std::string seam_filename = dir + "seam_file.png";
+  const cv::Size effective_canvas_size = canvas_sizeN(placements);
+  const auto seam_size = read_png_size(seam_filename);
+  if (!seam_size || *seam_size != effective_canvas_size) {
+    std::cerr << "Seam mask dimensions do not match the effective canvas: " << seam_filename << std::endl;
+    clear_control_masksN(*this);
+    return false;
+  }
   try {
     whole_seam_mask_indexed = imreadPalettedAsIndex(seam_filename);
   } catch (const std::exception& e) {
     // Many 2-view seam masks are plain grayscale (e.g. {0,255}), not paletted PNGs.
     // Fall back to OpenCV's grayscale loader in that case.
-    if (!png_dimensions_within_safety_limits(seam_filename)) {
-      std::cerr << "Unable to load seam mask within safety limits: " << seam_filename << " (" << e.what() << ")"
-                << std::endl;
-      clear_control_masksN(*this);
-      return false;
-    }
     whole_seam_mask_indexed = cv::imread(seam_filename, cv::IMREAD_GRAYSCALE);
     if (whole_seam_mask_indexed.empty()) {
       std::cerr << "Unable to load seam mask: " << seam_filename << " (" << e.what() << ")" << std::endl;
@@ -420,11 +424,6 @@ bool ControlMasksN::load(const std::string& dirIn, int n_images, int max_output_
       return false;
     }
   }
-  const cv::Size effective_canvas_size = canvas_sizeN(placements);
-  if (whole_seam_mask_indexed.size() != effective_canvas_size) {
-    whole_seam_mask_indexed = resize_nearest(whole_seam_mask_indexed, effective_canvas_size);
-  }
-
   auto uniq = get_unique_values(whole_seam_mask_indexed);
   if (uniq.empty() || static_cast<int>(uniq.size()) != n_images) {
     std::cerr << "Seam mask classes (" << uniq.size() << ") != n_images (" << n_images << "): " << seam_filename
