@@ -89,9 +89,6 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
   assert(!blend_seam.empty());
   blend_seam = blend_seam.clone();
 
-  auto canvas = std::make_unique<CudaMat<T_pipeline>>(
-      stitch_context_->batch_size(), canvas_manager_->canvas_width(), canvas_manager_->canvas_height());
-
   assert(masks.img1_col.type() == CV_16U);
   stitch_context_->remap_1_x = std::make_unique<CudaMat<uint16_t>>(masks.img1_col);
   stitch_context_->remap_1_y = std::make_unique<CudaMat<uint16_t>>(masks.img1_row);
