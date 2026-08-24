@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
+import tifffile
 
 from cupano import (
     ControlMasks,
@@ -99,6 +100,24 @@ def read_level_0_size(metadata_path) -> tuple[int, int]:
             width, height = dims.split("x", 1)
             return int(width), int(height)
     raise AssertionError(f"Missing level_0 entry in {metadata_path}")
+
+
+def write_position_tiff(path, width: int, height: int, xpos: int, ypos: int) -> None:
+    tifffile.imwrite(
+        path,
+        np.zeros((height, width), dtype=np.uint8),
+        resolution=(1.0, 1.0),
+        extratags=[
+            (286, 5, 1, (xpos, 1), False),
+            (287, 5, 1, (ypos, 1), False),
+        ],
+    )
+
+
+def write_identity_mapping_set(directory, index: int, width: int, height: int, xpos: int) -> None:
+    write_position_tiff(directory / f"mapping_{index:04d}.tif", width, height, xpos, 0)
+    tifffile.imwrite(directory / f"mapping_{index:04d}_x.tif", identity_map_x(width, height))
+    tifffile.imwrite(directory / f"mapping_{index:04d}_y.tif", identity_map_y(width, height))
 
 
 @pytest.fixture(scope="module")
@@ -299,6 +318,19 @@ def test_cuda_pano_n_max_output_width_does_not_mutate_input_masks(device: torch.
 def test_python_loaders_return_false_for_missing_mapping_metadata(tmp_path) -> None:
     assert not ControlMasks().load(str(tmp_path), max_output_width=48)
     assert not ControlMasksN().load(str(tmp_path), 3, max_output_width=48)
+
+
+def test_python_loaders_return_false_for_missing_seam(tmp_path) -> None:
+    for i, xpos in enumerate((0, 8, 16)):
+        write_identity_mapping_set(tmp_path, i, 8, 4, xpos)
+
+    two = ControlMasks()
+    assert not two.load(str(tmp_path), max_output_width=12)
+    assert not two.is_valid()
+
+    many = ControlMasksN()
+    assert not many.load(str(tmp_path), 3, max_output_width=12)
+    assert not many.is_valid()
 
 
 def test_cuda_pano_n_max_output_width_rejects_collapsed_seam_class(device: torch.device) -> None:

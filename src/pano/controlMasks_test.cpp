@@ -1,5 +1,6 @@
 #include "cupano/pano/canvasManager.h"
 #include "cupano/pano/controlMasks.h"
+#include "cupano/pano/controlMasks3.h"
 #include "cupano/pano/controlMasksN.h"
 
 #include <gtest/gtest.h>
@@ -138,6 +139,24 @@ TEST(ControlMasksNTest, ScaleToMaxOutputWidthRejectsCollapsedSeamClass) {
   masks.positions = {{0.0f, 0.0f}, {40.0f, 0.0f}, {80.0f, 0.0f}};
 
   EXPECT_FALSE(masks.scale_to_max_output_width(2));
+  EXPECT_FALSE(masks.is_valid());
+}
+
+TEST(ControlMasks3Test, ScaleToMaxOutputWidthRejectsCollapsedSeamClass) {
+  ControlMasks3 masks;
+  masks.img0_col = remap(4, 40, 10);
+  masks.img0_row = remap(4, 40, 300);
+  masks.img1_col = remap(4, 40, 100);
+  masks.img1_row = remap(4, 40, 400);
+  masks.img2_col = remap(4, 40, 200);
+  masks.img2_row = remap(4, 40, 500);
+  masks.whole_seam_mask_image = cv::Mat(4, 120, CV_8U, cv::Scalar(0));
+  masks.whole_seam_mask_image.colRange(40, 80).setTo(1);
+  masks.whole_seam_mask_image.colRange(80, 120).setTo(2);
+  masks.positions = {{0.0f, 0.0f}, {40.0f, 0.0f}, {80.0f, 0.0f}};
+
+  EXPECT_FALSE(masks.scale_to_max_output_width(2));
+  EXPECT_FALSE(masks.is_valid());
 }
 
 TEST(CanvasManagerTest, MinimizeBlendClampsPaddingToScaledCanvas) {

@@ -289,6 +289,17 @@ cv::Size canvas_size3(const std::vector<ScaledPlacement3>& placements) {
   return cv::Size(width, height);
 }
 
+void clear_control_masks3(ControlMasks3& masks) {
+  masks.img0_col.release();
+  masks.img0_row.release();
+  masks.img1_col.release();
+  masks.img1_row.release();
+  masks.img2_col.release();
+  masks.img2_row.release();
+  masks.whole_seam_mask_image.release();
+  masks.positions.clear();
+}
+
 double scale_to_fit_max_width3(
     const std::vector<SpatialTiff>& positions,
     const std::vector<cv::Size>& sizes,
@@ -348,6 +359,7 @@ cv::Mat ControlMasks3::split_to_channels(const cv::Mat& seam_mask) {
 }
 
 bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
+  clear_control_masks3(*this);
   std::string game_dir = game_dir_in;
   if (!game_dir.empty() && game_dir.back() != '/') {
     game_dir += '/';
@@ -371,6 +383,7 @@ bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
   const auto img2_size = read_tiff_size(mapping2_x);
   if (!img0_size || !img1_size || !img2_size) {
     std::cerr << "Unable to load 3-image remap metadata" << std::endl;
+    clear_control_masks3(*this);
     return false;
   }
   std::vector<ScaledPlacement3> placements{
@@ -396,6 +409,7 @@ bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
   img0_col = cv::imread(mapping0_x, cv::IMREAD_ANYDEPTH);
   if (img0_col.empty()) {
     std::cerr << "Unable to load remap0_x: " << mapping0_x << std::endl;
+    clear_control_masks3(*this);
     return false;
   }
   if (img0_col.size() != placements[0].size) {
@@ -404,6 +418,7 @@ bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
   img0_row = cv::imread(mapping0_y, cv::IMREAD_ANYDEPTH);
   if (img0_row.empty()) {
     std::cerr << "Unable to load remap0_y: " << mapping0_y << std::endl;
+    clear_control_masks3(*this);
     return false;
   }
   if (img0_row.size() != placements[0].size) {
@@ -414,6 +429,7 @@ bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
   img1_col = cv::imread(mapping1_x, cv::IMREAD_ANYDEPTH);
   if (img1_col.empty()) {
     std::cerr << "Unable to load remap1_x: " << mapping1_x << std::endl;
+    clear_control_masks3(*this);
     return false;
   }
   if (img1_col.size() != placements[1].size) {
@@ -422,6 +438,7 @@ bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
   img1_row = cv::imread(mapping1_y, cv::IMREAD_ANYDEPTH);
   if (img1_row.empty()) {
     std::cerr << "Unable to load remap1_y: " << mapping1_y << std::endl;
+    clear_control_masks3(*this);
     return false;
   }
   if (img1_row.size() != placements[1].size) {
@@ -432,6 +449,7 @@ bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
   img2_col = cv::imread(mapping2_x, cv::IMREAD_ANYDEPTH);
   if (img2_col.empty()) {
     std::cerr << "Unable to load remap2_x: " << mapping2_x << std::endl;
+    clear_control_masks3(*this);
     return false;
   }
   if (img2_col.size() != placements[2].size) {
@@ -440,6 +458,7 @@ bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
   img2_row = cv::imread(mapping2_y, cv::IMREAD_ANYDEPTH);
   if (img2_row.empty()) {
     std::cerr << "Unable to load remap2_y: " << mapping2_y << std::endl;
+    clear_control_masks3(*this);
     return false;
   }
   if (img2_row.size() != placements[2].size) {
@@ -447,10 +466,17 @@ bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
   }
 
   // Load the seam mask:
-  whole_seam_mask_image = load_seam_mask3(seam_filename);
+  try {
+    whole_seam_mask_image = load_seam_mask3(seam_filename);
+  } catch (const std::exception& e) {
+    std::cerr << "Unable to load seam mask: " << seam_filename << " (" << e.what() << ")" << std::endl;
+    clear_control_masks3(*this);
+    return false;
+  }
 
   if (whole_seam_mask_image.empty()) {
     std::cerr << "Unable to load seam mask: " << seam_filename << std::endl;
+    clear_control_masks3(*this);
     return false;
   }
   const cv::Size effective_canvas_size = canvas_size3(placements);
@@ -459,6 +485,7 @@ bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
   }
   if (!indexed_seam_has_all_classes3(whole_seam_mask_image)) {
     std::cerr << "Scaled 3-image seam mask lost one or more image classes: " << seam_filename << std::endl;
+    clear_control_masks3(*this);
     return false;
   }
   positions = {placements[0].position, placements[1].position, placements[2].position};
@@ -509,6 +536,7 @@ bool ControlMasks3::scale_to_max_output_width(int max_output_width) {
   img2_row = resize_remap_preserving_unmapped3(img2_row, img2_col.size());
   whole_seam_mask_image = resize_nearest3(whole_seam_mask_image, canvas_size3(placements));
   if (!indexed_seam_has_all_classes3(whole_seam_mask_image)) {
+    clear_control_masks3(*this);
     return false;
   }
   positions = {placements[0].position, placements[1].position, placements[2].position};

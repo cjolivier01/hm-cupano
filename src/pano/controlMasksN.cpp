@@ -212,6 +212,13 @@ cv::Size canvas_sizeN(const std::vector<ScaledPlacementN>& placements) {
   return cv::Size(width, height);
 }
 
+void clear_control_masksN(ControlMasksN& masks) {
+  masks.img_col.clear();
+  masks.img_row.clear();
+  masks.positions.clear();
+  masks.whole_seam_mask_indexed.release();
+}
+
 double scale_to_fit_max_widthN(
     const std::vector<SpatialTiff>& positions,
     const std::vector<cv::Size>& sizes,
@@ -246,6 +253,7 @@ double scale_to_fit_max_widthN(
 } // namespace
 
 bool ControlMasksN::load(const std::string& dirIn, int n_images, int max_output_width) {
+  clear_control_masksN(*this);
   std::string dir = dirIn;
   if (!dir.empty() && dir.back() != '/')
     dir += '/';
@@ -273,6 +281,7 @@ bool ControlMasksN::load(const std::string& dirIn, int n_images, int max_output_
     const auto size = read_tiff_size(mapping_x);
     if (!size) {
       std::cerr << "Unable to load remap metadata for index " << i << " from " << mapping_x << std::endl;
+      clear_control_masksN(*this);
       return false;
     }
     native_sizes.push_back(*size);
@@ -302,6 +311,7 @@ bool ControlMasksN::load(const std::string& dirIn, int n_images, int max_output_
     img_col[i] = cv::imread(mapping_x_paths[i], cv::IMREAD_ANYDEPTH);
     if (img_col[i].empty()) {
       std::cerr << "Unable to load remap for index " << i << " from " << mapping_x_paths[i] << std::endl;
+      clear_control_masksN(*this);
       return false;
     }
     if (img_col[i].size() != placements[i].size) {
@@ -310,6 +320,7 @@ bool ControlMasksN::load(const std::string& dirIn, int n_images, int max_output_
     img_row[i] = cv::imread(mapping_y_paths[i], cv::IMREAD_ANYDEPTH);
     if (img_row[i].empty()) {
       std::cerr << "Unable to load remap for index " << i << " from " << mapping_y_paths[i] << std::endl;
+      clear_control_masksN(*this);
       return false;
     }
     if (img_row[i].size() != placements[i].size) {
@@ -327,6 +338,7 @@ bool ControlMasksN::load(const std::string& dirIn, int n_images, int max_output_
     whole_seam_mask_indexed = cv::imread(seam_filename, cv::IMREAD_GRAYSCALE);
     if (whole_seam_mask_indexed.empty()) {
       std::cerr << "Unable to load seam mask: " << seam_filename << " (" << e.what() << ")" << std::endl;
+      clear_control_masksN(*this);
       return false;
     }
   }
@@ -339,6 +351,7 @@ bool ControlMasksN::load(const std::string& dirIn, int n_images, int max_output_
   if (uniq.empty() || static_cast<int>(uniq.size()) != n_images) {
     std::cerr << "Seam mask classes (" << uniq.size() << ") != n_images (" << n_images << "): " << seam_filename
               << std::endl;
+    clear_control_masksN(*this);
     return false;
   }
 
@@ -411,6 +424,10 @@ bool ControlMasksN::scale_to_max_output_width(int max_output_width) {
   }
   whole_seam_mask_indexed = resize_nearest(whole_seam_mask_indexed, canvas_sizeN(placements));
   if (!indexed_seam_has_all_classes(whole_seam_mask_indexed, static_cast<int>(img_col.size()))) {
+    img_col.clear();
+    img_row.clear();
+    positions.clear();
+    whole_seam_mask_indexed.release();
     return false;
   }
   return true;

@@ -175,6 +175,12 @@ class ControlMasks:
 
     def load(self, game_dir: str, max_output_width: int = 0) -> bool:
         base = Path(game_dir)
+        self.img1_col = np.empty((0, 0), dtype=np.uint16)
+        self.img1_row = np.empty((0, 0), dtype=np.uint16)
+        self.img2_col = np.empty((0, 0), dtype=np.uint16)
+        self.img2_row = np.empty((0, 0), dtype=np.uint16)
+        self.whole_seam_mask_image = np.empty((0, 0), dtype=np.uint8)
+        self.positions = []
         try:
             self.positions = _normalize_positions(
                 [
@@ -221,10 +227,14 @@ class ControlMasks:
             return False
         if self.img2_row.shape != img2_shape:
             self.img2_row = _resize_remap_preserving_unmapped(self.img2_row, img2_shape)
-        self.whole_seam_mask_image = _load_two_image_seam(base / "seam_file.png")
-        seam_shape = tuple(reversed(_scaled_canvas_size(scaled_positions, shapes)))
-        if self.whole_seam_mask_image.shape != seam_shape:
-            self.whole_seam_mask_image = _resize_nearest(self.whole_seam_mask_image, seam_shape)
+        try:
+            self.whole_seam_mask_image = _load_two_image_seam(base / "seam_file.png")
+            seam_shape = tuple(reversed(_scaled_canvas_size(scaled_positions, shapes)))
+            if self.whole_seam_mask_image.shape != seam_shape:
+                self.whole_seam_mask_image = _resize_nearest(self.whole_seam_mask_image, seam_shape)
+        except Exception:
+            self.whole_seam_mask_image = np.empty((0, 0), dtype=np.uint8)
+            return False
         self.positions = scaled_positions
         return self.is_valid()
 
@@ -291,6 +301,8 @@ class ControlMasksN:
         base = Path(directory)
         self.img_col = []
         self.img_row = []
+        self.whole_seam_mask_indexed = np.empty((0, 0), dtype=np.uint8)
+        self.positions = []
         try:
             self.positions = [_get_geo_tiff(base / f"mapping_{i:04d}.tif") for i in range(n_images)]
             self.positions = _normalize_positions(self.positions)
@@ -324,10 +336,14 @@ class ControlMasksN:
             self.img_row.append(row)
         if any(x is None or x.size == 0 for x in self.img_col + self.img_row):
             return False
-        self.whole_seam_mask_indexed = _read_indexed_png_or_grayscale(base / "seam_file.png")
-        seam_shape = tuple(reversed(_scaled_canvas_size(scaled_positions, shapes)))
-        if self.whole_seam_mask_indexed.shape != seam_shape:
-            self.whole_seam_mask_indexed = _resize_nearest(self.whole_seam_mask_indexed, seam_shape)
+        try:
+            self.whole_seam_mask_indexed = _read_indexed_png_or_grayscale(base / "seam_file.png")
+            seam_shape = tuple(reversed(_scaled_canvas_size(scaled_positions, shapes)))
+            if self.whole_seam_mask_indexed.shape != seam_shape:
+                self.whole_seam_mask_indexed = _resize_nearest(self.whole_seam_mask_indexed, seam_shape)
+        except Exception:
+            self.whole_seam_mask_indexed = np.empty((0, 0), dtype=np.uint8)
+            return False
         uniq = np.unique(self.whole_seam_mask_indexed)
         if uniq.size != n_images:
             return False
@@ -345,6 +361,7 @@ class ControlMasksN:
             and len(self.img_col) == len(self.img_row)
             and len(self.positions) == len(self.img_col)
             and self.whole_seam_mask_indexed.size > 0
+            and _indexed_seam_has_all_classes(self.whole_seam_mask_indexed, len(self.img_col))
         )
 
     def canvas_width(self) -> int:
