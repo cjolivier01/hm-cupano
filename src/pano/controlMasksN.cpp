@@ -129,13 +129,10 @@ static cv::Mat imreadPalettedAsIndex(const std::string& filename) {
 cv::Mat resize_remap_preserving_unmapped(const cv::Mat& src, const cv::Size& size) {
   cv::Mat resized;
   cv::resize(src, resized, size, 0.0, 0.0, cv::INTER_NEAREST);
-  cv::Mat invalid_expr = src == kUnmappedPositionValue;
-  cv::Mat invalid_mask_src;
-  invalid_expr.convertTo(invalid_mask_src, CV_32F, 1.0 / 255.0);
+  cv::Mat invalid_mask_src = src == kUnmappedPositionValue;
   cv::Mat invalid_mask;
   cv::resize(invalid_mask_src, invalid_mask, size, 0.0, 0.0, cv::INTER_AREA);
-  cv::threshold(invalid_mask, invalid_mask, 0.0, 255.0, cv::THRESH_BINARY);
-  invalid_mask.convertTo(invalid_mask, CV_8U);
+  cv::threshold(invalid_mask, invalid_mask, 0, 255, cv::THRESH_BINARY);
   resized.setTo(kUnmappedPositionValue, invalid_mask);
   return resized;
 }

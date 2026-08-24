@@ -126,8 +126,8 @@ def _resize_nearest(array: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
 
 def _resize_remap_preserving_unmapped(array: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
     resized = _resize_nearest(array, shape)
-    invalid_src = (array == UNMAPPED_POSITION_VALUE).astype(np.float32)
-    invalid = cv2.resize(invalid_src, (shape[1], shape[0]), interpolation=cv2.INTER_AREA) > 0.0
+    invalid_src = (array == UNMAPPED_POSITION_VALUE).astype(np.uint8) * 255
+    invalid = cv2.resize(invalid_src, (shape[1], shape[0]), interpolation=cv2.INTER_AREA) > 0
     resized[invalid] = UNMAPPED_POSITION_VALUE
     return resized.astype(np.uint16, copy=False)
 

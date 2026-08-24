@@ -206,13 +206,10 @@ cv::Mat load_seam_mask3(const std::string& filename) {
 cv::Mat resize_remap_preserving_unmapped3(const cv::Mat& src, const cv::Size& size) {
   cv::Mat resized;
   cv::resize(src, resized, size, 0.0, 0.0, cv::INTER_NEAREST);
-  cv::Mat invalid_expr = src == kUnmappedPositionValue;
-  cv::Mat invalid_mask_src;
-  invalid_expr.convertTo(invalid_mask_src, CV_32F, 1.0 / 255.0);
+  cv::Mat invalid_mask_src = src == kUnmappedPositionValue;
   cv::Mat invalid_mask;
   cv::resize(invalid_mask_src, invalid_mask, size, 0.0, 0.0, cv::INTER_AREA);
-  cv::threshold(invalid_mask, invalid_mask, 0.0, 255.0, cv::THRESH_BINARY);
-  invalid_mask.convertTo(invalid_mask, CV_8U);
+  cv::threshold(invalid_mask, invalid_mask, 0, 255, cv::THRESH_BINARY);
   resized.setTo(kUnmappedPositionValue, invalid_mask);
   return resized;
 }
@@ -405,10 +402,7 @@ void ControlMasks3::scale_to_max_output_width(int max_output_width) {
 
   const size_t native_width = canvas_width();
   const double scale = scale_to_fit_max_width3(
-      positions,
-      {img0_col.size(), img1_col.size(), img2_col.size()},
-      native_width,
-      max_output_width);
+      positions, {img0_col.size(), img1_col.size(), img2_col.size()}, native_width, max_output_width);
   const std::vector<ScaledPlacement3> placements{
       scaled_placement3(positions[0], img0_col.size(), scale),
       scaled_placement3(positions[1], img1_col.size(), scale),
