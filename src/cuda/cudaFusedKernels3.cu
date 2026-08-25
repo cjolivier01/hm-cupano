@@ -52,7 +52,9 @@ __global__ void FusedRemapToFullKernel3(
     int canvas1_x,
     int canvas1_y,
     int canvas2_x,
-    int canvas2_y) {
+    int canvas2_y,
+    int output_origin_x,
+    int output_origin_y) {
   int b = blockIdx.z;
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -60,10 +62,14 @@ __global__ void FusedRemapToFullKernel3(
   if (x < 0 || y < 0 || x >= cudaFull0.width || y >= cudaFull0.height)
     return;
 
+  const int global_x = x + output_origin_x;
+  const int global_y = y + output_origin_y;
+
   // Process image 0
-  if (x >= canvas0_x && x < canvas0_x + remap0_w && y >= canvas0_y && y < canvas0_y + remap0_h) {
-    int remap_x = x - canvas0_x;
-    int remap_y = y - canvas0_y;
+  if (global_x >= canvas0_x && global_x < canvas0_x + remap0_w && global_y >= canvas0_y &&
+      global_y < canvas0_y + remap0_h) {
+    int remap_x = global_x - canvas0_x;
+    int remap_y = global_y - canvas0_y;
 
     if (remap_x >= 0 && remap_x < remap0_w && remap_y >= 0 && remap_y < remap0_h) {
       int mapIdx = remap_y * remap0_w + remap_x;
@@ -80,9 +86,10 @@ __global__ void FusedRemapToFullKernel3(
   }
 
   // Process image 1
-  if (x >= canvas1_x && x < canvas1_x + remap1_w && y >= canvas1_y && y < canvas1_y + remap1_h) {
-    int remap_x = x - canvas1_x;
-    int remap_y = y - canvas1_y;
+  if (global_x >= canvas1_x && global_x < canvas1_x + remap1_w && global_y >= canvas1_y &&
+      global_y < canvas1_y + remap1_h) {
+    int remap_x = global_x - canvas1_x;
+    int remap_y = global_y - canvas1_y;
 
     if (remap_x >= 0 && remap_x < remap1_w && remap_y >= 0 && remap_y < remap1_h) {
       int mapIdx = remap_y * remap1_w + remap_x;
@@ -99,9 +106,10 @@ __global__ void FusedRemapToFullKernel3(
   }
 
   // Process image 2
-  if (x >= canvas2_x && x < canvas2_x + remap2_w && y >= canvas2_y && y < canvas2_y + remap2_h) {
-    int remap_x = x - canvas2_x;
-    int remap_y = y - canvas2_y;
+  if (global_x >= canvas2_x && global_x < canvas2_x + remap2_w && global_y >= canvas2_y &&
+      global_y < canvas2_y + remap2_h) {
+    int remap_x = global_x - canvas2_x;
+    int remap_y = global_y - canvas2_y;
 
     if (remap_x >= 0 && remap_x < remap2_w && remap_y >= 0 && remap_y < remap2_h) { // NOT NEEDED?
       int mapIdx = remap_y * remap2_w + remap_x;
@@ -234,6 +242,8 @@ CudaStatus launchFusedRemapToFullKernel3(
     CudaMat<T_compute>& cudaFull0,
     CudaMat<T_compute>& cudaFull1,
     CudaMat<T_compute>& cudaFull2,
+    int output_origin_x,
+    int output_origin_y,
     const CanvasManager3& canvas_manager,
     cudaStream_t stream) {
   dim3 block(16, 16);
@@ -268,7 +278,9 @@ CudaStatus launchFusedRemapToFullKernel3(
       canvas_positions[1].x,
       canvas_positions[1].y,
       canvas_positions[2].x,
-      canvas_positions[2].y);
+      canvas_positions[2].y,
+      output_origin_x,
+      output_origin_y);
 
   return CudaStatus(cudaGetLastError());
 }
@@ -335,6 +347,8 @@ CudaStatus launchFusedRemapHardSeam3(
       CudaMat<T_compute>&,                                                  \
       CudaMat<T_compute>&,                                                  \
       CudaMat<T_compute>&,                                                  \
+      int,                                                                  \
+      int,                                                                  \
       const CanvasManager3&,                                                \
       cudaStream_t);
 

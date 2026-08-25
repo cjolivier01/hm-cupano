@@ -939,6 +939,8 @@ CudaStatus launchFusedRemapToFullKernel3(
     CudaMat<T_compute>& cudaFull0,
     CudaMat<T_compute>& cudaFull1,
     CudaMat<T_compute>& cudaFull2,
+    int output_origin_x,
+    int output_origin_y,
     const CanvasManager3& canvas_manager,
     cudaStream_t stream) {
   const T_pipeline dflt{};
@@ -968,8 +970,8 @@ CudaStatus launchFusedRemapToFullKernel3(
       remap_0_x,
       remap_0_y,
       cudaFull0,
-      canvas_manager.canvas_positions()[0].x,
-      canvas_manager.canvas_positions()[0].y);
+      canvas_manager.canvas_positions()[0].x - output_origin_x,
+      canvas_manager.canvas_positions()[0].y - output_origin_y);
   if (cuerr != cudaSuccess)
     return CudaStatus(cuerr);
 
@@ -978,8 +980,8 @@ CudaStatus launchFusedRemapToFullKernel3(
       remap_1_x,
       remap_1_y,
       cudaFull1,
-      canvas_manager.canvas_positions()[1].x,
-      canvas_manager.canvas_positions()[1].y);
+      canvas_manager.canvas_positions()[1].x - output_origin_x,
+      canvas_manager.canvas_positions()[1].y - output_origin_y);
   if (cuerr != cudaSuccess)
     return CudaStatus(cuerr);
 
@@ -988,8 +990,8 @@ CudaStatus launchFusedRemapToFullKernel3(
       remap_2_x,
       remap_2_y,
       cudaFull2,
-      canvas_manager.canvas_positions()[2].x,
-      canvas_manager.canvas_positions()[2].y);
+      canvas_manager.canvas_positions()[2].x - output_origin_x,
+      canvas_manager.canvas_positions()[2].y - output_origin_y);
   if (cuerr != cudaSuccess)
     return CudaStatus(cuerr);
 
@@ -1337,6 +1339,19 @@ template cudaError_t batched_remap_kernel_ex_offset<uchar3, float3>(
     int,
     bool,
     cudaStream_t);
+template cudaError_t batched_remap_kernel_ex_offset<uchar3, float4>(
+    const CudaSurface<uchar3>&,
+    const CudaSurface<float4>&,
+    const unsigned short*,
+    const unsigned short*,
+    uchar3,
+    int,
+    int,
+    int,
+    int,
+    int,
+    bool,
+    cudaStream_t);
 template cudaError_t batched_remap_kernel_ex_offset<uchar3, uchar3>(
     const CudaSurface<uchar3>&,
     const CudaSurface<uchar3>&,
@@ -1376,9 +1391,48 @@ template cudaError_t batched_remap_kernel_ex_offset<float4, float4>(
     int,
     bool,
     cudaStream_t);
+template cudaError_t batched_remap_kernel_ex_offset<float3, float4>(
+    const CudaSurface<float3>&,
+    const CudaSurface<float4>&,
+    const unsigned short*,
+    const unsigned short*,
+    float3,
+    int,
+    int,
+    int,
+    int,
+    int,
+    bool,
+    cudaStream_t);
+template cudaError_t batched_remap_kernel_ex_offset<float4, float3>(
+    const CudaSurface<float4>&,
+    const CudaSurface<float3>&,
+    const unsigned short*,
+    const unsigned short*,
+    float4,
+    int,
+    int,
+    int,
+    int,
+    int,
+    bool,
+    cudaStream_t);
 template cudaError_t batched_remap_kernel_ex_offset<uchar4, float4>(
     const CudaSurface<uchar4>&,
     const CudaSurface<float4>&,
+    const unsigned short*,
+    const unsigned short*,
+    uchar4,
+    int,
+    int,
+    int,
+    int,
+    int,
+    bool,
+    cudaStream_t);
+template cudaError_t batched_remap_kernel_ex_offset<uchar4, float3>(
+    const CudaSurface<uchar4>&,
+    const CudaSurface<float3>&,
     const unsigned short*,
     const unsigned short*,
     uchar4,
@@ -1423,6 +1477,23 @@ template cudaError_t batched_remap_kernel_ex_offset_roi<float3, float3>(
 template cudaError_t batched_remap_kernel_ex_offset_roi<uchar3, float3>(
     const CudaSurface<uchar3>&,
     const CudaSurface<float3>&,
+    const unsigned short*,
+    const unsigned short*,
+    uchar3,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    bool,
+    cudaStream_t);
+template cudaError_t batched_remap_kernel_ex_offset_roi<uchar3, float4>(
+    const CudaSurface<uchar3>&,
+    const CudaSurface<float4>&,
     const unsigned short*,
     const unsigned short*,
     uchar3,
@@ -1488,9 +1559,60 @@ template cudaError_t batched_remap_kernel_ex_offset_roi<float4, float4>(
     int,
     bool,
     cudaStream_t);
+template cudaError_t batched_remap_kernel_ex_offset_roi<float3, float4>(
+    const CudaSurface<float3>&,
+    const CudaSurface<float4>&,
+    const unsigned short*,
+    const unsigned short*,
+    float3,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    bool,
+    cudaStream_t);
+template cudaError_t batched_remap_kernel_ex_offset_roi<float4, float3>(
+    const CudaSurface<float4>&,
+    const CudaSurface<float3>&,
+    const unsigned short*,
+    const unsigned short*,
+    float4,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    bool,
+    cudaStream_t);
 template cudaError_t batched_remap_kernel_ex_offset_roi<uchar4, float4>(
     const CudaSurface<uchar4>&,
     const CudaSurface<float4>&,
+    const unsigned short*,
+    const unsigned short*,
+    uchar4,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    bool,
+    cudaStream_t);
+template cudaError_t batched_remap_kernel_ex_offset_roi<uchar4, float3>(
+    const CudaSurface<uchar4>&,
+    const CudaSurface<float3>&,
     const unsigned short*,
     const unsigned short*,
     uchar4,
@@ -1797,6 +1919,8 @@ template CudaStatus launchFusedRemapToFullKernel3<uchar3, float3>(
     CudaMat<float3>&,
     CudaMat<float3>&,
     CudaMat<float3>&,
+    int,
+    int,
     const CanvasManager3&,
     cudaStream_t);
 
@@ -1813,6 +1937,8 @@ template CudaStatus launchFusedRemapToFullKernel3<uchar3, float4>(
     CudaMat<float4>&,
     CudaMat<float4>&,
     CudaMat<float4>&,
+    int,
+    int,
     const CanvasManager3&,
     cudaStream_t);
 
@@ -1829,6 +1955,8 @@ template CudaStatus launchFusedRemapToFullKernel3<uchar4, float4>(
     CudaMat<float4>&,
     CudaMat<float4>&,
     CudaMat<float4>&,
+    int,
+    int,
     const CanvasManager3&,
     cudaStream_t);
 
@@ -1845,6 +1973,8 @@ template CudaStatus launchFusedRemapToFullKernel3<float3, float3>(
     CudaMat<float3>&,
     CudaMat<float3>&,
     CudaMat<float3>&,
+    int,
+    int,
     const CanvasManager3&,
     cudaStream_t);
 
@@ -1861,6 +1991,8 @@ template CudaStatus launchFusedRemapToFullKernel3<float4, float4>(
     CudaMat<float4>&,
     CudaMat<float4>&,
     CudaMat<float4>&,
+    int,
+    int,
     const CanvasManager3&,
     cudaStream_t);
 

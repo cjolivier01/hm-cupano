@@ -229,6 +229,28 @@ TEST(CudaPanoMinimizeBlendTest, TwoImageFlagChangesWorkspaceSizeAndPreservesOutp
   cleanup();
 }
 
+TEST(CudaPanoMinimizeBlendTest, CroppedUcharComputeSeamIsContiguous) {
+  constexpr int kWidth = 384;
+  constexpr int kHeight = 64;
+  constexpr int kX2 = 192;
+  constexpr int kLevels = 4;
+  const int canvas_width = kWidth + kX2;
+
+  cv::Mat seam(kHeight, canvas_width, CV_8U, cv::Scalar(0));
+  seam.colRange(0, canvas_width / 2).setTo(1);
+  ControlMasks masks = make_masks(kWidth, kHeight, kX2, seam);
+
+  hm::pano::cuda::CudaStitchPano<uchar3, uchar3> pano(
+      /*batch_size=*/1,
+      /*num_levels=*/kLevels,
+      masks,
+      /*quiet=*/true,
+      /*minimize_blend=*/true);
+
+  ASSERT_TRUE(pano.status().ok()) << pano.status().message();
+  EXPECT_TRUE(pano.minimizes_blend());
+}
+
 TEST(CudaPanoMinimizeBlendTest, NoOverlapFallsBackToFullCanvasBlend) {
   constexpr int kWidth = 64;
   constexpr int kHeight = 32;
