@@ -4,6 +4,7 @@
 #include "cupano/pano/controlMasksN.h"
 
 #include <gtest/gtest.h>
+#include <png.h>
 #include <tiffio.h>
 #include <unistd.h>
 #include <filesystem>
@@ -122,6 +123,45 @@ bool write_control_masks3_files(const std::filesystem::path& dir) {
       return false;
     }
   }
+
+  const std::filesystem::path seam_path = dir / "seam_file.png";
+  FILE* fp = fopen(seam_path.c_str(), "wb");
+  if (!fp) {
+    return false;
+  }
+  png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+  png_infop info_ptr = png_ptr ? png_create_info_struct(png_ptr) : nullptr;
+  if (!png_ptr || !info_ptr || setjmp(png_jmpbuf(png_ptr))) {
+    if (png_ptr) {
+      png_destroy_write_struct(&png_ptr, info_ptr ? &info_ptr : nullptr);
+    }
+    fclose(fp);
+    return false;
+  }
+  png_init_io(png_ptr, fp);
+  png_set_IHDR(
+      png_ptr,
+      info_ptr,
+      24,
+      4,
+      8,
+      PNG_COLOR_TYPE_PALETTE,
+      PNG_INTERLACE_NONE,
+      PNG_COMPRESSION_TYPE_DEFAULT,
+      PNG_FILTER_TYPE_DEFAULT);
+  png_color palette[3] = {{0, 0, 0}, {127, 127, 127}, {255, 255, 255}};
+  png_set_PLTE(png_ptr, info_ptr, palette, 3);
+  png_write_info(png_ptr, info_ptr);
+  std::vector<uint8_t> row(24);
+  for (int x = 0; x < 24; ++x) {
+    row[x] = static_cast<uint8_t>(x / 8);
+  }
+  for (int y = 0; y < 4; ++y) {
+    png_write_row(png_ptr, row.data());
+  }
+  png_write_end(png_ptr, info_ptr);
+  png_destroy_write_struct(&png_ptr, &info_ptr);
+  fclose(fp);
   return true;
 }
 
@@ -379,6 +419,53 @@ TEST(ControlMasksNTest, ScaleToMaxOutputWidthKeepsIndexedSeamAlignedWithRoundedC
   EXPECT_EQ(masks.positions[2].xpos, 6.0f);
 }
 
+TEST(ControlMasks3Test, ScaleToMaxOutputWidthPreservesSparseUnmappedSentinel) {
+  ControlMasks3 masks;
+  masks.img0_col = remap(4, 8, 10);
+  masks.img0_row = remap(4, 8, 300);
+  masks.img1_col = remap(4, 8, 100);
+  masks.img1_row = remap(4, 8, 400);
+  masks.img2_col = remap(4, 8, 200);
+  masks.img2_row = remap(4, 8, 500);
+  masks.img2_col.at<uint16_t>(3, 3) = kUnmapped;
+  masks.img2_row.at<uint16_t>(3, 3) = kUnmapped;
+  masks.whole_seam_mask_image = cv::Mat(4, 20, CV_8U, cv::Scalar(0));
+  masks.whole_seam_mask_image.colRange(8, 16).setTo(1);
+  masks.whole_seam_mask_image.colRange(16, 20).setTo(2);
+  masks.positions = {{0.0f, 0.0f}, {6.0f, 0.0f}, {12.0f, 0.0f}};
+
+  ASSERT_TRUE(masks.scale_to_max_output_width(10));
+
+  EXPECT_EQ(masks.canvas_width(), 10u);
+  EXPECT_EQ(masks.canvas_height(), 2u);
+  EXPECT_EQ(masks.positions[1].xpos, 3.0f);
+  EXPECT_EQ(masks.positions[2].xpos, 6.0f);
+  EXPECT_EQ(cv::countNonZero(masks.img2_col == kUnmapped), 1);
+  EXPECT_EQ(cv::countNonZero(masks.img2_row == kUnmapped), 1);
+  EXPECT_EQ(cv::countNonZero(masks.whole_seam_mask_image == 2), 4);
+}
+
+TEST(ControlMasks3Test, ScaleToMaxOutputWidthKeepsIndexedSeamAlignedWithRoundedCanvas) {
+  ControlMasks3 masks;
+  masks.img0_col = remap(7, 11, 10);
+  masks.img0_row = remap(7, 11, 300);
+  masks.img1_col = remap(7, 11, 100);
+  masks.img1_row = remap(7, 11, 400);
+  masks.img2_col = remap(7, 11, 200);
+  masks.img2_row = remap(7, 11, 500);
+  masks.whole_seam_mask_image = cv::Mat(7, 23, CV_8U, cv::Scalar(0));
+  masks.whole_seam_mask_image.colRange(8, 16).setTo(1);
+  masks.whole_seam_mask_image.colRange(16, 23).setTo(2);
+  masks.positions = {{0.0f, 0.0f}, {6.0f, 0.0f}, {12.0f, 0.0f}};
+
+  ASSERT_TRUE(masks.scale_to_max_output_width(13));
+
+  EXPECT_EQ(masks.canvas_width(), 13u);
+  EXPECT_EQ(masks.whole_seam_mask_image.size(), cv::Size(13, static_cast<int>(masks.canvas_height())));
+  EXPECT_EQ(masks.positions[1].xpos, 3.0f);
+  EXPECT_EQ(masks.positions[2].xpos, 6.0f);
+}
+
 TEST(ControlMasksNTest, ScaleToMaxOutputWidthRejectsCollapsedSeamClass) {
   ControlMasksN masks;
   masks.img_col = {remap(4, 40, 10), remap(4, 40, 100), remap(4, 40, 200)};
@@ -417,6 +504,23 @@ TEST(ControlMasks3Test, LoadRejectsCorruptSeam) {
   ASSERT_TRUE(write_text_file(root / "seam_file.png", "not a png"));
 
   ControlMasks3 masks(root.string());
+  EXPECT_FALSE(masks.is_valid());
+
+  std::filesystem::remove_all(root);
+}
+
+TEST(ControlMasks3Test, LoadAcceptsUnderCapAndRejectsNativeCanvasOverCap) {
+  const std::filesystem::path root =
+      std::filesystem::temp_directory_path() / ("cupano-control-masks3-cap-test-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(root);
+  ASSERT_TRUE(write_control_masks3_files(root));
+
+  ControlMasks3 masks;
+  EXPECT_TRUE(masks.load(root.string(), /*max_output_width=*/24));
+  EXPECT_TRUE(masks.is_valid());
+  EXPECT_EQ(masks.canvas_width(), 24u);
+
+  EXPECT_FALSE(masks.load(root.string(), /*max_output_width=*/23));
   EXPECT_FALSE(masks.is_valid());
 
   std::filesystem::remove_all(root);
@@ -479,6 +583,22 @@ TEST(CanvasManagerTest, MinimizeBlendClampsPaddingToScaledCanvas) {
   EXPECT_EQ(manager.remapped_image_roi_blend_1.x, 1);
   EXPECT_EQ(manager.remapped_image_roi_blend_1.width, 7);
   EXPECT_EQ(manager.remapped_image_roi_blend_2.width, 7);
+}
+
+TEST(CanvasManagerTest, MinimizeBlendFallsBackForReversedLayout) {
+  CanvasInfo canvas_info;
+  canvas_info.width = 12;
+  canvas_info.height = 4;
+  canvas_info.positions = {{4, 0}, {0, 0}};
+  CanvasManager manager(canvas_info, true);
+  manager._remapper_1.width = 8;
+  manager._remapper_1.height = 4;
+
+  manager.updateMinimizeBlend(cv::Size(8, 4), cv::Size(8, 4));
+
+  EXPECT_FALSE(manager.minimize_blend());
+  const cv::Mat mask(4, 12, CV_8U, cv::Scalar(0));
+  EXPECT_EQ(manager.convertMaskMat(mask).size(), mask.size());
 }
 
 } // namespace

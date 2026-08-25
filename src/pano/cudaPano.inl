@@ -64,12 +64,11 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
   if (!quiet) {
     std::cout << "Stitched canvas size: " << canvas_width << " x " << canvas_height << std::endl;
   }
-  const int scaled_overlap =
-      static_cast<int>(masks.positions[0].xpos) + masks.img1_col.cols - static_cast<int>(masks.positions[1].xpos);
-  if (scaled_overlap <= 0) {
-    status_ = CudaStatus(cudaErrorInvalidValue, "max_output_width is too small for a positive stitched overlap");
-    return;
-  }
+  const int x0 = static_cast<int>(masks.positions[0].xpos);
+  const int x1 = static_cast<int>(masks.positions[1].xpos);
+  const int scaled_overlap = x0 + masks.img1_col.cols - x1;
+  const bool has_supported_overlap = x0 <= x1 && scaled_overlap > 0;
+  const bool use_minimized_blend = minimize_blend && !stitch_context_->is_hard_seam() && has_supported_overlap;
 
   //
   // CanvasManager
@@ -81,7 +80,7 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
           .positions =
               {cv::Point(masks.positions[0].xpos, masks.positions[0].ypos),
                cv::Point(masks.positions[1].xpos, masks.positions[1].ypos)}},
-      /*minimize_blend=*/(minimize_blend && !stitch_context_->is_hard_seam()),
+      /*minimize_blend=*/use_minimized_blend,
       /*overlap_pad=*/detail::scaled_overlap_padding(original_canvas_width, canvas_width));
 
   canvas_manager_->_remapper_1.width = masks.img1_col.cols;

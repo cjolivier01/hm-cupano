@@ -170,10 +170,11 @@ class CudaStitchPano:
         canvas_h = control_masks.canvas_height()
         if not quiet:
             print(f"Stitched canvas size: {canvas_w} x {canvas_h}")
-        scaled_overlap = int(control_masks.positions[0].xpos) + control_masks.img1_col.shape[1] - int(control_masks.positions[1].xpos)
-        if scaled_overlap <= 0:
-            self._status = CudaStatus(2, "max_output_width is too small for a positive stitched overlap")
-            return
+        x0 = int(control_masks.positions[0].xpos)
+        x1 = int(control_masks.positions[1].xpos)
+        scaled_overlap = x0 + control_masks.img1_col.shape[1] - x1
+        if x0 > x1 or scaled_overlap <= 0:
+            self._minimize_blend = False
 
         self._canvas_manager = CanvasManager(
             CanvasInfo(

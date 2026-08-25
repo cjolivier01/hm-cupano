@@ -6,12 +6,14 @@ import torch
 import tifffile
 
 from cupano import (
+    CanvasInfo,
     ControlMasks,
     ControlMasksN,
     CudaStitchPano,
     CudaStitchPanoN,
     SpatialTiff,
 )
+from cupano.canvas import CanvasManager
 from cupano.ops import compute_laplacian
 from cupano.masks import _read_tiff_shape, _tag_to_float
 
@@ -186,6 +188,71 @@ def test_cuda_pano_soft_seam_single_level_matches_binary_mask(
     expected[:, :, :192, :] = image1[:, :, :192, :]
     expected[:, :, 192:, :] = image2[:, :, 64:, :]
     assert_tensor_equal(out, expected, tol=1e-5)
+
+
+@pytest.mark.parametrize("reversed_order", [False, True])
+def test_cuda_pano_no_overlap_falls_back_to_full_canvas_blend(
+    device: torch.device, reversed_order: bool
+) -> None:
+    width = 64
+    height = 16
+    x1 = width if reversed_order else 0
+    x2 = 0 if reversed_order else width
+    canvas_width = width * 2
+    seam = np.zeros((height, canvas_width), dtype=np.uint8)
+    seam[:, x1 : x1 + width] = 1
+    masks = make_two_masks(width, height, seam, x2)
+    masks.positions[0] = SpatialTiff(float(x1), 0.0)
+
+    image1 = patterned_image(width, height, 0, device)
+    image2 = patterned_image(width, height, 1, device)
+    pano_hard = CudaStitchPano(1, 0, masks, quiet=True)
+    pano_full = CudaStitchPano(
+        1,
+        2,
+        masks,
+        quiet=True,
+        minimize_blend=False,
+        enable_cuda_graphs=False,
+    )
+    pano_requested_mini = CudaStitchPano(
+        1,
+        2,
+        masks,
+        quiet=True,
+        minimize_blend=True,
+        enable_cuda_graphs=False,
+    )
+
+    assert pano_hard.status.ok()
+    assert pano_full.status.ok()
+    assert pano_requested_mini.status.ok()
+    assert not pano_requested_mini._minimize_blend
+    assert not pano_requested_mini._canvas_manager.minimize_blend
+
+    hard_out = pano_hard.process(image1, image2)
+    full_out = pano_full.process(image1, image2)
+    requested_mini_out = pano_requested_mini.process(image1, image2)
+    expected_hard = torch.zeros(
+        (1, height, canvas_width, 4), dtype=torch.float32, device=device
+    )
+    expected_hard[:, :, x1 : x1 + width, :] = image1
+    expected_hard[:, :, x2 : x2 + width, :] = image2
+    assert_tensor_equal(hard_out, expected_hard)
+    assert_tensor_equal(requested_mini_out, full_out, tol=1e-5)
+
+
+def test_canvas_manager_minimize_blend_falls_back_for_reversed_layout() -> None:
+    manager = CanvasManager(
+        CanvasInfo(width=12, height=4, positions=[(4, 0), (0, 0)]),
+        minimize_blend=True,
+    )
+
+    manager.updateMinimizeBlend((8, 4), (8, 4))
+
+    assert not manager.minimize_blend
+    mask = np.zeros((4, 12), dtype=np.uint8)
+    assert manager.convertMaskMat(mask).shape == mask.shape
 
 
 def test_cuda_pano_max_output_width_does_not_mutate_input_masks(device: torch.device) -> None:

@@ -138,6 +138,32 @@ std::filesystem::path make_temp_dir(const std::string& label) {
 
 } // namespace
 
+TEST(CudaPanoMaxOutputWidthTest, ConstructorScalesMasksBeforeCanvasAllocation) {
+  constexpr int kWidth = 96;
+  constexpr int kHeight = 32;
+  constexpr int kX2 = 64;
+  constexpr int kCanvasWidth = kWidth + kX2;
+  constexpr int kMaxOutputWidth = kCanvasWidth / 2;
+
+  cv::Mat seam(kHeight, kCanvasWidth, CV_8U, cv::Scalar(0));
+  seam.colRange(0, kCanvasWidth / 2).setTo(1);
+  ControlMasks masks = make_masks(kWidth, kHeight, kX2, seam);
+
+  hm::pano::cuda::CudaStitchPano<float4, float4> pano(
+      /*batch_size=*/1,
+      /*num_levels=*/0,
+      masks,
+      /*quiet=*/true,
+      /*minimize_blend=*/true,
+      /*max_output_width=*/kMaxOutputWidth);
+
+  ASSERT_TRUE(pano.status().ok()) << pano.status().message();
+  EXPECT_EQ(pano.canvas_width(), kMaxOutputWidth);
+  EXPECT_EQ(pano.canvas_height(), kHeight / 2);
+  EXPECT_EQ(masks.canvas_width(), static_cast<size_t>(kCanvasWidth));
+  EXPECT_EQ(masks.canvas_height(), static_cast<size_t>(kHeight));
+}
+
 TEST(CudaPanoMinimizeBlendTest, TwoImageFlagChangesWorkspaceSizeAndPreservesOutput) {
   constexpr int kWidth = 384;
   constexpr int kHeight = 64;
@@ -201,4 +227,83 @@ TEST(CudaPanoMinimizeBlendTest, TwoImageFlagChangesWorkspaceSizeAndPreservesOutp
   EXPECT_EQ(mini_size.height, kHeight);
 
   cleanup();
+}
+
+TEST(CudaPanoMinimizeBlendTest, NoOverlapFallsBackToFullCanvasBlend) {
+  constexpr int kWidth = 64;
+  constexpr int kHeight = 32;
+  constexpr int kCanvasWidth = kWidth * 2;
+  constexpr int kLevels = 2;
+
+  for (const bool reversed_order : {false, true}) {
+    SCOPED_TRACE(reversed_order ? "reversed disjoint ordering" : "left-to-right disjoint ordering");
+    const int x1 = reversed_order ? kWidth : 0;
+    const int x2 = reversed_order ? 0 : kWidth;
+
+    cv::Mat seam(kHeight, kCanvasWidth, CV_8U, cv::Scalar(0));
+    seam.colRange(x1, x1 + kWidth).setTo(1);
+    ControlMasks masks = make_masks(kWidth, kHeight, x2, seam);
+    masks.positions[0].xpos = static_cast<float>(x1);
+
+    const cv::Mat host_image_1 = make_pattern_image_f4(kWidth, kHeight, 0);
+    const cv::Mat host_image_2 = make_pattern_image_f4(kWidth, kHeight, 1);
+    CudaMat<float4> input_image_1(host_image_1);
+    CudaMat<float4> input_image_2(host_image_2);
+
+    hm::pano::cuda::CudaStitchPano<float4, float4> pano_hard(
+        /*batch_size=*/1,
+        /*num_levels=*/0,
+        masks,
+        /*quiet=*/true,
+        /*minimize_blend=*/true);
+    hm::pano::cuda::CudaStitchPano<float4, float4> pano_full(
+        /*batch_size=*/1,
+        /*num_levels=*/kLevels,
+        masks,
+        /*quiet=*/true,
+        /*minimize_blend=*/false);
+    hm::pano::cuda::CudaStitchPano<float4, float4> pano_requested_mini(
+        /*batch_size=*/1,
+        /*num_levels=*/kLevels,
+        masks,
+        /*quiet=*/true,
+        /*minimize_blend=*/true);
+
+    ASSERT_TRUE(pano_hard.status().ok()) << pano_hard.status().message();
+    ASSERT_TRUE(pano_full.status().ok()) << pano_full.status().message();
+    ASSERT_TRUE(pano_requested_mini.status().ok()) << pano_requested_mini.status().message();
+
+    auto hard_canvas = std::make_unique<CudaMat<float4>>(1, pano_hard.canvas_width(), pano_hard.canvas_height());
+    auto full_canvas = std::make_unique<CudaMat<float4>>(1, pano_full.canvas_width(), pano_full.canvas_height());
+    auto requested_mini_canvas =
+        std::make_unique<CudaMat<float4>>(1, pano_requested_mini.canvas_width(), pano_requested_mini.canvas_height());
+
+    auto hard_out_or = pano_hard.process(input_image_1, input_image_2, /*stream=*/0, std::move(hard_canvas));
+    ASSERT_TRUE(hard_out_or.ok()) << hard_out_or.status().message();
+    auto full_out_or = pano_full.process(input_image_1, input_image_2, /*stream=*/0, std::move(full_canvas));
+    ASSERT_TRUE(full_out_or.ok()) << full_out_or.status().message();
+    auto requested_mini_out_or =
+        pano_requested_mini.process(input_image_1, input_image_2, /*stream=*/0, std::move(requested_mini_canvas));
+    ASSERT_TRUE(requested_mini_out_or.ok()) << requested_mini_out_or.status().message();
+
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    const cv::Mat hard_out = hard_out_or.ConsumeValueOrDie()->download();
+    const cv::Mat full_out = full_out_or.ConsumeValueOrDie()->download();
+    const cv::Mat requested_mini_out = requested_mini_out_or.ConsumeValueOrDie()->download();
+    cv::Mat expected_hard(kHeight, kCanvasWidth, CV_32FC4, cv::Scalar(0, 0, 0, 0));
+    host_image_1.copyTo(expected_hard.colRange(x1, x1 + kWidth));
+    host_image_2.copyTo(expected_hard.colRange(x2, x2 + kWidth));
+    expect_mats_near(hard_out, expected_hard, kTol);
+    expect_mats_near(requested_mini_out, full_out, kTol);
+
+    const auto fallback_dir =
+        make_temp_dir(reversed_order ? "cuda_pano_no_overlap_fallback_reversed" : "cuda_pano_no_overlap_fallback");
+    ASSERT_TRUE(pano_requested_mini.dump_soft_blend_pyramid(fallback_dir.string(), /*stream=*/0).ok());
+    const LevelSize fallback_size = read_level_0_size(fallback_dir / "metadata.txt");
+    EXPECT_EQ(fallback_size.width, kCanvasWidth);
+    EXPECT_EQ(fallback_size.height, kHeight);
+    std::error_code ec;
+    std::filesystem::remove_all(fallback_dir, ec);
+  }
 }

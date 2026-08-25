@@ -24,7 +24,9 @@ class CanvasManager:
         self.remapped_image_roi_blend_1 = Rect()
         self.remapped_image_roi_blend_2 = Rect()
 
-    def updateMinimizeBlend(self, remapped_size_1: tuple[int, int], remapped_size_2: tuple[int, int]) -> None:
+    def updateMinimizeBlend(
+        self, remapped_size_1: tuple[int, int], remapped_size_2: tuple[int, int]
+    ) -> None:
         if len(self.canvas_info.positions) < 2:
             raise ValueError("CanvasManager requires two positions")
 
@@ -34,10 +36,15 @@ class CanvasManager:
         self._remapper_2.width, self._remapper_2.height = remapped_size_2
 
         width_1 = self._remapper_1.width
-        self._overlapping_width = width_1 - self._x2
-        if self._overlapping_width <= 0:
-            raise ValueError("Images do not overlap; invalid two-image minimize_blend configuration")
-        self.overlap_pad = min(self.overlap_pad, max(0, min(self._x2 - self._x1, self.canvas_info.width - width_1)))
+        self._overlapping_width = self._x1 + width_1 - self._x2
+        has_supported_overlap = self._x1 <= self._x2 and self._overlapping_width > 0
+        if not self.minimize_blend or not has_supported_overlap:
+            self.minimize_blend = False
+            return
+        self.overlap_pad = min(
+            self.overlap_pad,
+            max(0, min(self._x2 - self._x1, self.canvas_info.width - width_1)),
+        )
 
         blend_width = self._overlapping_width + 2 * self.overlap_pad
         if self.minimize_blend:
@@ -49,7 +56,9 @@ class CanvasManager:
                 blend_width - self.overlap_pad,
                 remapped_size_1[1],
             )
-            self.remapped_image_roi_blend_2 = Rect(0, 0, blend_width - self.overlap_pad, remapped_size_2[1])
+            self.remapped_image_roi_blend_2 = Rect(
+                0, 0, blend_width - self.overlap_pad, remapped_size_2[1]
+            )
 
     def convertMaskMat(self, mask: np.ndarray) -> np.ndarray:
         padded = mask
