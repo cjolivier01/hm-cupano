@@ -11,6 +11,10 @@
 - Bazel files: `WORKSPACE`, `MODULE.bazel`, `BUILD.bazel` files under dirs.
 - Other: `assets/` sample images, `.clang-format` style, root `Makefile` for common Bazel workflows.
 
+## Inbclusiveness
+- Changes in any of cudaPano, cudaPano3, or cudaPanoN (or any of its dependent code and/or kernels) should be propagated to the other two (all three) in order to keep them all in lock-step.  This includes all changes, including but not limited to, structural, mathematical, or performance and kernel fusing).
+
+
 ## Build, Test, Run
 - Install Bazelisk: `./scripts/install_bazelisk.sh` (Linux x86_64/aarch64).
 - Debug build all: `make debug` (or `make bld`).
