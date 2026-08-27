@@ -1149,25 +1149,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
   }
 
   // --------------- Reconstruct the final image ---------------
-  T* d_reconstruct = nullptr;
-  if (!context.initialized) {
-    // Coarsest level allocation
-    if (context.numLevels > 1) {
-      size_t sizeCoarse =
-          static_cast<size_t>(context.widths[last]) * context.heights[last] * channels * context.batchSize * sizeof(T);
-      CUDA_CHECK(cudaMalloc((void**)&d_reconstruct, sizeCoarse));
-      context.allocation_size += sizeCoarse;
-      context.d_reconstruct[last] = d_reconstruct;
-    } else {
-      // If only one level, reconstruct directly into d_output
-      d_reconstruct = d_output;
-      context.d_reconstruct[last] = d_reconstruct;
-    }
-  } else {
-    // Already allocated in a previous call
-    d_reconstruct = context.d_reconstruct[last];
-    assert(d_reconstruct);
-  }
+  T* d_reconstruct = (last > 0) ? context.d_reconstruct[last] : d_output;
+  assert(d_reconstruct);
 
   // Copy blended at coarsest level into d_reconstruct
   CUDA_CHECK(cudaMemcpyAsync(
@@ -1183,20 +1166,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     int wL = context.widths[level + 1];
     int hL = context.heights[level + 1];
 
-    T* d_temp = nullptr;
-    if (!context.initialized) {
-      if (level > 0) {
-        size_t sizeHigh = static_cast<size_t>(wH) * hH * channels * context.batchSize * sizeof(T);
-        CUDA_CHECK(cudaMalloc((void**)&d_temp, sizeHigh));
-        context.allocation_size += sizeHigh;
-        context.d_reconstruct[level] = d_temp;
-      } else {
-        // Top level: write directly to d_output
-        d_temp = d_output;
-      }
-    } else {
-      d_temp = (level > 0) ? context.d_reconstruct[level] : d_output;
-    }
+    T* d_temp = (level > 0) ? context.d_reconstruct[level] : d_output;
+    assert(d_temp);
 
     dim3 gridRecon((wH + block.x - 1) / block.x, (hH + block.y - 1) / block.y, context.batchSize);
 

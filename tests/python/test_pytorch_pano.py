@@ -3,15 +3,19 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
+import tifffile
 
 from cupano import (
+    CanvasInfo,
     ControlMasks,
     ControlMasksN,
     CudaStitchPano,
     CudaStitchPanoN,
     SpatialTiff,
 )
+from cupano.canvas import CanvasManager
 from cupano.ops import compute_laplacian
+from cupano.masks import _read_tiff_shape, _tag_to_float
 
 _MIN_TEST_FREE_BYTES = 1 << 30
 
@@ -101,6 +105,40 @@ def read_level_0_size(metadata_path) -> tuple[int, int]:
     raise AssertionError(f"Missing level_0 entry in {metadata_path}")
 
 
+def write_position_tiff(path, width: int, height: int, xpos: int, ypos: int) -> None:
+    tifffile.imwrite(
+        path,
+        np.zeros((height, width), dtype=np.uint8),
+        resolution=(1.0, 1.0),
+        extratags=[
+            (286, 5, 1, (xpos, 1), False),
+            (287, 5, 1, (ypos, 1), False),
+        ],
+    )
+
+
+def write_rgba_position_tiff(path, width: int, height: int, xpos: int, ypos: int) -> None:
+    tifffile.imwrite(
+        path,
+        np.zeros((height, width, 4), dtype=np.uint8),
+        resolution=(1.0, 1.0),
+        extratags=[
+            (286, 5, 1, (xpos, 1), False),
+            (287, 5, 1, (ypos, 1), False),
+        ],
+    )
+
+
+def write_bad_position_tiff(path, width: int, height: int) -> None:
+    tifffile.imwrite(path, np.zeros((height, width), dtype=np.uint8))
+
+
+def write_identity_mapping_set(directory, index: int, width: int, height: int, xpos: int) -> None:
+    write_position_tiff(directory / f"mapping_{index:04d}.tif", width, height, xpos, 0)
+    tifffile.imwrite(directory / f"mapping_{index:04d}_x.tif", identity_map_x(width, height))
+    tifffile.imwrite(directory / f"mapping_{index:04d}_y.tif", identity_map_y(width, height))
+
+
 @pytest.fixture(scope="module")
 def device() -> torch.device:
     return torch.device("cuda" if _has_enough_cuda_memory() else "cpu")
@@ -150,6 +188,113 @@ def test_cuda_pano_soft_seam_single_level_matches_binary_mask(
     expected[:, :, :192, :] = image1[:, :, :192, :]
     expected[:, :, 192:, :] = image2[:, :, 64:, :]
     assert_tensor_equal(out, expected, tol=1e-5)
+
+
+@pytest.mark.parametrize("reversed_order", [False, True])
+def test_cuda_pano_no_overlap_falls_back_to_full_canvas_blend(
+    device: torch.device, reversed_order: bool
+) -> None:
+    width = 64
+    height = 16
+    x1 = width if reversed_order else 0
+    x2 = 0 if reversed_order else width
+    canvas_width = width * 2
+    seam = np.zeros((height, canvas_width), dtype=np.uint8)
+    seam[:, x1 : x1 + width] = 1
+    masks = make_two_masks(width, height, seam, x2)
+    masks.positions[0] = SpatialTiff(float(x1), 0.0)
+
+    image1 = patterned_image(width, height, 0, device)
+    image2 = patterned_image(width, height, 1, device)
+    pano_hard = CudaStitchPano(1, 0, masks, quiet=True)
+    pano_full = CudaStitchPano(
+        1,
+        2,
+        masks,
+        quiet=True,
+        minimize_blend=False,
+        enable_cuda_graphs=False,
+    )
+    pano_requested_mini = CudaStitchPano(
+        1,
+        2,
+        masks,
+        quiet=True,
+        minimize_blend=True,
+        enable_cuda_graphs=False,
+    )
+
+    assert pano_hard.status.ok()
+    assert pano_full.status.ok()
+    assert pano_requested_mini.status.ok()
+    assert not pano_requested_mini._minimize_blend
+    assert not pano_requested_mini._canvas_manager.minimize_blend
+
+    hard_out = pano_hard.process(image1, image2)
+    full_out = pano_full.process(image1, image2)
+    requested_mini_out = pano_requested_mini.process(image1, image2)
+    expected_hard = torch.zeros(
+        (1, height, canvas_width, 4), dtype=torch.float32, device=device
+    )
+    expected_hard[:, :, x1 : x1 + width, :] = image1
+    expected_hard[:, :, x2 : x2 + width, :] = image2
+    assert_tensor_equal(hard_out, expected_hard)
+    assert_tensor_equal(requested_mini_out, full_out, tol=1e-5)
+
+
+def test_canvas_manager_minimize_blend_falls_back_for_reversed_layout() -> None:
+    manager = CanvasManager(
+        CanvasInfo(width=12, height=4, positions=[(4, 0), (0, 0)]),
+        minimize_blend=True,
+    )
+
+    manager.updateMinimizeBlend((8, 4), (8, 4))
+
+    assert not manager.minimize_blend
+    mask = np.zeros((4, 12), dtype=np.uint8)
+    assert manager.convertMaskMat(mask).shape == mask.shape
+
+
+def test_cuda_pano_max_output_width_does_not_mutate_input_masks(device: torch.device) -> None:
+    width = 64
+    height = 16
+    x2 = 32
+    canvas_width = width + x2
+    seam = np.zeros((height, canvas_width), dtype=np.uint8)
+    seam[:, :48] = 1
+    masks = make_two_masks(width, height, seam, x2)
+
+    pano = CudaStitchPano(1, 0, masks, quiet=True, max_output_width=48)
+
+    assert pano.canvas_width() == 48
+    assert masks.canvas_width() == canvas_width
+    assert masks.canvas_height() == height
+
+
+def test_cuda_pano_legacy_positional_max_output_width(device: torch.device) -> None:
+    width = 64
+    height = 16
+    x2 = 32
+    canvas_width = width + x2
+    seam = np.zeros((height, canvas_width), dtype=np.uint8)
+    seam[:, :48] = 1
+    masks = make_two_masks(width, height, seam, x2)
+
+    pano = CudaStitchPano(1, 0, masks, True, True, 48)
+
+    assert pano.status.ok()
+    assert pano.canvas_width() == 48
+
+
+def test_cuda_pano_max_output_width_rejects_collapsed_seam_class(device: torch.device) -> None:
+    height = 4
+    seam = np.zeros((height, 80), dtype=np.uint8)
+    seam[:, 40:] = 1
+    masks = make_two_masks(40, height, seam, 40)
+
+    pano = CudaStitchPano(1, 0, masks, quiet=True, max_output_width=1)
+
+    assert not pano.status.ok()
 
 
 def test_cuda_pano_minimize_blend_changes_workspace_size(
@@ -244,3 +389,143 @@ def test_cuda_pano_n_hard_seam_selects_indexed_image(device: torch.device) -> No
     expected[:, :, 16:32, :] = images[1][:, :, 16:32, :]
     expected[:, :, 32:, :] = images[2][:, :, 32:, :]
     assert_tensor_equal(out, expected)
+
+
+def test_cuda_pano_n_max_output_width_does_not_mutate_input_masks(device: torch.device) -> None:
+    width = 48
+    height = 24
+    seam = np.zeros((height, 120), dtype=np.uint8)
+    seam[:, 40:80] = 1
+    seam[:, 80:] = 2
+    masks = make_n_masks(
+        [(width, height), (width, height), (width, height)],
+        [(0, 0), (36, 0), (72, 0)],
+        seam,
+    )
+
+    pano = CudaStitchPanoN(1, 0, masks, quiet=True, max_output_width=60)
+
+    assert pano.canvas_width() == 60
+    assert masks.canvas_width() == 120
+    assert masks.canvas_height() == height
+
+
+def test_python_loaders_return_false_for_missing_mapping_metadata(tmp_path) -> None:
+    assert not ControlMasks().load(str(tmp_path), max_output_width=48)
+    assert not ControlMasksN().load(str(tmp_path), 3, max_output_width=48)
+
+
+def test_python_loaders_return_false_for_corrupt_mapping_metadata(tmp_path) -> None:
+    for i, xpos in enumerate((0, 8, 16)):
+        write_identity_mapping_set(tmp_path, i, 8, 4, xpos)
+        write_bad_position_tiff(tmp_path / f"mapping_{i:04d}.tif", 8, 4)
+
+    assert not ControlMasks().load(str(tmp_path))
+    assert not ControlMasksN().load(str(tmp_path), 3)
+
+
+def test_python_loaders_reject_mismatched_y_remap_metadata(tmp_path) -> None:
+    for i, xpos in enumerate((0, 8, 16)):
+        write_identity_mapping_set(tmp_path, i, 8, 4, xpos)
+    tifffile.imwrite(tmp_path / "mapping_0001_y.tif", identity_map_y(80, 40))
+
+    assert not ControlMasks().load(str(tmp_path), max_output_width=16)
+    assert not ControlMasksN().load(str(tmp_path), 3, max_output_width=24)
+
+
+def test_python_loaders_reject_non_uint16_remaps(tmp_path) -> None:
+    for i, xpos in enumerate((0, 8, 16)):
+        write_identity_mapping_set(tmp_path, i, 8, 4, xpos)
+    tifffile.imwrite(tmp_path / "mapping_0000_x.tif", np.zeros((4, 8), dtype=np.uint8))
+
+    assert not ControlMasks().load(str(tmp_path))
+    assert not ControlMasksN().load(str(tmp_path), 3)
+
+
+def test_python_rejects_invalid_tiff_rational_and_oversized_remap(tmp_path) -> None:
+    with pytest.raises(ValueError):
+        _tag_to_float((1, 0))
+    path = tmp_path / "oversized_remap.tif"
+    tifffile.imwrite(
+        path,
+        data=None,
+        shape=(32769, 1),
+        dtype=np.uint16,
+    )
+    with pytest.raises(ValueError):
+        _read_tiff_shape(path)
+
+
+def test_python_loaders_reject_placement_remap_dimension_mismatch(tmp_path) -> None:
+    for i, xpos in enumerate((0, 8, 16)):
+        write_identity_mapping_set(tmp_path, i, 8, 4, xpos)
+    write_position_tiff(tmp_path / "mapping_0001.tif", 16, 4, 8, 0)
+
+    assert not ControlMasks().load(str(tmp_path))
+    assert not ControlMasksN().load(str(tmp_path), 3)
+
+
+def test_python_loaders_accept_rgba_placement_tiffs(tmp_path) -> None:
+    two_dir = tmp_path / "two"
+    two_dir.mkdir()
+    for i, xpos in enumerate((0, 8)):
+        write_identity_mapping_set(two_dir, i, 8, 4, xpos)
+        write_rgba_position_tiff(two_dir / f"mapping_{i:04d}.tif", 8, 4, xpos, 0)
+    two_seam = np.zeros((4, 16), dtype=np.uint8)
+    two_seam[:, 8:] = 255
+    tifffile.imwrite(two_dir / "seam_file.png", two_seam)
+
+    assert ControlMasks().load(str(two_dir))
+
+    n_dir = tmp_path / "n"
+    n_dir.mkdir()
+    for i, xpos in enumerate((0, 8, 16)):
+        write_identity_mapping_set(n_dir, i, 8, 4, xpos)
+        write_rgba_position_tiff(n_dir / f"mapping_{i:04d}.tif", 8, 4, xpos, 0)
+    seam = np.zeros((4, 24), dtype=np.uint8)
+    seam[:, 8:16] = 1
+    seam[:, 16:] = 2
+    tifffile.imwrite(n_dir / "seam_file.png", seam)
+
+    assert ControlMasksN().load(str(n_dir), 3)
+
+
+def test_python_loaders_return_false_for_missing_seam(tmp_path) -> None:
+    for i, xpos in enumerate((0, 8, 16)):
+        write_identity_mapping_set(tmp_path, i, 8, 4, xpos)
+
+    two = ControlMasks()
+    assert not two.load(str(tmp_path), max_output_width=12)
+    assert not two.is_valid()
+
+    many = ControlMasksN()
+    assert not many.load(str(tmp_path), 3, max_output_width=12)
+    assert not many.is_valid()
+
+
+def test_python_two_image_loader_rejects_collapsed_capped_seam(tmp_path) -> None:
+    for i, xpos in enumerate((0, 40)):
+        write_identity_mapping_set(tmp_path, i, 40, 4, xpos)
+    seam = np.zeros((4, 80), dtype=np.uint8)
+    seam[:, 40:] = 255
+    tifffile.imwrite(tmp_path / "seam_file.png", seam)
+
+    masks = ControlMasks()
+    assert not masks.load(str(tmp_path), max_output_width=1)
+    assert not masks.is_valid()
+
+
+def test_cuda_pano_n_max_output_width_rejects_collapsed_seam_class(device: torch.device) -> None:
+    height = 4
+    seam = np.zeros((height, 120), dtype=np.uint8)
+    seam[:, 40:80] = 1
+    seam[:, 80:] = 2
+    masks = make_n_masks(
+        [(40, height), (40, height), (40, height)],
+        [(0, 0), (40, 0), (80, 0)],
+        seam,
+    )
+
+    pano = CudaStitchPanoN(1, 0, masks, quiet=True, max_output_width=2)
+
+    assert not pano.status.ok()

@@ -1,8 +1,13 @@
 #include "controlMasks3.h"
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 #include <png.h>
 #include <tiffio.h> // For TIFF metadata
+#include <algorithm>
+#include <cmath>
+#include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -15,6 +20,10 @@ namespace pano {
  */
 namespace {
 
+constexpr uint16_t kUnmappedPositionValue = 65535;
+constexpr uint32_t kHardMaximumRemapDimension = 32768;
+constexpr uint64_t kHardMaximumRemapPixels = 128ULL * 1024ULL * 1024ULL;
+
 struct TiffInfo3 {
   bool validResolution = false;
   float xResolution = 0.0f;
@@ -26,12 +35,12 @@ struct TiffInfo3 {
   float yPosition = 0.0f;
 };
 
-static SpatialTiff get_geo_tiff3(const std::string& filename) {
+static std::optional<SpatialTiff> get_geo_tiff3(const std::string& filename) {
   TiffInfo3 info;
   TIFF* tif = TIFFOpen(filename.c_str(), "r");
   if (!tif) {
     std::cerr << "Error: Could not open file " << filename << std::endl;
-    return {0, 0};
+    return std::nullopt;
   }
 
   float xres = 0.0f, yres = 0.0f;
@@ -46,15 +55,50 @@ static SpatialTiff get_geo_tiff3(const std::string& filename) {
   }
 
   float xpos = 0.0f, ypos = 0.0f;
-  if (TIFFGetField(tif, TIFFTAG_XPOSITION, &xpos)) {
+  const bool has_x_position = TIFFGetField(tif, TIFFTAG_XPOSITION, &xpos);
+  if (has_x_position) {
     info.xPosition = xpos;
   }
-  if (TIFFGetField(tif, TIFFTAG_YPOSITION, &ypos)) {
+  const bool has_y_position = TIFFGetField(tif, TIFFTAG_YPOSITION, &ypos);
+  if (has_y_position) {
     info.yPosition = ypos;
   }
 
   TIFFClose(tif);
-  return SpatialTiff{.xpos = info.xPosition * info.xResolution, .ypos = info.yPosition * info.yResolution};
+  if (!info.validResolution || !has_x_position || !has_y_position || !std::isfinite(info.xResolution) ||
+      !std::isfinite(info.yResolution) || info.xResolution <= 0.0f || info.yResolution <= 0.0f ||
+      !std::isfinite(info.xPosition) || !std::isfinite(info.yPosition)) {
+    return std::nullopt;
+  }
+  const float scaled_xpos = info.xPosition * info.xResolution;
+  const float scaled_ypos = info.yPosition * info.yResolution;
+  if (!std::isfinite(scaled_xpos) || !std::isfinite(scaled_ypos)) {
+    return std::nullopt;
+  }
+  return SpatialTiff{.xpos = scaled_xpos, .ypos = scaled_ypos};
+}
+
+static std::optional<cv::Size> read_tiff_size(const std::string& filename, bool require_uint16 = true) {
+  TIFF* tif = TIFFOpen(filename.c_str(), "r");
+  if (!tif) {
+    return std::nullopt;
+  }
+  uint32_t width = 0;
+  uint32_t height = 0;
+  uint16_t samples = 0;
+  uint16_t bits = 0;
+  uint16_t sample_format = SAMPLEFORMAT_UINT;
+  const bool ok = TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &width) && TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &height);
+  TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLESPERPIXEL, &samples);
+  TIFFGetFieldDefaulted(tif, TIFFTAG_BITSPERSAMPLE, &bits);
+  TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLEFORMAT, &sample_format);
+  TIFFClose(tif);
+  if (!ok || width == 0 || height == 0 || width > kHardMaximumRemapDimension || height > kHardMaximumRemapDimension ||
+      static_cast<uint64_t>(width) * height > kHardMaximumRemapPixels ||
+      (require_uint16 && (samples != 1 || bits != 16 || sample_format != SAMPLEFORMAT_UINT))) {
+    return std::nullopt;
+  }
+  return cv::Size(static_cast<int>(width), static_cast<int>(height));
 }
 
 /**
@@ -87,6 +131,11 @@ std::vector<int> get_unique_values(const cv::Mat& gray) {
 
   // copy the set into a sorted vector
   return std::vector<int>(uniq.begin(), uniq.end());
+}
+
+bool indexed_seam_has_all_classes3(const cv::Mat& indexed) {
+  const auto uniq = get_unique_values(indexed);
+  return uniq.size() == 3 && uniq.front() == 0 && uniq.back() == 2;
 }
 
 /**
@@ -153,6 +202,13 @@ cv::Mat imreadPalettedAsIndex(const std::string& filename) {
   png_byte color_type = png_get_color_type(png_ptr, info_ptr);
   png_byte bit_depth = png_get_bit_depth(png_ptr, info_ptr);
 
+  if (width == 0 || height == 0 || width > kHardMaximumRemapDimension || height > kHardMaximumRemapDimension ||
+      static_cast<uint64_t>(width) * height > kHardMaximumRemapPixels) {
+    png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp) nullptr);
+    fclose(fp);
+    throw std::runtime_error("PNG dimensions exceed safety limits.");
+  }
+
   if (color_type != PNG_COLOR_TYPE_PALETTE || bit_depth != 8) {
     png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp) nullptr);
     fclose(fp);
@@ -184,23 +240,169 @@ cv::Mat imreadPalettedAsIndex(const std::string& filename) {
   return indexed.clone();
 }
 
+std::optional<cv::Size> read_png_size3(const std::string& filename) {
+  FILE* fp = fopen(filename.c_str(), "rb");
+  if (!fp) {
+    return std::nullopt;
+  }
+  png_byte sig[8];
+  if (fread(sig, 1, 8, fp) != 8 || png_sig_cmp(sig, 0, 8)) {
+    fclose(fp);
+    return std::nullopt;
+  }
+  png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+  if (!png_ptr) {
+    fclose(fp);
+    return std::nullopt;
+  }
+  png_infop info_ptr = png_create_info_struct(png_ptr);
+  if (!info_ptr) {
+    png_destroy_read_struct(&png_ptr, (png_infopp) nullptr, (png_infopp) nullptr);
+    fclose(fp);
+    return std::nullopt;
+  }
+  if (setjmp(png_jmpbuf(png_ptr))) {
+    png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp) nullptr);
+    fclose(fp);
+    return std::nullopt;
+  }
+  png_init_io(png_ptr, fp);
+  png_set_sig_bytes(png_ptr, 8);
+  png_read_info(png_ptr, info_ptr);
+  const png_uint_32 width = png_get_image_width(png_ptr, info_ptr);
+  const png_uint_32 height = png_get_image_height(png_ptr, info_ptr);
+  png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp) nullptr);
+  fclose(fp);
+  if (width == 0 || height == 0 || width > kHardMaximumRemapDimension || height > kHardMaximumRemapDimension ||
+      static_cast<uint64_t>(width) * height > kHardMaximumRemapPixels) {
+    return std::nullopt;
+  }
+  return cv::Size(static_cast<int>(width), static_cast<int>(height));
+}
+
 cv::Mat load_seam_mask3(const std::string& filename) {
   // cv::Mat seam_mask = cv::imread(filename, cv::IMREAD_ANYDEPTH);
   cv::Mat seam_mask = imreadPalettedAsIndex(filename);
   // cv::Mat seam_mask_dest = seam_mask.clone();
   if (!seam_mask.empty()) {
-    std::vector<int> unique_values = get_unique_values(seam_mask);
-    assert(*unique_values.begin() == 0);
-    assert(*unique_values.rbegin() == unique_values.size() - 1);
-    assert(unique_values.size() == 3);
+    if (!indexed_seam_has_all_classes3(seam_mask)) {
+      throw std::runtime_error("3-image seam mask does not contain exactly labels 0, 1, and 2");
+    }
   }
   return seam_mask;
 }
 
+cv::Mat resize_remap_preserving_unmapped3(const cv::Mat& src, const cv::Size& size) {
+  cv::Mat resized;
+  cv::resize(src, resized, size, 0.0, 0.0, cv::INTER_NEAREST);
+  cv::Mat invalid_mask(size, CV_8U, cv::Scalar(0));
+  const double scale_x = static_cast<double>(src.cols) / static_cast<double>(size.width);
+  const double scale_y = static_cast<double>(src.rows) / static_cast<double>(size.height);
+  std::vector<int> column_prefix(static_cast<size_t>(src.cols) + 1, 0);
+  for (int y = 0; y < size.height; ++y) {
+    const int y0 = std::clamp(static_cast<int>(std::floor(y * scale_y)), 0, src.rows - 1);
+    const int y1 = std::clamp(static_cast<int>(std::ceil((y + 1) * scale_y)), y0 + 1, src.rows);
+    column_prefix[0] = 0;
+    for (int source_x = 0; source_x < src.cols; ++source_x) {
+      bool has_unmapped = false;
+      for (int source_y = y0; source_y < y1; ++source_y) {
+        if (src.ptr<uint16_t>(source_y)[source_x] == kUnmappedPositionValue) {
+          has_unmapped = true;
+          break;
+        }
+      }
+      column_prefix[static_cast<size_t>(source_x) + 1] =
+          column_prefix[static_cast<size_t>(source_x)] + (has_unmapped ? 1 : 0);
+    }
+    for (int x = 0; x < size.width; ++x) {
+      const int x0 = std::clamp(static_cast<int>(std::floor(x * scale_x)), 0, src.cols - 1);
+      const int x1 = std::clamp(static_cast<int>(std::ceil((x + 1) * scale_x)), x0 + 1, src.cols);
+      if (column_prefix[static_cast<size_t>(x1)] - column_prefix[static_cast<size_t>(x0)] > 0) {
+        invalid_mask.at<uint8_t>(y, x) = 255;
+      }
+    }
+  }
+  resized.setTo(kUnmappedPositionValue, invalid_mask);
+  return resized;
+}
+
+cv::Mat resize_nearest3(const cv::Mat& src, const cv::Size& size) {
+  cv::Mat resized;
+  cv::resize(src, resized, size, 0.0, 0.0, cv::INTER_NEAREST);
+  return resized;
+}
+
+struct ScaledPlacement3 {
+  SpatialTiff position;
+  cv::Size size;
+};
+
+ScaledPlacement3 scaled_placement3(const SpatialTiff& position, const cv::Size& size, double scale) {
+  const auto scaled_x = static_cast<int>(std::floor(position.xpos * scale));
+  const auto scaled_y = static_cast<int>(std::floor(position.ypos * scale));
+  const auto scaled_right = static_cast<int>(std::ceil((position.xpos + size.width) * scale));
+  const auto scaled_bottom = static_cast<int>(std::ceil((position.ypos + size.height) * scale));
+  return ScaledPlacement3{
+      .position = SpatialTiff{.xpos = static_cast<float>(scaled_x), .ypos = static_cast<float>(scaled_y)},
+      .size = cv::Size(std::max(1, scaled_right - scaled_x), std::max(1, scaled_bottom - scaled_y))};
+}
+
+cv::Size canvas_size3(const std::vector<ScaledPlacement3>& placements) {
+  int width = 1;
+  int height = 1;
+  for (const ScaledPlacement3& placement : placements) {
+    width = std::max(width, static_cast<int>(placement.position.xpos) + placement.size.width);
+    height = std::max(height, static_cast<int>(placement.position.ypos) + placement.size.height);
+  }
+  return cv::Size(width, height);
+}
+
+void clear_control_masks3(ControlMasks3& masks) {
+  masks.img0_col.release();
+  masks.img0_row.release();
+  masks.img1_col.release();
+  masks.img1_row.release();
+  masks.img2_col.release();
+  masks.img2_row.release();
+  masks.whole_seam_mask_image.release();
+  masks.positions.clear();
+}
+
+double scale_to_fit_max_width3(
+    const std::vector<SpatialTiff>& positions,
+    const std::vector<cv::Size>& sizes,
+    size_t native_width,
+    int max_output_width) {
+  double low = 0.0;
+  double high = static_cast<double>(max_output_width) / static_cast<double>(native_width);
+  std::vector<ScaledPlacement3> direct_placements;
+  direct_placements.reserve(positions.size());
+  for (size_t i = 0; i < positions.size(); ++i) {
+    direct_placements.push_back(scaled_placement3(positions[i], sizes[i], high));
+  }
+  if (canvas_size3(direct_placements).width <= max_output_width) {
+    return high;
+  }
+  for (int iteration = 0; iteration < 32; ++iteration) {
+    const double mid = (low + high) / 2.0;
+    std::vector<ScaledPlacement3> placements;
+    placements.reserve(positions.size());
+    for (size_t i = 0; i < positions.size(); ++i) {
+      placements.push_back(scaled_placement3(positions[i], sizes[i], mid));
+    }
+    if (canvas_size3(placements).width <= max_output_width) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+  return low > 0.0 ? low : high;
+}
+
 } // namespace
 
-ControlMasks3::ControlMasks3(const std::string& game_dir) {
-  load(game_dir);
+ControlMasks3::ControlMasks3(const std::string& game_dir, int max_output_width) {
+  load(game_dir, max_output_width);
 }
 
 cv::Mat ControlMasks3::split_to_channels(const cv::Mat& seam_mask) {
@@ -224,7 +426,8 @@ cv::Mat ControlMasks3::split_to_channels(const cv::Mat& seam_mask) {
   return seam_mask_dest;
 }
 
-bool ControlMasks3::load(const std::string& game_dir_in) {
+bool ControlMasks3::load(const std::string& game_dir_in, int max_output_width) {
+  clear_control_masks3(*this);
   std::string game_dir = game_dir_in;
   if (!game_dir.empty() && game_dir.back() != '/') {
     game_dir += '/';
@@ -241,55 +444,136 @@ bool ControlMasks3::load(const std::string& game_dir_in) {
   std::string mapping2_y = game_dir + "mapping_0002_y.tif";
   std::string seam_filename = game_dir + "seam_file.png"; // we assume 3‐channel PNG
 
+  const auto p0 = get_geo_tiff3(mapping0_pos);
+  const auto p1 = get_geo_tiff3(mapping1_pos);
+  const auto p2 = get_geo_tiff3(mapping2_pos);
+  if (!p0 || !p1 || !p2) {
+    std::cerr << "Unable to load 3-image mapping placement metadata" << std::endl;
+    clear_control_masks3(*this);
+    return false;
+  }
+  positions = normalize_positions3({*p0, *p1, *p2});
+  const auto img0_position_size = read_tiff_size(mapping0_pos, /*require_uint16=*/false);
+  const auto img1_position_size = read_tiff_size(mapping1_pos, /*require_uint16=*/false);
+  const auto img2_position_size = read_tiff_size(mapping2_pos, /*require_uint16=*/false);
+  const auto img0_size = read_tiff_size(mapping0_x);
+  const auto img1_size = read_tiff_size(mapping1_x);
+  const auto img2_size = read_tiff_size(mapping2_x);
+  const auto img0_row_size = read_tiff_size(mapping0_y);
+  const auto img1_row_size = read_tiff_size(mapping1_y);
+  const auto img2_row_size = read_tiff_size(mapping2_y);
+  if (!img0_position_size || !img1_position_size || !img2_position_size || !img0_size || !img1_size || !img2_size ||
+      !img0_row_size || !img1_row_size || !img2_row_size) {
+    std::cerr << "Unable to load 3-image remap metadata" << std::endl;
+    clear_control_masks3(*this);
+    return false;
+  }
+  if (*img0_position_size != *img0_size || *img0_size != *img0_row_size || *img1_position_size != *img1_size ||
+      *img1_size != *img1_row_size || *img2_position_size != *img2_size || *img2_size != *img2_row_size) {
+    std::cerr << "3-image mapping placement and remap dimensions do not match" << std::endl;
+    clear_control_masks3(*this);
+    return false;
+  }
+  std::vector<ScaledPlacement3> placements{
+      ScaledPlacement3{.position = positions[0], .size = *img0_size},
+      ScaledPlacement3{.position = positions[1], .size = *img1_size},
+      ScaledPlacement3{.position = positions[2], .size = *img2_size},
+  };
+  const cv::Size native_canvas_size = canvas_size3(placements);
+  if (max_output_width > 0 && native_canvas_size.width > max_output_width) {
+    std::cerr << "Control mask canvas " << native_canvas_size.width << "x" << native_canvas_size.height
+              << " exceeds max_output_width " << max_output_width << "; regenerate capped mapping TIFFs" << std::endl;
+    clear_control_masks3(*this);
+    return false;
+  }
+  const cv::Size effective_canvas_size = canvas_size3(placements);
+  const auto seam_size = read_png_size3(seam_filename);
+  if (!seam_size || *seam_size != effective_canvas_size) {
+    std::cerr << "3-image seam mask dimensions do not match the effective canvas: " << seam_filename << std::endl;
+    clear_control_masks3(*this);
+    return false;
+  }
+
   // Load remap (X/Y) for image0:
   img0_col = cv::imread(mapping0_x, cv::IMREAD_ANYDEPTH);
   if (img0_col.empty()) {
     std::cerr << "Unable to load remap0_x: " << mapping0_x << std::endl;
+    clear_control_masks3(*this);
     return false;
+  }
+  if (img0_col.size() != placements[0].size) {
+    img0_col = resize_remap_preserving_unmapped3(img0_col, placements[0].size);
   }
   img0_row = cv::imread(mapping0_y, cv::IMREAD_ANYDEPTH);
   if (img0_row.empty()) {
     std::cerr << "Unable to load remap0_y: " << mapping0_y << std::endl;
+    clear_control_masks3(*this);
     return false;
+  }
+  if (img0_row.size() != placements[0].size) {
+    img0_row = resize_remap_preserving_unmapped3(img0_row, placements[0].size);
   }
 
   // Load remap for image1:
   img1_col = cv::imread(mapping1_x, cv::IMREAD_ANYDEPTH);
   if (img1_col.empty()) {
     std::cerr << "Unable to load remap1_x: " << mapping1_x << std::endl;
+    clear_control_masks3(*this);
     return false;
+  }
+  if (img1_col.size() != placements[1].size) {
+    img1_col = resize_remap_preserving_unmapped3(img1_col, placements[1].size);
   }
   img1_row = cv::imread(mapping1_y, cv::IMREAD_ANYDEPTH);
   if (img1_row.empty()) {
     std::cerr << "Unable to load remap1_y: " << mapping1_y << std::endl;
+    clear_control_masks3(*this);
     return false;
+  }
+  if (img1_row.size() != placements[1].size) {
+    img1_row = resize_remap_preserving_unmapped3(img1_row, placements[1].size);
   }
 
   // Load remap for image2:
   img2_col = cv::imread(mapping2_x, cv::IMREAD_ANYDEPTH);
   if (img2_col.empty()) {
     std::cerr << "Unable to load remap2_x: " << mapping2_x << std::endl;
+    clear_control_masks3(*this);
     return false;
+  }
+  if (img2_col.size() != placements[2].size) {
+    img2_col = resize_remap_preserving_unmapped3(img2_col, placements[2].size);
   }
   img2_row = cv::imread(mapping2_y, cv::IMREAD_ANYDEPTH);
   if (img2_row.empty()) {
     std::cerr << "Unable to load remap2_y: " << mapping2_y << std::endl;
+    clear_control_masks3(*this);
     return false;
+  }
+  if (img2_row.size() != placements[2].size) {
+    img2_row = resize_remap_preserving_unmapped3(img2_row, placements[2].size);
   }
 
   // Load the seam mask:
-  whole_seam_mask_image = load_seam_mask3(seam_filename);
-
-  if (whole_seam_mask_image.empty()) {
-    std::cerr << "Unable to load seam mask: " << seam_filename << std::endl;
+  try {
+    whole_seam_mask_image = load_seam_mask3(seam_filename);
+  } catch (const std::exception& e) {
+    std::cerr << "Unable to load seam mask: " << seam_filename << " (" << e.what() << ")" << std::endl;
+    clear_control_masks3(*this);
     return false;
   }
 
-  // Load geospatial positions from TIFF tags:
-  SpatialTiff p0 = get_geo_tiff3(mapping0_pos);
-  SpatialTiff p1 = get_geo_tiff3(mapping1_pos);
-  SpatialTiff p2 = get_geo_tiff3(mapping2_pos);
-  positions = normalize_positions3({p0, p1, p2});
+  if (whole_seam_mask_image.empty()) {
+    std::cerr << "Unable to load seam mask: " << seam_filename << std::endl;
+    clear_control_masks3(*this);
+    return false;
+  }
+  if (!indexed_seam_has_all_classes3(whole_seam_mask_image)) {
+    std::cerr << "Scaled 3-image seam mask lost one or more image classes: " << seam_filename << std::endl;
+    clear_control_masks3(*this);
+    return false;
+  }
+  positions = {placements[0].position, placements[1].position, placements[2].position};
 
   return true;
 }
@@ -314,6 +598,34 @@ size_t ControlMasks3::canvas_height() const {
   float h1 = positions[1].ypos + img1_col.rows;
   float h2 = positions[2].ypos + img2_col.rows;
   return static_cast<size_t>(std::max({h0, h1, h2}));
+}
+
+bool ControlMasks3::scale_to_max_output_width(int max_output_width) {
+  if (!is_valid() || max_output_width <= 0 || canvas_width() <= static_cast<size_t>(max_output_width)) {
+    return is_valid();
+  }
+
+  const size_t native_width = canvas_width();
+  const double scale = scale_to_fit_max_width3(
+      positions, {img0_col.size(), img1_col.size(), img2_col.size()}, native_width, max_output_width);
+  const std::vector<ScaledPlacement3> placements{
+      scaled_placement3(positions[0], img0_col.size(), scale),
+      scaled_placement3(positions[1], img1_col.size(), scale),
+      scaled_placement3(positions[2], img2_col.size(), scale),
+  };
+  img0_col = resize_remap_preserving_unmapped3(img0_col, placements[0].size);
+  img0_row = resize_remap_preserving_unmapped3(img0_row, img0_col.size());
+  img1_col = resize_remap_preserving_unmapped3(img1_col, placements[1].size);
+  img1_row = resize_remap_preserving_unmapped3(img1_row, img1_col.size());
+  img2_col = resize_remap_preserving_unmapped3(img2_col, placements[2].size);
+  img2_row = resize_remap_preserving_unmapped3(img2_row, img2_col.size());
+  whole_seam_mask_image = resize_nearest3(whole_seam_mask_image, canvas_size3(placements));
+  if (!indexed_seam_has_all_classes3(whole_seam_mask_image)) {
+    clear_control_masks3(*this);
+    return false;
+  }
+  positions = {placements[0].position, placements[1].position, placements[2].position};
+  return true;
 }
 
 } // namespace pano

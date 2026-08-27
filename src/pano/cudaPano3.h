@@ -1,7 +1,9 @@
 #pragma once
+#include <array>
 #include <memory>
 #include "cupano/cuda/cudaBlend3.h"
 #include "cupano/cuda/cudaStatus.h"
+#include "cupano/pano/blendRoi.h"
 #include "cupano/pano/canvasManager3.h"
 #include "cupano/pano/controlMasks3.h"
 #include "cupano/pano/cudaMat.h"
@@ -49,6 +51,13 @@ struct StitchingContext3 {
   // 3-image Laplacian-blend context (for soft-seam case):
   std::unique_ptr<CudaBatchLaplacianBlendContext3<BaseScalar_t<T_compute>>> laplacian_blend_context;
 
+  // Effective ROI metadata is kept with the scratch buffers so protected compatibility helpers
+  // preserve the same minimized semantics as the public process path.
+  bool minimizes_blend{false};
+  cv::Rect blend_roi_canvas{};
+  cv::Rect write_roi_canvas{};
+  std::array<blend_roi::RemapRoi, 3> remap_rois{};
+
   constexpr int batch_size() const {
     return batch_size_;
   }
@@ -67,7 +76,13 @@ class CudaStitchPano3 {
   using pipeline_type = T_pipeline;
   using compute_type = T_compute;
 
-  CudaStitchPano3(int batch_size, int num_levels, const ControlMasks3& control_masks, bool quiet = false);
+  CudaStitchPano3(
+      int batch_size,
+      int num_levels,
+      const ControlMasks3& control_masks,
+      bool quiet = false,
+      int max_output_width = 0,
+      bool minimize_blend = true);
 
   int canvas_width() const {
     return canvas_manager_->canvas_width();
@@ -80,6 +95,15 @@ class CudaStitchPano3 {
   }
   const CudaStatus status() const {
     return status_;
+  }
+  bool minimizes_blend() const {
+    return minimize_blend_ && blend_roi_canvas_.area() > 0 && write_roi_canvas_.area() > 0;
+  }
+  const cv::Rect& blend_roi_canvas() const {
+    return blend_roi_canvas_;
+  }
+  const cv::Rect& write_roi_canvas() const {
+    return write_roi_canvas_;
   }
 
   /**
@@ -140,6 +164,13 @@ class CudaStitchPano3 {
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
+  CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process_impl_current(
+      const CudaMat<T_pipeline>& inputImage0,
+      const CudaMat<T_pipeline>& inputImage1,
+      const CudaMat<T_pipeline>& inputImage2,
+      cudaStream_t stream,
+      std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
+
   // Optimized process_impl with fused kernels
   static CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process_impl_optimized(
       const CudaMat<T_pipeline>& inputImage0,
@@ -150,13 +181,20 @@ class CudaStitchPano3 {
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
+  CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process_impl_optimized_current(
+      const CudaMat<T_pipeline>& inputImage0,
+      const CudaMat<T_pipeline>& inputImage1,
+      const CudaMat<T_pipeline>& inputImage2,
+      cudaStream_t stream,
+      std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
+
  private:
   // Legacy remap functions (kept for compatibility)
   static CudaStatus remap_to_surface_for_blending(
       const CudaMat<T_pipeline>& inputImage,
       const CudaMat<uint16_t>& map_x,
       const CudaMat<uint16_t>& map_y,
-      CudaMat<T_pipeline>& dest_canvas,
+      CudaMat<T_compute>& dest_canvas,
       int dest_canvas_x,
       int dest_canvas_y,
       int batch_size,
@@ -178,6 +216,10 @@ class CudaStitchPano3 {
 
   std::unique_ptr<StitchingContext3<T_pipeline, T_compute>> stitch_context_;
   std::unique_ptr<CanvasManager3> canvas_manager_;
+  bool minimize_blend_{false};
+  cv::Rect blend_roi_canvas_{};
+  cv::Rect write_roi_canvas_{};
+  std::array<blend_roi::RemapRoi, 3> remap_rois_{};
   CudaStatus status_;
 };
 

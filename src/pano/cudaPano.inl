@@ -6,6 +6,8 @@
 #include "cupano/cuda/cudaTypes.h"
 #include "cupano/pano/cudaPano.h"
 
+#include <algorithm>
+#include <cmath>
 #include <csignal>
 #include <filesystem>
 #include <fstream>
@@ -23,23 +25,32 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
     const ControlMasks& control_masks,
     bool quiet,
     bool minimize_blend,
-    int max_output_width) {
-  (void)max_output_width;
+    int max_output_width)
+    : minimize_blend_(minimize_blend && num_levels > 0) {
   if (!control_masks.is_valid()) {
     status_ = CudaStatus(cudaErrorFileNotFound, "Stitching masks were not able to be loaded");
     return;
   }
+  const size_t original_canvas_width = control_masks.canvas_width();
+  std::optional<ControlMasks> scaled_control_masks;
+  if (max_output_width > 0 && original_canvas_width > static_cast<size_t>(max_output_width)) {
+    scaled_control_masks = control_masks;
+    if (!scaled_control_masks->scale_to_max_output_width(max_output_width)) {
+      status_ = CudaStatus(cudaErrorInvalidValue, "Stitching masks lost a seam class while applying max_output_width");
+      return;
+    }
+  }
+  const ControlMasks& masks = scaled_control_masks ? *scaled_control_masks : control_masks;
   stitch_context_ = std::make_unique<StitchingContext<T_pipeline, T_compute>>(
       /*batch_size=*/batch_size, /*is_hard_seam=*/num_levels == 0);
-  assert(!control_masks.positions.empty());
+  assert(!masks.positions.empty());
   // Compute canvas size
-  const int canvas_width = control_masks.canvas_width();
-  const int canvas_height = control_masks.canvas_height();
+  const int canvas_width = masks.canvas_width();
+  const int canvas_height = masks.canvas_height();
 
   if (!quiet) {
     std::cout << "Stitched canvas size: " << canvas_width << " x " << canvas_height << std::endl;
   }
-
   //
   // CanvasManager
   //
@@ -48,30 +59,61 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
           .width = canvas_width,
           .height = canvas_height,
           .positions =
-              {cv::Point(control_masks.positions[0].xpos, control_masks.positions[0].ypos),
-               cv::Point(control_masks.positions[1].xpos, control_masks.positions[1].ypos)}},
-      /*minimize_blend=*/(minimize_blend && !stitch_context_->is_hard_seam()));
+              {cv::Point(masks.positions[0].xpos, masks.positions[0].ypos),
+               cv::Point(masks.positions[1].xpos, masks.positions[1].ypos)}},
+      /*minimize_blend=*/false,
+      /*overlap_pad=*/blend_roi::scaled_overlap_padding(original_canvas_width, canvas_width));
 
-  canvas_manager_->_remapper_1.width = control_masks.img1_col.cols;
-  canvas_manager_->_remapper_1.height = control_masks.img1_col.rows;
-  canvas_manager_->_remapper_2.width = control_masks.img2_col.cols;
-  canvas_manager_->_remapper_2.height = control_masks.img2_col.rows;
+  canvas_manager_->_remapper_1.width = masks.img1_col.cols;
+  canvas_manager_->_remapper_1.height = masks.img1_col.rows;
+  canvas_manager_->_remapper_2.width = masks.img2_col.cols;
+  canvas_manager_->_remapper_2.height = masks.img2_col.rows;
 
-  canvas_manager_->updateMinimizeBlend(control_masks.img1_col.size(), control_masks.img2_col.size());
+  canvas_manager_->updateMinimizeBlend(masks.img1_col.size(), masks.img2_col.size());
 
-  cv::Mat blend_seam = canvas_manager_->convertMaskMat(control_masks.whole_seam_mask_image);
-  assert(!blend_seam.empty());
-  blend_seam = blend_seam.clone();
+  cv::Mat full_seam = canvas_manager_->convertMaskMat(masks.whole_seam_mask_image);
+  assert(!full_seam.empty());
+  full_seam = full_seam.clone();
+  cv::Mat blend_seam = full_seam;
 
-  auto canvas = std::make_unique<CudaMat<T_pipeline>>(
-      stitch_context_->batch_size(), canvas_manager_->canvas_width(), canvas_manager_->canvas_height());
+  if (minimize_blend_) {
+    const blend_roi::Regions regions =
+        blend_roi::select_regions(full_seam, num_levels, canvas_manager_->overlap_padding());
+    write_roi_canvas_ = regions.write;
+    blend_roi_canvas_ = regions.blend;
 
-  assert(control_masks.img1_col.type() == CV_16U);
-  stitch_context_->remap_1_x = std::make_unique<CudaMat<uint16_t>>(control_masks.img1_col);
-  stitch_context_->remap_1_y = std::make_unique<CudaMat<uint16_t>>(control_masks.img1_row);
+    // Two-image seam labels are blend weights: 1 owns image 1 and 0 owns image 2.
+    const std::vector<cv::Point> owner_positions = {
+        canvas_manager_->canvas_positions()[1], canvas_manager_->canvas_positions()[0]};
+    const std::vector<cv::Mat> owner_remap_x = {masks.img2_col, masks.img1_col};
+    const std::vector<cv::Mat> owner_remap_y = {masks.img2_row, masks.img1_row};
+    if (minimizes_blend() &&
+        !blend_roi::hard_baseline_covers_soft_owners_outside_write(
+            full_seam, owner_positions, owner_remap_x, owner_remap_y, write_roi_canvas_)) {
+      write_roi_canvas_ = {};
+      blend_roi_canvas_ = {};
+    }
 
-  stitch_context_->remap_2_x = std::make_unique<CudaMat<uint16_t>>(control_masks.img2_col);
-  stitch_context_->remap_2_y = std::make_unique<CudaMat<uint16_t>>(control_masks.img2_row);
+    if (minimizes_blend()) {
+      stitch_context_->cudaBlendHardSeam = std::make_unique<CudaMat<unsigned char>>(full_seam);
+      blend_seam = full_seam(blend_roi_canvas_).clone();
+      remap_rois_[0] =
+          blend_roi::remap_roi(canvas_manager_->canvas_positions()[0], masks.img1_col.size(), blend_roi_canvas_);
+      remap_rois_[1] =
+          blend_roi::remap_roi(canvas_manager_->canvas_positions()[1], masks.img2_col.size(), blend_roi_canvas_);
+      stitch_context_->minimizes_blend = true;
+      stitch_context_->blend_roi_canvas = blend_roi_canvas_;
+      stitch_context_->write_roi_canvas = write_roi_canvas_;
+      stitch_context_->remap_rois = remap_rois_;
+    }
+  }
+
+  assert(masks.img1_col.type() == CV_16U);
+  stitch_context_->remap_1_x = std::make_unique<CudaMat<uint16_t>>(masks.img1_col);
+  stitch_context_->remap_1_y = std::make_unique<CudaMat<uint16_t>>(masks.img1_row);
+
+  stitch_context_->remap_2_x = std::make_unique<CudaMat<uint16_t>>(masks.img2_col);
+  stitch_context_->remap_2_y = std::make_unique<CudaMat<uint16_t>>(masks.img2_row);
 
   if (!stitch_context_->is_hard_seam()) {
     blend_seam.convertTo(blend_seam, cudaPixelTypeToCvType(CudaTypeToPixelType<T_compute>::value));
@@ -88,8 +130,8 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
             num_levels,
             /*batch_size=*/stitch_context_->batch_size());
   } else {
-    assert(blend_seam.type() == CV_8U);
-    stitch_context_->cudaBlendHardSeam = std::make_unique<CudaMat<unsigned char>>(blend_seam);
+    assert(full_seam.type() == CV_8U);
+    stitch_context_->cudaBlendHardSeam = std::make_unique<CudaMat<unsigned char>>(full_seam);
   }
 }
 
@@ -172,249 +214,130 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     const CanvasManager& canvas_manager,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
-  CudaStatus cuerr;
-  const T_pipeline default_pixel = T_pipeline{};
-
   assert(canvas);
   assert(inputImage1.batch_size() == stitch_context.batch_size());
   assert(inputImage2.batch_size() == stitch_context.batch_size());
   assert(canvas->batch_size() == stitch_context.batch_size());
-  const size_t batch_size = stitch_context.batch_size();
-  const bool use_minimized_blend = canvas_manager.minimize_blend();
 
-  assert(canvas->pitch());
-  CUDA_RETURN_IF_ERROR(
-      cudaMemsetAsync(canvas->data_raw(), 0, canvas->pitch() * canvas->height() * stitch_context.batch_size(), stream));
+  const T_pipeline default_pixel{};
+  const std::array<const CudaMat<T_pipeline>*, 2> inputs = {&inputImage1, &inputImage2};
+  const std::array<const CudaMat<uint16_t>*, 2> remap_x = {
+      stitch_context.remap_1_x.get(), stitch_context.remap_2_x.get()};
+  const std::array<const CudaMat<uint16_t>*, 2> remap_y = {
+      stitch_context.remap_1_y.get(), stitch_context.remap_2_y.get()};
 
-  if (!stitch_context.is_hard_seam()) {
-    // The soft-seam remap/copy path only fills sub-ROIs of these reusable buffers.
-    CUDA_RETURN_IF_ERROR(cudaMemsetAsync(
-        stitch_context.cudaFull1->data_raw(),
-        0,
-        stitch_context.cudaFull1->pitch() * stitch_context.cudaFull1->height() * stitch_context.batch_size(),
-        stream));
-    CUDA_RETURN_IF_ERROR(cudaMemsetAsync(
-        stitch_context.cudaFull2->data_raw(),
-        0,
-        stitch_context.cudaFull2->pitch() * stitch_context.cudaFull2->height() * stitch_context.batch_size(),
-        stream));
+  if (stitch_context.is_hard_seam() || stitch_context.minimizes_blend) {
+    CUDA_RETURN_IF_ERROR(cudaMemsetAsync(canvas->data(), 0, canvas->size(), stream));
   }
 
-  // bool cross_pollenate_images = true;
-  auto roi_width = [](const cv::Rect2i& roi) { return roi.width; };
-  if (!stitch_context.is_hard_seam()) {
-    if (use_minimized_blend) {
-      //
-      // SOFT SEAM LEFT (minimized blend ROI)
-      //
-      cuerr = batched_remap_kernel_ex_offset(
-          inputImage1.surface(),
+  const auto render_hard_seam = [&]() -> CudaStatus {
+    constexpr std::array<int, 2> kSeamLabels = {1, 0};
+    for (size_t i = 0; i < inputs.size(); ++i) {
+      CudaStatus status = batched_remap_kernel_ex_offset_with_dest_map(
+          inputs[i]->surface(),
           canvas->surface(),
-          stitch_context.remap_1_x->data(),
-          stitch_context.remap_1_y->data(),
+          remap_x[i]->data(),
+          remap_y[i]->data(),
           default_pixel,
-          /*batchSize=*/batch_size,
-          stitch_context.remap_1_x->width(),
-          stitch_context.remap_1_x->height(),
-          /*offsetX=*/canvas_manager._x1,
-          /*offsetY=*/canvas_manager._y1,
-          /*no_unmapped_write=*/false,
+          kSeamLabels[i],
+          stitch_context.cudaBlendHardSeam->data(),
+          stitch_context.batch_size(),
+          remap_x[i]->width(),
+          remap_x[i]->height(),
+          canvas_manager.canvas_positions()[i].x,
+          canvas_manager.canvas_positions()[i].y,
           stream);
-      CUDA_RETURN_IF_ERROR(cuerr);
+      if (!status.ok())
+        return status;
+    }
+    return CudaStatus::OkStatus();
+  };
 
-      cuerr = simple_make_full_batch(
-          canvas->surface(),
-          /*region_width=*/roi_width(canvas_manager.remapped_image_roi_blend_1),
-          /*region_height=*/stitch_context.cudaBlendSoftSeam->height(),
-          canvas_manager.remapped_image_roi_blend_1.x,
-          0 /* we've already applied our Y offset */,
-          /*destOffsetX=*/canvas_manager._remapper_1.xpos,
-          /*destOffsetY=*/0,
-          /*adjust_origin=*/false,
-          /*batchSize=*/batch_size,
-          stitch_context.cudaFull1->surface(),
-          stream);
-      CUDA_RETURN_IF_ERROR(cuerr);
-    } else {
-      //
-      // SOFT SEAM LEFT (full-canvas blend)
-      //
-      cuerr = batched_remap_kernel_ex_offset(
-          inputImage1.surface(),
-          stitch_context.cudaFull1->surface(),
-          stitch_context.remap_1_x->data(),
-          stitch_context.remap_1_y->data(),
+  if (stitch_context.is_hard_seam()) {
+    CUDA_RETURN_IF_ERROR(render_hard_seam());
+    return std::move(canvas);
+  }
+
+  const std::array<CudaMat<T_compute>*, 2> full = {stitch_context.cudaFull1.get(), stitch_context.cudaFull2.get()};
+  for (CudaMat<T_compute>* scratch : full) {
+    CUDA_RETURN_IF_ERROR(cudaMemsetAsync(scratch->data(), 0, scratch->size(), stream));
+  }
+  if (stitch_context.minimizes_blend) {
+    CUDA_RETURN_IF_ERROR(render_hard_seam());
+    for (size_t i = 0; i < inputs.size(); ++i) {
+      const blend_roi::RemapRoi& remap_roi = stitch_context.remap_rois[i];
+      CUDA_RETURN_IF_ERROR(batched_remap_kernel_ex_offset_roi(
+          inputs[i]->surface(),
+          full[i]->surface(),
+          remap_x[i]->data(),
+          remap_y[i]->data(),
           default_pixel,
-          /*batchSize=*/batch_size,
-          stitch_context.remap_1_x->width(),
-          stitch_context.remap_1_x->height(),
-          /*offsetX=*/canvas_manager._x1,
-          /*offsetY=*/canvas_manager._y1,
+          stitch_context.batch_size(),
+          remap_x[i]->width(),
+          remap_x[i]->height(),
+          remap_roi.offset_x,
+          remap_roi.offset_y,
+          remap_roi.roi.x,
+          remap_roi.roi.y,
+          remap_roi.roi.width,
+          remap_roi.roi.height,
           /*no_unmapped_write=*/false,
-          stream);
-      CUDA_RETURN_IF_ERROR(cuerr);
+          stream));
     }
   } else {
-    //
-    // HARD SEAM LEFT
-    //
-#if 1
-    cuerr = batched_remap_kernel_ex_offset_with_dest_map(
-        inputImage1.surface(),
-        canvas->surface(),
-        stitch_context.remap_1_x->data(),
-        stitch_context.remap_1_y->data(),
-        default_pixel,
-        /*this_image_index=*/
-        1 /* <-- we inverted the mask at load-time to make it a weight, so image 0 is actually 1 in the mask */,
-        stitch_context.cudaBlendHardSeam->data(),
-        /*batchSize=*/stitch_context.batch_size(),
-        stitch_context.remap_1_x->width(),
-        stitch_context.remap_1_x->height(),
-        /*offsetX=*/canvas_manager._x1,
-        /*offsetY=*/canvas_manager._y1,
-        stream);
-    CUDA_RETURN_IF_ERROR(cuerr);
-    // SHOW_SMALL(&inputImage1);
-    // SHOW_IMAGE(canvas);
-    // SHOW_SCALED(canvas, 0.5);
-#endif
-  }
-  //
-  // Image 2
-  //
-  if (!stitch_context.is_hard_seam()) {
-    if (use_minimized_blend) {
-      //
-      // SOFT SEAM RIGHT (minimized blend ROI)
-      //
-      cuerr = batched_remap_kernel_ex_offset(
-          inputImage2.surface(),
-          canvas->surface(),
-          stitch_context.remap_2_x->data(),
-          stitch_context.remap_2_y->data(),
+    for (size_t i = 0; i < inputs.size(); ++i) {
+      CUDA_RETURN_IF_ERROR(batched_remap_kernel_ex_offset(
+          inputs[i]->surface(),
+          full[i]->surface(),
+          remap_x[i]->data(),
+          remap_y[i]->data(),
           default_pixel,
-          /*batchSize=*/stitch_context.batch_size(),
-          stitch_context.remap_2_x->width(),
-          stitch_context.remap_2_x->height(),
-          /*offsetX=*/canvas_manager._x2,
-          /*offsetY=*/canvas_manager._y2,
+          stitch_context.batch_size(),
+          remap_x[i]->width(),
+          remap_x[i]->height(),
+          canvas_manager.canvas_positions()[i].x,
+          canvas_manager.canvas_positions()[i].y,
           /*no_unmapped_write=*/false,
-          stream);
-      CUDA_RETURN_IF_ERROR(cuerr);
+          stream));
+    }
+  }
 
-      cuerr = simple_make_full_batch(
-          canvas->surface(),
-          /*region_width=*/roi_width(canvas_manager.remapped_image_roi_blend_2),
-          /*region_height=*/stitch_context.cudaBlendSoftSeam->height(),
-          /*offsetX=*/canvas_manager._x2,
-          /*offsetY=*/0,
-          /*destOffsetX=*/canvas_manager._remapper_2.xpos,
-          /*destOffsetY=*/0,
-          /*adjust_origin=*/false,
-          /*batchSize=*/stitch_context.batch_size(),
-          stitch_context.cudaFull2->surface(),
-          stream);
-      CUDA_RETURN_IF_ERROR(cuerr);
-    } else {
-      //
-      // SOFT SEAM RIGHT (full-canvas blend)
-      //
-      cuerr = batched_remap_kernel_ex_offset(
-          inputImage2.surface(),
-          stitch_context.cudaFull2->surface(),
-          stitch_context.remap_2_x->data(),
-          stitch_context.remap_2_y->data(),
-          default_pixel,
-          /*batchSize=*/stitch_context.batch_size(),
-          stitch_context.remap_2_x->width(),
-          stitch_context.remap_2_x->height(),
-          /*offsetX=*/canvas_manager._x2,
-          /*offsetY=*/canvas_manager._y2,
-          /*no_unmapped_write=*/false,
-          stream);
-      CUDA_RETURN_IF_ERROR(cuerr);
-    }
-  } else {
-    //
-    // HARD SEAM RIGHT
-    //
-#if 1
-    assert(canvas_manager._x2 + stitch_context.remap_2_x->width() <= canvas->width());
-    assert(canvas_manager._y2 + stitch_context.remap_2_x->height() <= canvas->height());
-    cuerr = batched_remap_kernel_ex_offset_with_dest_map(
-        inputImage2.surface(),
-        canvas->surface(),
-        stitch_context.remap_2_x->data(),
-        stitch_context.remap_2_y->data(),
-        default_pixel,
-        /*this_image_index=*/
-        0 /* <-- we inverted the mask at load-time to make it a weight, so image 1 is actually 0 in the mask */,
-        stitch_context.cudaBlendHardSeam->data(),
-        /*batchSize=*/stitch_context.batch_size(),
-        stitch_context.remap_2_x->width(),
-        stitch_context.remap_2_x->height(),
-        /*offsetX=*/canvas_manager._x2,
-        /*offsetY=*/canvas_manager._y2,
-        stream);
-    CUDA_RETURN_IF_ERROR(cuerr);
-    // SHOW_SCALED(canvas, 0.5);
-    // SHOW_SMALL(stitch_context.cudaBlendHardSeam);
-#endif
-  }
-  if (!stitch_context.is_hard_seam()) {
-    CudaMat<T_compute>& cudaBlendedFull = *stitch_context.cudaFull1;
-#if 0
-    if constexpr (sizeof(T_compute) / sizeof(BaseScalar_t<T_compute>) == 4) {
-      auto surf1 = stitch_context.cudaFull1->surface();
-      auto surf2 = stitch_context.cudaFull2->surface();
-      cuerr = AlphaConditionalCopy(
-          surf1,
-          surf2,
-          /*batchSize=*/stitch_context.batch_size(),
-          stream);
-      CUDA_RETURN_IF_ERROR(cuerr);
-    }
-    // SHOW_SCALED(stitch_context.cudaFull1, 0.5);
-    // SHOW_SCALED(stitch_context.cudaFull2, 0.5);
-#endif
-    //
-    // BLEND THE IMAGES (overlapping portions + some padding)
-    //
-    cuerr = cudaBatchedLaplacianBlendWithContext(
-        stitch_context.cudaFull1->data_raw(),
-        stitch_context.cudaFull2->data_raw(),
-        stitch_context.cudaBlendSoftSeam->data_raw(),
-        // Put output in full-1 memory
-        cudaBlendedFull.data_raw(),
-        *stitch_context.laplacian_blend_context,
-        stitch_context.cudaFull2->channels(),
-        stream);
-    CUDA_RETURN_IF_ERROR(cuerr);
-    // SHOW_IMAGE(&cudaBlendedFull);
-    // stitch_context.laplacian_blend_context->displayPyramids(tmp::num_channels<T_compute>(), 0.25, /*wait=*/true);
-#if 1
-    //
-    // Copy the blended portion (overlapping portion + some padding) onto
-    // the canvas over some of the remapped image 1 and image 2
-    //
-    cuerr = copy_roi_batched(
-        cudaBlendedFull.surface(),
-        cudaBlendedFull.width(),
-        cudaBlendedFull.height(),
-        0,
-        0,
-        canvas->surface(),
-        /*offsetX=*/use_minimized_blend ? (canvas_manager._x2 - canvas_manager.overlap_padding()) : 0,
-        /*offsetY=*/0,
-        /*batchSize=*/stitch_context.batch_size(),
-        stream);
-    CUDA_RETURN_IF_ERROR(cuerr);
-    // SHOW_IMAGE(canvas);
-    // SHOW_SCALED(canvas, 0.15);
-#endif
-  }
+  CudaMat<T_compute>& blended = *stitch_context.cudaFull1;
+  CUDA_RETURN_IF_ERROR(cudaBatchedLaplacianBlendWithContext(
+      stitch_context.cudaFull1->data_raw(),
+      stitch_context.cudaFull2->data_raw(),
+      stitch_context.cudaBlendSoftSeam->data_raw(),
+      blended.data_raw(),
+      *stitch_context.laplacian_blend_context,
+      stitch_context.cudaFull2->channels(),
+      stream));
+  const cv::Rect write_roi = stitch_context.minimizes_blend
+      ? stitch_context.write_roi_canvas
+      : cv::Rect(0, 0, stitch_context.cudaFull1->width(), stitch_context.cudaFull1->height());
+  const int src_x = stitch_context.minimizes_blend ? write_roi.x - stitch_context.blend_roi_canvas.x : 0;
+  const int src_y = stitch_context.minimizes_blend ? write_roi.y - stitch_context.blend_roi_canvas.y : 0;
+  const CudaStatus copy_status = copy_roi_batched<T_compute, T_pipeline>(
+      blended.surface(),
+      write_roi.width,
+      write_roi.height,
+      src_x,
+      src_y,
+      canvas->surface(),
+      write_roi.x,
+      write_roi.y,
+      stitch_context.batch_size(),
+      stream);
+  CUDA_RETURN_IF_ERROR(copy_status);
   return std::move(canvas);
+}
+
+template <typename T_pipeline, typename T_compute>
+CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_compute>::process_impl_current(
+    const CudaMat<T_pipeline>& inputImage1,
+    const CudaMat<T_pipeline>& inputImage2,
+    cudaStream_t stream,
+    std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
+  return process_impl(inputImage1, inputImage2, *stitch_context_, *canvas_manager_, stream, std::move(canvas));
 }
 
 template <typename T_pipeline, typename T_compute>
@@ -464,7 +387,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
   CUDA_RETURN_IF_ERROR(status_);
-  auto result = process_impl(inputImage1, inputImage2, *stitch_context_, *canvas_manager_, stream, std::move(canvas));
+  auto result = process_impl_current(inputImage1, inputImage2, stream, std::move(canvas));
   if (!result.ok()) {
     status_.Update(result.status());
   }

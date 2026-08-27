@@ -2,8 +2,11 @@
 
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
+#include <cmath>
+#include <optional>
 
 #include "cupano/cuda/cudaMakeFull.h"
+#include "cupano/pano/blendRoi.h"
 
 namespace hm {
 namespace pano {
@@ -17,93 +20,6 @@ inline float3 neg(const float3& f) {
 template <typename T>
 inline constexpr int num_channels_v = sizeof(T) / sizeof(BaseScalar_t<T>);
 
-inline int pyramid_margin(int num_levels) {
-  // Conservative margin in level-0 pixels to keep pyramid boundary effects out of the write-back ROI.
-  // Clamp shift to avoid UB for large num_levels.
-  if (num_levels <= 0)
-    return 0;
-  const int shift = std::min(num_levels, 30);
-  return 1 << shift;
-}
-
-inline int pyramid_alignment(int num_levels) {
-  // The Laplacian pyramid downsamples by 2 for each level > 0, so ROI top-left alignment must be
-  // a multiple of 2^(num_levels-1) to match the full-canvas pyramid phase.
-  if (num_levels <= 1)
-    return 1;
-  const int shift = std::min(num_levels - 1, 30);
-  return 1 << shift;
-}
-
-inline std::optional<cv::Rect> seam_boundary_bbox(const cv::Mat& seam_index) {
-  CV_Assert(seam_index.type() == CV_8U);
-  const int w = seam_index.cols;
-  const int h = seam_index.rows;
-  if (w <= 1 || h <= 1)
-    return std::nullopt;
-
-  int min_x = w;
-  int min_y = h;
-  int max_x = -1;
-  int max_y = -1;
-
-  auto update = [&](int x, int y) {
-    min_x = std::min(min_x, x);
-    min_y = std::min(min_y, y);
-    max_x = std::max(max_x, x);
-    max_y = std::max(max_y, y);
-  };
-
-  for (int y = 0; y < h; ++y) {
-    const uint8_t* row = seam_index.ptr<uint8_t>(y);
-    const uint8_t* row_down = (y + 1 < h) ? seam_index.ptr<uint8_t>(y + 1) : nullptr;
-    for (int x = 0; x < w; ++x) {
-      const uint8_t v = row[x];
-      if (x + 1 < w && v != row[x + 1]) {
-        update(x, y);
-        update(x + 1, y);
-      }
-      if (row_down && v != row_down[x]) {
-        update(x, y);
-        update(x, y + 1);
-      }
-    }
-  }
-
-  if (max_x < 0 || max_y < 0)
-    return std::nullopt;
-  return cv::Rect(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
-}
-
-inline cv::Rect expand_and_clamp(const cv::Rect& r, int pad, int max_w, int max_h) {
-  if (r.width <= 0 || r.height <= 0)
-    return {};
-  const int x0 = std::max(0, r.x - pad);
-  const int y0 = std::max(0, r.y - pad);
-  const int x1 = std::min(max_w, r.x + r.width + pad);
-  const int y1 = std::min(max_h, r.y + r.height + pad);
-  const int w = std::max(0, x1 - x0);
-  const int h = std::max(0, y1 - y0);
-  return cv::Rect(x0, y0, w, h);
-}
-
-inline cv::Rect align_and_clamp(const cv::Rect& r, int align, int max_w, int max_h) {
-  if (r.width <= 0 || r.height <= 0)
-    return {};
-  if (align <= 1)
-    return r;
-
-  const int x0 = std::max(0, (r.x / align) * align);
-  const int y0 = std::max(0, (r.y / align) * align);
-  const int x1_unclamped = ((r.x + r.width + align - 1) / align) * align;
-  const int y1_unclamped = ((r.y + r.height + align - 1) / align) * align;
-  const int x1 = std::min(max_w, x1_unclamped);
-  const int y1 = std::min(max_h, y1_unclamped);
-  const int w = std::max(0, x1 - x0);
-  const int h = std::max(0, y1 - y0);
-  return cv::Rect(x0, y0, w, h);
-}
-
 } // namespace detailN
 
 template <typename T_pipeline, typename T_compute>
@@ -112,22 +28,33 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
     int num_levels,
     const ControlMasksN& control_masks,
     bool minimize_blend,
-    bool quiet)
+    bool quiet,
+    int max_output_width)
     : minimize_blend_(minimize_blend && num_levels > 0) {
   if (!control_masks.is_valid()) {
     status_ = CudaStatus(cudaErrorFileNotFound, "Stitching masks (N-image) could not be loaded");
     return;
   }
 
-  const int n = static_cast<int>(control_masks.img_col.size());
+  std::optional<ControlMasksN> scaled_control_masks;
+  if (max_output_width > 0 && control_masks.canvas_width() > static_cast<size_t>(max_output_width)) {
+    scaled_control_masks = control_masks;
+    if (!scaled_control_masks->scale_to_max_output_width(max_output_width)) {
+      status_ = CudaStatus(cudaErrorInvalidValue, "max_output_width removes one or more N-image seam classes");
+      return;
+    }
+  }
+  const ControlMasksN& masks = scaled_control_masks ? *scaled_control_masks : control_masks;
+
+  const int n = static_cast<int>(masks.img_col.size());
   stitch_context_ =
       std::make_unique<StitchingContextN<T_pipeline, T_compute>>(batch_size, /*is_hard=*/(num_levels == 0));
   stitch_context_->n_images = n;
   stitch_context_->remap_x.resize(n);
   stitch_context_->remap_y.resize(n);
 
-  const int canvas_w = static_cast<int>(control_masks.canvas_width());
-  const int canvas_h = static_cast<int>(control_masks.canvas_height());
+  const int canvas_w = static_cast<int>(masks.canvas_width());
+  const int canvas_h = static_cast<int>(masks.canvas_height());
   if (!quiet) {
     std::cout << "Stitched (N-image) canvas size: " << canvas_w << " x " << canvas_h << std::endl;
   }
@@ -136,14 +63,15 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
   std::vector<cv::Point> positions;
   positions.reserve(n);
   for (int i = 0; i < n; ++i)
-    positions.emplace_back(control_masks.positions[i].xpos, control_masks.positions[i].ypos);
+    positions.emplace_back(masks.positions[i].xpos, masks.positions[i].ypos);
   canvas_manager_ = std::make_unique<CanvasManagerN>(
       CanvasInfo{.width = canvas_w, .height = canvas_h, .positions = positions},
-      /*minimize_blend=*/minimize_blend_);
+      /*minimize_blend=*/minimize_blend_,
+      /*overlap_pad=*/blend_roi::scaled_overlap_padding(control_masks.canvas_width(), canvas_w));
   for (int i = 0; i < n; ++i)
-    canvas_manager_->set_remap_size(i, control_masks.img_col[i].size());
+    canvas_manager_->set_remap_size(i, masks.img_col[i].size());
 
-  cv::Mat seam_index_padded = canvas_manager_->convertMaskMat(control_masks.whole_seam_mask_indexed);
+  cv::Mat seam_index_padded = canvas_manager_->convertMaskMat(masks.whole_seam_mask_indexed);
   assert(!seam_index_padded.empty());
   seam_index_padded = seam_index_padded.clone();
 
@@ -156,14 +84,17 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
     if (minimize_blend_) {
       stitch_context_->cudaBlendHardSeam = std::make_unique<CudaMat<unsigned char>>(seam_index_padded);
 
-      const auto boundary_bbox = detailN::seam_boundary_bbox(seam_index_padded);
-      if (boundary_bbox.has_value()) {
-        const int overlap_pad = canvas_manager_->overlap_padding();
-        write_roi_canvas_ = detailN::expand_and_clamp(*boundary_bbox, overlap_pad, canvas_w, canvas_h);
-        const int pyr_pad = detailN::pyramid_margin(num_levels);
-        blend_roi_canvas_ = detailN::expand_and_clamp(write_roi_canvas_, pyr_pad, canvas_w, canvas_h);
-        blend_roi_canvas_ =
-            detailN::align_and_clamp(blend_roi_canvas_, detailN::pyramid_alignment(num_levels), canvas_w, canvas_h);
+      const blend_roi::Regions regions =
+          blend_roi::select_regions(seam_index_padded, num_levels, canvas_manager_->overlap_padding());
+      write_roi_canvas_ = regions.write;
+      blend_roi_canvas_ = regions.blend;
+      if (blend_roi_canvas_.area() > 0 &&
+          !blend_roi::hard_baseline_covers_soft_owners_outside_write(
+              seam_index_padded, positions, masks.img_col, masks.img_row, write_roi_canvas_)) {
+        write_roi_canvas_ = {};
+        blend_roi_canvas_ = {};
+      }
+      if (blend_roi_canvas_.width > 0 && blend_roi_canvas_.height > 0) {
         seam_index_for_blend = seam_index_padded(blend_roi_canvas_);
       } else {
         // No seam boundaries detected; leave blend/write ROIs empty so downstream processing follows
@@ -176,15 +107,8 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
       if (blend_roi_canvas_.width > 0 && blend_roi_canvas_.height > 0) {
         remap_rois_.resize(n);
         for (int i = 0; i < n; ++i) {
-          const cv::Point pos = canvas_manager_->canvas_positions()[i];
-          const cv::Size sz = control_masks.img_col[i].size();
-          const cv::Rect img_rect(pos.x, pos.y, sz.width, sz.height);
-          const cv::Rect inter = img_rect & blend_roi_canvas_;
-          remap_rois_[i].offset_x = pos.x - blend_roi_canvas_.x;
-          remap_rois_[i].offset_y = pos.y - blend_roi_canvas_.y;
-          if (inter.width > 0 && inter.height > 0) {
-            remap_rois_[i].roi = cv::Rect(inter.x - pos.x, inter.y - pos.y, inter.width, inter.height);
-          }
+          remap_rois_[i] =
+              blend_roi::remap_roi(canvas_manager_->canvas_positions()[i], masks.img_col[i].size(), blend_roi_canvas_);
         }
       }
     }
@@ -215,13 +139,6 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
     for (int i = 0; i < n; ++i) {
       stitch_context_->cudaFull[i] = std::make_unique<CudaMat<T_compute>>(batch_size, blend_w, blend_h);
       stitch_context_->cudaFull_raw[i] = stitch_context_->cudaFull[i]->data_raw();
-      // `batched_remap_kernel_ex_offset*()` overwrites the remap ROI every frame, so we only need to
-      // zero-initialize the full buffers once (outside the ROI must stay 0/alpha=0).
-      auto cuerr = cudaMemset(stitch_context_->cudaFull[i]->data(), 0, stitch_context_->cudaFull[i]->size());
-      if (cuerr != cudaSuccess) {
-        status_ = CudaStatus(cuerr);
-        return;
-      }
     }
     stitch_context_->cudaBlendOut = std::make_unique<CudaMat<T_compute>>(batch_size, blend_w, blend_h);
 
@@ -270,8 +187,8 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
 
   // Load remappers to device
   for (int i = 0; i < n; ++i) {
-    stitch_context_->remap_x[i] = std::make_unique<CudaMat<uint16_t>>(control_masks.img_col[i]);
-    stitch_context_->remap_y[i] = std::make_unique<CudaMat<uint16_t>>(control_masks.img_row[i]);
+    stitch_context_->remap_x[i] = std::make_unique<CudaMat<uint16_t>>(masks.img_col[i]);
+    stitch_context_->remap_y[i] = std::make_unique<CudaMat<uint16_t>>(masks.img_row[i]);
   }
 
   // Device-resident metadata for the fused hard-seam kernel (used when num_levels == 0).
@@ -433,12 +350,13 @@ CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::blend_soft_dispatch(
   auto d_mask = stitch_context_->cudaBlendSoftSeam.get();
   auto out = stitch_context_->cudaBlendOut->data_raw();
 
-#define BLEND_N_CASE(NVAL, CH)                                                                         \
-  do {                                                                                                 \
-    auto& ctx = std::get<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, NVAL>>(              \
-        stitch_context_->laplacian_blend_context);                                                     \
-    return CudaStatus(cudaBatchedLaplacianBlendWithContextN<BaseScalar_t<T_compute>, float, NVAL, CH>( \
-        d_ptrs, d_mask, out, ctx, stream));                                                            \
+#define BLEND_N_CASE(NVAL, CH)                                                            \
+  do {                                                                                    \
+    auto& ctx = std::get<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, NVAL>>( \
+        stitch_context_->laplacian_blend_context);                                        \
+    return CudaStatus(                                                                    \
+        cudaBatchedLaplacianBlendWithContextN<BaseScalar_t<T_compute>, float, NVAL, CH>(  \
+            d_ptrs, d_mask, out, ctx, stream));                                           \
   } while (0)
 
   if (C == 3) {
@@ -591,7 +509,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T
       const auto& mx = *stitch_context_->remap_x[i];
       const auto& my = *stitch_context_->remap_y[i];
       assert(static_cast<int>(remap_rois_.size()) == stitch_context_->n_images);
-      const RemapRoiInfo& ri = remap_rois_[i];
+      const blend_roi::RemapRoi& ri = remap_rois_[i];
 
       cuerr = batched_remap_kernel_ex_offset_roi(
           inputs[i]->surface(),

@@ -150,13 +150,15 @@ cv::Mat run_pano(
     const ControlMasksN& masks,
     const std::vector<const CudaMat<float4>*>& inputs,
     int num_levels,
-    bool minimize_blend) {
+    bool minimize_blend,
+    int max_output_width = 0) {
   hm::pano::cuda::CudaStitchPanoN<float4, float4> pano(
       /*batch_size=*/1,
       /*num_levels=*/num_levels,
       masks,
       /*minimize_blend=*/minimize_blend,
-      /*quiet=*/true);
+      /*quiet=*/true,
+      /*max_output_width=*/max_output_width);
   if (!pano.status().ok()) {
     ADD_FAILURE() << pano.status().message();
     return {};
@@ -209,6 +211,50 @@ TEST(CudaPanoNMinimizeBlendTest, TwoWayOverlapSeamMatchesFullBlend) {
   ASSERT_FALSE(full.empty());
   ASSERT_FALSE(mini.empty());
   expect_mats_near(full, mini, kTol);
+}
+
+TEST(CudaPanoNMaxOutputWidthTest, ConstructorScalesMasksBeforeCanvasAllocation) {
+  constexpr int W = 64;
+  constexpr int H = 32;
+  const std::vector<cv::Size> sizes = {cv::Size(W, H), cv::Size(W, H), cv::Size(W, H)};
+  const std::vector<cv::Point> pos = {cv::Point(0, 0), cv::Point(48, 0), cv::Point(96, 0)};
+  cv::Mat seam(H, 160, CV_8U, cv::Scalar(0));
+  seam.colRange(48, 96).setTo(1);
+  seam.colRange(96, 160).setTo(2);
+  ControlMasksN masks = make_masks(sizes, pos, seam);
+
+  hm::pano::cuda::CudaStitchPanoN<float4, float4> pano(
+      /*batch_size=*/1,
+      /*num_levels=*/0,
+      masks,
+      /*minimize_blend=*/false,
+      /*quiet=*/true,
+      /*max_output_width=*/80);
+
+  ASSERT_TRUE(pano.status().ok()) << pano.status().message();
+  EXPECT_EQ(pano.canvas_width(), 80);
+  EXPECT_EQ(pano.canvas_height(), 16);
+}
+
+TEST(CudaPanoNMaxOutputWidthTest, MinimizedSoftSeamUsesScaledRemapRois) {
+  constexpr int W = 96;
+  constexpr int H = 64;
+  constexpr int CANVAS_W = 240;
+  const std::vector<cv::Size> sizes = {cv::Size(W, H), cv::Size(W, H), cv::Size(W, H)};
+  const std::vector<cv::Point> pos = {cv::Point(0, 0), cv::Point(72, 0), cv::Point(144, 0)};
+  cv::Mat seam(H, CANVAS_W, CV_8U, cv::Scalar(0));
+  seam.colRange(72, 144).setTo(1);
+  seam.colRange(144, CANVAS_W).setTo(2);
+  ControlMasksN masks = make_masks(sizes, pos, seam);
+  std::vector<cv::Mat> imgs = {
+      make_pattern_image_f4(W, H, 0), make_pattern_image_f4(W, H, 1), make_pattern_image_f4(W, H, 2)};
+  auto up = upload_inputs(imgs);
+
+  cv::Mat capped = run_pano(masks, up.ptrs, /*num_levels=*/2, /*minimize_blend=*/true, /*max_output_width=*/120);
+
+  ASSERT_FALSE(capped.empty());
+  EXPECT_EQ(capped.cols, 120);
+  EXPECT_EQ(capped.rows, 32);
 }
 
 TEST(CudaPanoNMinimizeBlendTest, NoOverlapSeamMatchesFullBlend) {

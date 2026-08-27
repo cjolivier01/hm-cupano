@@ -6,10 +6,16 @@
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/opencv.hpp>
 
+#include <array>
+#include <cmath>
+#include <memory>
+
 // Include your project headers; adjust include paths as needed:
 #include "cupano/pano/controlMasks3.h"
+#include "cupano/pano/controlMasksN.h"
 #include "cupano/pano/cudaMat.h"
 #include "cupano/pano/cudaPano3.h"
+#include "cupano/pano/cudaPanoN.h"
 #include "cupano/pano/cvTypes.h"
 
 using ControlMasks3 = hm::pano::ControlMasks3;
@@ -27,6 +33,157 @@ using namespace hm;
       FAIL() << "CUDA error at " << __FILE__ << ":" << __LINE__ << " – " << cudaGetErrorString(err); \
     }                                                                                                \
   } while (0)
+
+namespace {
+
+cv::Mat make_identity_map_x(int width, int height) {
+  cv::Mat map(height, width, CV_16U);
+  for (int y = 0; y < height; ++y) {
+    uint16_t* row = map.ptr<uint16_t>(y);
+    for (int x = 0; x < width; ++x)
+      row[x] = static_cast<uint16_t>(x);
+  }
+  return map;
+}
+
+cv::Mat make_identity_map_y(int width, int height) {
+  cv::Mat map(height, width, CV_16U);
+  for (int y = 0; y < height; ++y) {
+    uint16_t* row = map.ptr<uint16_t>(y);
+    for (int x = 0; x < width; ++x)
+      row[x] = static_cast<uint16_t>(y);
+  }
+  return map;
+}
+
+cv::Mat make_pattern_image(int width, int height, int image_index) {
+  cv::Mat image(height, width, CV_32FC4);
+  for (int y = 0; y < height; ++y) {
+    cv::Vec4f* row = image.ptr<cv::Vec4f>(y);
+    for (int x = 0; x < width; ++x) {
+      const float base = static_cast<float>(image_index * 50);
+      row[x] = cv::Vec4f(
+          base + static_cast<float>(x % 17),
+          base + static_cast<float>(y % 19),
+          base + static_cast<float>((x + y) % 23),
+          255.0f);
+    }
+  }
+  return image;
+}
+
+ControlMasks3 make_masks3(
+    const std::array<cv::Size, 3>& sizes,
+    const std::array<cv::Point, 3>& positions,
+    const cv::Mat& seam_index) {
+  ControlMasks3 masks;
+  masks.img0_col = make_identity_map_x(sizes[0].width, sizes[0].height);
+  masks.img0_row = make_identity_map_y(sizes[0].width, sizes[0].height);
+  masks.img1_col = make_identity_map_x(sizes[1].width, sizes[1].height);
+  masks.img1_row = make_identity_map_y(sizes[1].width, sizes[1].height);
+  masks.img2_col = make_identity_map_x(sizes[2].width, sizes[2].height);
+  masks.img2_row = make_identity_map_y(sizes[2].width, sizes[2].height);
+  masks.whole_seam_mask_image = seam_index.clone();
+  masks.positions = {
+      SpatialTiff{static_cast<float>(positions[0].x), static_cast<float>(positions[0].y)},
+      SpatialTiff{static_cast<float>(positions[1].x), static_cast<float>(positions[1].y)},
+      SpatialTiff{static_cast<float>(positions[2].x), static_cast<float>(positions[2].y)}};
+  EXPECT_TRUE(masks.is_valid());
+  return masks;
+}
+
+cv::Mat run_pano3(
+    const ControlMasks3& masks,
+    const std::array<cv::Mat, 3>& host_inputs,
+    int num_levels,
+    bool minimize_blend,
+    bool fused,
+    int max_output_width = 0) {
+  std::array<std::unique_ptr<hm::CudaMat<float4>>, 3> inputs = {
+      std::make_unique<hm::CudaMat<float4>>(host_inputs[0]),
+      std::make_unique<hm::CudaMat<float4>>(host_inputs[1]),
+      std::make_unique<hm::CudaMat<float4>>(host_inputs[2])};
+  hm::pano::cuda::CudaStitchPano3<float4, float4> pano(
+      /*batch_size=*/1,
+      num_levels,
+      masks,
+      /*quiet=*/true,
+      max_output_width,
+      minimize_blend);
+  if (!pano.status().ok()) {
+    ADD_FAILURE() << pano.status().message();
+    return {};
+  }
+
+  cv::Mat stale_canvas(pano.canvas_height(), pano.canvas_width(), CV_32FC4, cv::Scalar(7, 11, 13, 17));
+  auto canvas = std::make_unique<hm::CudaMat<float4>>(stale_canvas);
+  auto result = pano.process(*inputs[0], *inputs[1], *inputs[2], /*stream=*/0, std::move(canvas), fused);
+  if (!result.ok()) {
+    ADD_FAILURE() << result.status().message();
+    return {};
+  }
+  const cudaError_t sync_status = cudaDeviceSynchronize();
+  if (sync_status != cudaSuccess) {
+    ADD_FAILURE() << "CUDA error: " << cudaGetErrorString(sync_status);
+    return {};
+  }
+  return result.ConsumeValueOrDie()->download();
+}
+
+void expect_mats_near(const cv::Mat& expected, const cv::Mat& actual, float tolerance = 1e-4f) {
+  ASSERT_EQ(expected.size(), actual.size());
+  ASSERT_EQ(expected.type(), actual.type());
+  double max_diff = 0.0;
+  cv::Point max_location;
+  cv::minMaxLoc(cv::abs(expected.reshape(1) - actual.reshape(1)), nullptr, &max_diff, nullptr, &max_location);
+  EXPECT_LE(max_diff, tolerance) << " at (" << max_location.x / expected.channels() << ", " << max_location.y
+                                 << ") channel " << max_location.x % expected.channels();
+}
+
+} // namespace
+
+TEST(BlendRoiTest, FindsHorizontalAndVerticalOneDimensionalBoundaries) {
+  cv::Mat horizontal(1, 7, CV_8U, cv::Scalar(0));
+  horizontal.colRange(3, 7).setTo(1);
+  const auto horizontal_bbox = hm::pano::blend_roi::seam_boundary_bbox(horizontal);
+  ASSERT_TRUE(horizontal_bbox.has_value());
+  EXPECT_EQ(*horizontal_bbox, cv::Rect(2, 0, 2, 1));
+
+  cv::Mat vertical(7, 1, CV_8U, cv::Scalar(0));
+  vertical.rowRange(4, 7).setTo(2);
+  const auto vertical_bbox = hm::pano::blend_roi::seam_boundary_bbox(vertical);
+  ASSERT_TRUE(vertical_bbox.has_value());
+  EXPECT_EQ(*vertical_bbox, cv::Rect(0, 3, 1, 2));
+}
+
+TEST(BlendRoiTest, UnionsDisconnectedBoundariesAndAlignsBlendOrigin) {
+  cv::Mat seam(384, 768, CV_8U, cv::Scalar(0));
+  seam.colRange(256, 512).setTo(1);
+  seam.colRange(512, 768).setTo(2);
+
+  const hm::pano::blend_roi::Regions regions = hm::pano::blend_roi::select_regions(seam, 4, 128);
+  ASSERT_GT(regions.blend.area(), 0);
+  EXPECT_EQ(regions.blend.x % hm::pano::blend_roi::pyramid_alignment(4), 0);
+  EXPECT_EQ(regions.blend.y % hm::pano::blend_roi::pyramid_alignment(4), 0);
+  EXPECT_LT(regions.blend.area(), seam.cols * seam.rows);
+  EXPECT_LE(regions.blend.x, regions.write.x);
+  EXPECT_GE(regions.blend.x + regions.blend.width, regions.write.x + regions.write.width);
+}
+
+TEST(BlendRoiTest, ConstantMaskFallsBackToFullBlend) {
+  cv::Mat seam(33, 65, CV_8U, cv::Scalar(1));
+  const hm::pano::blend_roi::Regions regions = hm::pano::blend_roi::select_regions(seam, 4, 128);
+  EXPECT_EQ(regions.blend.area(), 0);
+  EXPECT_EQ(regions.write.area(), 0);
+}
+
+TEST(BlendRoiTest, NearFullBlendRoiFallsBack) {
+  cv::Mat seam(256, 1024, CV_8U, cv::Scalar(0));
+  seam.colRange(170, 830).setTo(1);
+  const hm::pano::blend_roi::Regions regions = hm::pano::blend_roi::select_regions(seam, 4, 128);
+  EXPECT_EQ(regions.blend.area(), 0);
+  EXPECT_EQ(regions.write.area(), 0);
+}
 
 // ----------------------------------------------------------------------------
 // 1) Invalid ControlMasks3: constructor should set an error status.
@@ -193,6 +350,355 @@ TEST(CudaStitchPano3_SoftSeamTrivial, OneHotLabelSelectsMiddleImage) {
   EXPECT_NEAR(pixel[2], 60.0f, 1e-3f);
   // Preserve alpha
   EXPECT_NEAR(pixel[3], 255.0f, 1e-3f);
+}
+
+TEST(CudaStitchPano3_MaxOutputWidth, ConstructorScalesMasksBeforeCanvasAllocation) {
+  constexpr int W = 64;
+  constexpr int H = 32;
+  cv::Mat seam_mask(H, 160, CV_8U, cv::Scalar(0));
+  seam_mask.colRange(48, 96).setTo(1);
+  seam_mask.colRange(96, 160).setTo(2);
+
+  ControlMasks3 masks;
+  masks.img0_col = cv::Mat(H, W, CV_16U, cv::Scalar(0));
+  masks.img0_row = cv::Mat(H, W, CV_16U, cv::Scalar(0));
+  masks.img1_col = cv::Mat(H, W, CV_16U, cv::Scalar(0));
+  masks.img1_row = cv::Mat(H, W, CV_16U, cv::Scalar(0));
+  masks.img2_col = cv::Mat(H, W, CV_16U, cv::Scalar(0));
+  masks.img2_row = cv::Mat(H, W, CV_16U, cv::Scalar(0));
+  masks.whole_seam_mask_image = seam_mask;
+  masks.positions = {SpatialTiff{0.0f, 0.0f}, SpatialTiff{48.0f, 0.0f}, SpatialTiff{96.0f, 0.0f}};
+  ASSERT_TRUE(masks.is_valid());
+
+  hm::pano::cuda::CudaStitchPano3<float4, float4> stitch(
+      /*batch_size=*/1,
+      /*num_levels=*/0,
+      masks,
+      /*quiet=*/true,
+      /*max_output_width=*/80);
+
+  ASSERT_TRUE(stitch.status().ok()) << stitch.status().message();
+  EXPECT_EQ(stitch.canvas_width(), 80);
+  EXPECT_EQ(stitch.canvas_height(), 16);
+  EXPECT_EQ(masks.canvas_width(), 160u);
+  EXPECT_EQ(masks.canvas_height(), 32u);
+}
+
+TEST(CudaStitchPano3_MinimizeBlend, FusedAndLegacyMatchFullCanvasAcrossSeparatedSeams) {
+  constexpr int W = 768;
+  constexpr int H = 384;
+  constexpr int LEVELS = 4;
+  const std::array<cv::Size, 3> sizes = {cv::Size(W, H), cv::Size(W, H), cv::Size(W, H)};
+  const std::array<cv::Point, 3> positions = {cv::Point(0, 0), cv::Point(0, 0), cv::Point(0, 0)};
+  cv::Mat seam(H, W, CV_8U, cv::Scalar(0));
+  seam.colRange(W / 3, 2 * W / 3).setTo(1);
+  seam.colRange(2 * W / 3, W).setTo(2);
+  ControlMasks3 masks = make_masks3(sizes, positions, seam);
+  const std::array<cv::Mat, 3> inputs = {
+      make_pattern_image(W, H, 0), make_pattern_image(W, H, 1), make_pattern_image(W, H, 2)};
+
+  hm::pano::cuda::CudaStitchPano3<float4, float4> minimized(
+      /*batch_size=*/1,
+      LEVELS,
+      masks,
+      /*quiet=*/true,
+      /*max_output_width=*/0,
+      /*minimize_blend=*/true);
+  ASSERT_TRUE(minimized.status().ok()) << minimized.status().message();
+  ASSERT_TRUE(minimized.minimizes_blend());
+  EXPECT_LT(minimized.blend_roi_canvas().area(), W * H);
+
+  const cv::Mat full_fused = run_pano3(masks, inputs, LEVELS, /*minimize_blend=*/false, /*fused=*/true);
+  const cv::Mat minimized_fused = run_pano3(masks, inputs, LEVELS, /*minimize_blend=*/true, /*fused=*/true);
+  const cv::Mat full_legacy = run_pano3(masks, inputs, LEVELS, /*minimize_blend=*/false, /*fused=*/false);
+  const cv::Mat minimized_legacy = run_pano3(masks, inputs, LEVELS, /*minimize_blend=*/true, /*fused=*/false);
+
+  ASSERT_FALSE(full_fused.empty());
+  ASSERT_FALSE(minimized_fused.empty());
+  ASSERT_FALSE(full_legacy.empty());
+  ASSERT_FALSE(minimized_legacy.empty());
+  expect_mats_near(full_fused, minimized_fused);
+  expect_mats_near(full_fused, full_legacy);
+  expect_mats_near(full_fused, minimized_legacy);
+}
+
+TEST(CudaStitchPano3_MinimizeBlend, NonzeroVerticalBlendOriginMatchesFullCanvas) {
+  constexpr int W = 384;
+  constexpr int H = 1024;
+  constexpr int LEVELS = 3;
+  const std::array<cv::Size, 3> sizes = {cv::Size(W, H), cv::Size(W, H), cv::Size(W, H)};
+  const std::array<cv::Point, 3> positions = {cv::Point(0, 0), cv::Point(0, 0), cv::Point(0, 0)};
+  cv::Mat seam(H, W, CV_8U, cv::Scalar(0));
+  seam(cv::Rect(W / 3, 3 * H / 8, W / 3, H / 4)).setTo(1);
+  seam(cv::Rect(2 * W / 3, 3 * H / 8, W / 3, H / 4)).setTo(2);
+  ControlMasks3 masks = make_masks3(sizes, positions, seam);
+  const std::array<cv::Mat, 3> inputs = {
+      make_pattern_image(W, H, 0), make_pattern_image(W, H, 1), make_pattern_image(W, H, 2)};
+
+  hm::pano::cuda::CudaStitchPano3<float4, float4> minimized(
+      /*batch_size=*/1,
+      LEVELS,
+      masks,
+      /*quiet=*/true,
+      /*max_output_width=*/0,
+      /*minimize_blend=*/true);
+  ASSERT_TRUE(minimized.status().ok()) << minimized.status().message();
+  ASSERT_TRUE(minimized.minimizes_blend());
+  ASSERT_GT(minimized.blend_roi_canvas().y, 0);
+  EXPECT_LT(minimized.blend_roi_canvas().area(), W * H);
+
+  const cv::Mat full_fused = run_pano3(masks, inputs, LEVELS, /*minimize_blend=*/false, /*fused=*/true);
+  const cv::Mat minimized_fused = run_pano3(masks, inputs, LEVELS, /*minimize_blend=*/true, /*fused=*/true);
+  const cv::Mat full_legacy = run_pano3(masks, inputs, LEVELS, /*minimize_blend=*/false, /*fused=*/false);
+  const cv::Mat minimized_legacy = run_pano3(masks, inputs, LEVELS, /*minimize_blend=*/true, /*fused=*/false);
+
+  ASSERT_FALSE(full_fused.empty());
+  ASSERT_FALSE(minimized_fused.empty());
+  ASSERT_FALSE(full_legacy.empty());
+  ASSERT_FALSE(minimized_legacy.empty());
+  expect_mats_near(full_fused, minimized_fused);
+  expect_mats_near(full_fused, full_legacy);
+  expect_mats_near(full_fused, minimized_legacy);
+}
+
+TEST(CudaStitchPano3_MinimizeBlend, CappedAndUnmappedSoftSeamsMatchFullCanvas) {
+  constexpr int W = 768;
+  constexpr int H = 384;
+  constexpr int LEVELS = 4;
+  constexpr int MAX_OUTPUT_WIDTH = W / 2;
+  const std::array<cv::Size, 3> sizes = {cv::Size(W, H), cv::Size(W, H), cv::Size(W, H)};
+  const std::array<cv::Point, 3> positions = {cv::Point(0, 0), cv::Point(0, 0), cv::Point(0, 0)};
+  cv::Mat seam(H, W, CV_8U, cv::Scalar(0));
+  seam.colRange(W / 3, 2 * W / 3).setTo(1);
+  seam.colRange(2 * W / 3, W).setTo(2);
+  ControlMasks3 masks = make_masks3(sizes, positions, seam);
+  constexpr uint16_t UNMAPPED = 65535;
+  masks.img1_col(cv::Rect(W / 2 - 8, H / 2 - 8, 16, 16)).setTo(UNMAPPED);
+  masks.img1_row(cv::Rect(W / 2 - 8, H / 2 - 8, 16, 16)).setTo(UNMAPPED);
+  const std::array<cv::Mat, 3> inputs = {
+      make_pattern_image(W, H, 0), make_pattern_image(W, H, 1), make_pattern_image(W, H, 2)};
+
+  hm::pano::cuda::CudaStitchPano3<float4, float4> minimized(
+      /*batch_size=*/1,
+      LEVELS,
+      masks,
+      /*quiet=*/true,
+      MAX_OUTPUT_WIDTH,
+      /*minimize_blend=*/true);
+  ASSERT_TRUE(minimized.status().ok()) << minimized.status().message();
+  ASSERT_TRUE(minimized.minimizes_blend());
+  EXPECT_EQ(minimized.canvas_width(), MAX_OUTPUT_WIDTH);
+  EXPECT_LT(minimized.blend_roi_canvas().area(), minimized.canvas_width() * minimized.canvas_height());
+
+  const cv::Mat full = run_pano3(masks, inputs, LEVELS, /*minimize_blend=*/false, /*fused=*/true, MAX_OUTPUT_WIDTH);
+  const cv::Mat mini_fused =
+      run_pano3(masks, inputs, LEVELS, /*minimize_blend=*/true, /*fused=*/true, MAX_OUTPUT_WIDTH);
+  const cv::Mat mini_legacy =
+      run_pano3(masks, inputs, LEVELS, /*minimize_blend=*/true, /*fused=*/false, MAX_OUTPUT_WIDTH);
+  ASSERT_FALSE(full.empty());
+  ASSERT_FALSE(mini_fused.empty());
+  ASSERT_FALSE(mini_legacy.empty());
+  expect_mats_near(full, mini_fused);
+  expect_mats_near(full, mini_legacy);
+}
+
+TEST(CudaStitchPano3_MinimizeBlend, SpecializedThreeMatchesGenericNThree) {
+  constexpr int W = 768;
+  constexpr int H = 256;
+  constexpr int LEVELS = 4;
+  const std::array<cv::Size, 3> sizes = {cv::Size(W, H), cv::Size(W, H), cv::Size(W, H)};
+  const std::array<cv::Point, 3> positions = {cv::Point(0, 0), cv::Point(0, 0), cv::Point(0, 0)};
+  cv::Mat seam(H, W, CV_8U, cv::Scalar(0));
+  seam.colRange(W / 3, 2 * W / 3).setTo(1);
+  seam.colRange(2 * W / 3, W).setTo(2);
+  ControlMasks3 masks3 = make_masks3(sizes, positions, seam);
+  const std::array<cv::Mat, 3> host_inputs = {
+      make_pattern_image(W, H, 0), make_pattern_image(W, H, 1), make_pattern_image(W, H, 2)};
+  const cv::Mat specialized = run_pano3(masks3, host_inputs, LEVELS, /*minimize_blend=*/true, /*fused=*/true);
+  ASSERT_FALSE(specialized.empty());
+
+  hm::pano::ControlMasksN masks_n;
+  masks_n.img_col = {masks3.img0_col, masks3.img1_col, masks3.img2_col};
+  masks_n.img_row = {masks3.img0_row, masks3.img1_row, masks3.img2_row};
+  masks_n.whole_seam_mask_indexed = seam.clone();
+  masks_n.positions = masks3.positions;
+  ASSERT_TRUE(masks_n.is_valid());
+
+  std::array<std::unique_ptr<hm::CudaMat<float4>>, 3> inputs = {
+      std::make_unique<hm::CudaMat<float4>>(host_inputs[0]),
+      std::make_unique<hm::CudaMat<float4>>(host_inputs[1]),
+      std::make_unique<hm::CudaMat<float4>>(host_inputs[2])};
+  const std::vector<const hm::CudaMat<float4>*> input_ptrs = {inputs[0].get(), inputs[1].get(), inputs[2].get()};
+  hm::pano::cuda::CudaStitchPanoN<float4, float4> generic(
+      /*batch_size=*/1,
+      LEVELS,
+      masks_n,
+      /*minimize_blend=*/true,
+      /*quiet=*/true);
+  ASSERT_TRUE(generic.status().ok()) << generic.status().message();
+  ASSERT_TRUE(generic.minimizes_blend());
+  auto canvas = std::make_unique<hm::CudaMat<float4>>(1, generic.canvas_width(), generic.canvas_height());
+  auto generic_result = generic.process(input_ptrs, /*stream=*/0, std::move(canvas));
+  ASSERT_TRUE(generic_result.ok()) << generic_result.status().message();
+  CUDA_CHECK(cudaDeviceSynchronize());
+  const cv::Mat generic_output = generic_result.ConsumeValueOrDie()->download();
+  expect_mats_near(specialized, generic_output);
+}
+
+TEST(CudaStitchPano3_MinimizeBlend, ReorderedOffsetFootprintsMatchFullCanvas) {
+  constexpr int W = 384;
+  constexpr int H = 320;
+  constexpr int CANVAS_W = 640;
+  constexpr int CANVAS_H = 416;
+  constexpr int LEVELS = 3;
+  const std::array<cv::Size, 3> sizes = {cv::Size(W, H), cv::Size(W, H), cv::Size(W, H)};
+  const std::array<cv::Point, 3> positions = {cv::Point(256, 96), cv::Point(0, 0), cv::Point(128, 48)};
+  cv::Mat seam(CANVAS_H, CANVAS_W, CV_8U, cv::Scalar(1));
+  seam.colRange(224, 416).setTo(2);
+  seam.colRange(416, CANVAS_W).setTo(0);
+  ControlMasks3 masks = make_masks3(sizes, positions, seam);
+  const std::array<cv::Mat, 3> inputs = {
+      make_pattern_image(W, H, 0), make_pattern_image(W, H, 1), make_pattern_image(W, H, 2)};
+
+  const cv::Mat full = run_pano3(masks, inputs, LEVELS, /*minimize_blend=*/false, /*fused=*/true);
+  const cv::Mat minimized = run_pano3(masks, inputs, LEVELS, /*minimize_blend=*/true, /*fused=*/true);
+  const cv::Mat minimized_legacy = run_pano3(masks, inputs, LEVELS, /*minimize_blend=*/true, /*fused=*/false);
+  ASSERT_FALSE(full.empty());
+  ASSERT_FALSE(minimized.empty());
+  ASSERT_FALSE(minimized_legacy.empty());
+  expect_mats_near(full, minimized);
+  expect_mats_near(full, minimized_legacy);
+}
+
+TEST(CudaStitchPano3_MinimizeBlend, NoBoundaryUsesFullSoftFallback) {
+  constexpr int W = 96;
+  constexpr int H = 64;
+  const std::array<cv::Size, 3> sizes = {cv::Size(W, H), cv::Size(W, H), cv::Size(W, H)};
+  const std::array<cv::Point, 3> positions = {cv::Point(0, 0), cv::Point(0, 0), cv::Point(0, 0)};
+  cv::Mat seam(H, W, CV_8U, cv::Scalar(1));
+  ControlMasks3 masks = make_masks3(sizes, positions, seam);
+  const std::array<cv::Mat, 3> inputs = {
+      make_pattern_image(W, H, 0), make_pattern_image(W, H, 1), make_pattern_image(W, H, 2)};
+
+  hm::pano::cuda::CudaStitchPano3<float4, float4> pano(
+      /*batch_size=*/1,
+      /*num_levels=*/3,
+      masks,
+      /*quiet=*/true,
+      /*max_output_width=*/0,
+      /*minimize_blend=*/true);
+  ASSERT_TRUE(pano.status().ok()) << pano.status().message();
+  EXPECT_FALSE(pano.minimizes_blend());
+
+  const cv::Mat full = run_pano3(masks, inputs, /*num_levels=*/3, /*minimize_blend=*/false, /*fused=*/true);
+  const cv::Mat fallback = run_pano3(masks, inputs, /*num_levels=*/3, /*minimize_blend=*/true, /*fused=*/true);
+  ASSERT_FALSE(full.empty());
+  ASSERT_FALSE(fallback.empty());
+  expect_mats_near(full, fallback);
+}
+
+TEST(CudaStitchPano3_MinimizeBlend, HardSeamIgnoresMinimizeRequest) {
+  constexpr int W = 64;
+  constexpr int H = 32;
+  const std::array<cv::Size, 3> sizes = {cv::Size(W, H), cv::Size(W, H), cv::Size(W, H)};
+  const std::array<cv::Point, 3> positions = {cv::Point(0, 0), cv::Point(0, 0), cv::Point(0, 0)};
+  cv::Mat seam(H, W, CV_8U, cv::Scalar(0));
+  seam.colRange(W / 3, 2 * W / 3).setTo(1);
+  seam.colRange(2 * W / 3, W).setTo(2);
+  ControlMasks3 masks = make_masks3(sizes, positions, seam);
+  const std::array<cv::Mat, 3> inputs = {
+      make_pattern_image(W, H, 0), make_pattern_image(W, H, 1), make_pattern_image(W, H, 2)};
+
+  const cv::Mat fused = run_pano3(masks, inputs, /*num_levels=*/0, /*minimize_blend=*/true, /*fused=*/true);
+  const cv::Mat legacy = run_pano3(masks, inputs, /*num_levels=*/0, /*minimize_blend=*/true, /*fused=*/false);
+  ASSERT_FALSE(fused.empty());
+  ASSERT_FALSE(legacy.empty());
+  expect_mats_near(fused, legacy, /*tolerance=*/0.0f);
+}
+
+TEST(CudaStitchPano3_MinimizeBlend, BatchTwoUsesCallerStreamAcrossFrames) {
+  constexpr int W = 768;
+  constexpr int H = 192;
+  constexpr int LEVELS = 3;
+  const std::array<cv::Size, 3> sizes = {cv::Size(W, H), cv::Size(W, H), cv::Size(W, H)};
+  const std::array<cv::Point, 3> positions = {cv::Point(0, 0), cv::Point(0, 0), cv::Point(0, 0)};
+  cv::Mat seam(H, W, CV_8U, cv::Scalar(0));
+  seam.colRange(W / 3, 2 * W / 3).setTo(1);
+  seam.colRange(2 * W / 3, W).setTo(2);
+  ControlMasks3 masks = make_masks3(sizes, positions, seam);
+
+  std::array<std::vector<cv::Mat>, 3> host_batches;
+  for (int image = 0; image < 3; ++image) {
+    host_batches[image].push_back(make_pattern_image(W, H, image));
+    cv::Mat changed = make_pattern_image(W, H, image);
+    changed += cv::Scalar(3, 5, 7, 0);
+    host_batches[image].push_back(changed);
+  }
+  std::array<hm::CudaMat<float4>, 3> inputs = {
+      hm::CudaMat<float4>(host_batches[0]), hm::CudaMat<float4>(host_batches[1]), hm::CudaMat<float4>(host_batches[2])};
+
+  hm::pano::cuda::CudaStitchPano3<float4, float4> full(
+      /*batch_size=*/2, LEVELS, masks, /*quiet=*/true, /*max_output_width=*/0, /*minimize_blend=*/false);
+  hm::pano::cuda::CudaStitchPano3<float4, float4> minimized(
+      /*batch_size=*/2, LEVELS, masks, /*quiet=*/true, /*max_output_width=*/0, /*minimize_blend=*/true);
+  ASSERT_TRUE(full.status().ok()) << full.status().message();
+  ASSERT_TRUE(minimized.status().ok()) << minimized.status().message();
+  ASSERT_TRUE(minimized.minimizes_blend());
+
+  cudaStream_t stream{};
+#if defined(USE_VULKAN)
+  CUDA_CHECK(cudaStreamCreate(&stream));
+#else
+  CUDA_CHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
+#endif
+  auto full_canvas = std::make_unique<hm::CudaMat<float4>>(2, W, H);
+  auto mini_canvas = std::make_unique<hm::CudaMat<float4>>(2, W, H);
+  auto full_result = full.process(inputs[0], inputs[1], inputs[2], stream, std::move(full_canvas));
+  ASSERT_TRUE(full_result.ok()) << full_result.status().message();
+  auto mini_result = minimized.process(inputs[0], inputs[1], inputs[2], stream, std::move(mini_canvas));
+  ASSERT_TRUE(mini_result.ok()) << mini_result.status().message();
+  CUDA_CHECK(cudaStreamSynchronize(stream));
+
+  auto full_output = full_result.ConsumeValueOrDie();
+  auto mini_output = mini_result.ConsumeValueOrDie();
+  const cv::Mat first_full_0 = full_output->download(0);
+  const cv::Mat first_full_1 = full_output->download(1);
+  expect_mats_near(first_full_0, mini_output->download(0));
+  expect_mats_near(first_full_1, mini_output->download(1));
+
+  std::array<std::vector<cv::Mat>, 3> second_host_batches;
+  for (int image = 0; image < 3; ++image) {
+    for (int batch = 0; batch < 2; ++batch) {
+      cv::Mat changed = make_pattern_image(W, H, image);
+      changed += cv::Scalar(19 + batch, 23 + batch, 29 + batch, 0);
+      second_host_batches[image].push_back(changed);
+    }
+  }
+  std::array<hm::CudaMat<float4>, 3> second_inputs = {
+      hm::CudaMat<float4>(second_host_batches[0]),
+      hm::CudaMat<float4>(second_host_batches[1]),
+      hm::CudaMat<float4>(second_host_batches[2])};
+  const std::vector<cv::Mat> stale_full_batch(2, cv::Mat(H, W, CV_32FC4, cv::Scalar(31, 37, 41, 43)));
+  const std::vector<cv::Mat> stale_mini_batch(2, cv::Mat(H, W, CV_32FC4, cv::Scalar(47, 53, 59, 61)));
+  auto second_full_canvas = std::make_unique<hm::CudaMat<float4>>(stale_full_batch);
+  auto second_mini_canvas = std::make_unique<hm::CudaMat<float4>>(stale_mini_batch);
+  auto second_full_result =
+      full.process(second_inputs[0], second_inputs[1], second_inputs[2], stream, std::move(second_full_canvas));
+  ASSERT_TRUE(second_full_result.ok()) << second_full_result.status().message();
+  auto second_mini_result =
+      minimized.process(second_inputs[0], second_inputs[1], second_inputs[2], stream, std::move(second_mini_canvas));
+  ASSERT_TRUE(second_mini_result.ok()) << second_mini_result.status().message();
+  CUDA_CHECK(cudaStreamSynchronize(stream));
+
+  auto second_full_output = second_full_result.ConsumeValueOrDie();
+  auto second_mini_output = second_mini_result.ConsumeValueOrDie();
+  const cv::Mat second_full_0 = second_full_output->download(0);
+  const cv::Mat second_full_1 = second_full_output->download(1);
+  expect_mats_near(second_full_0, second_mini_output->download(0));
+  expect_mats_near(second_full_1, second_mini_output->download(1));
+  EXPECT_GT(cv::norm(first_full_0, second_full_0, cv::NORM_INF), 1.0);
+  EXPECT_GT(cv::norm(first_full_1, second_full_1, cv::NORM_INF), 1.0);
+  CUDA_CHECK(cudaStreamDestroy(stream));
 }
 
 #if 0

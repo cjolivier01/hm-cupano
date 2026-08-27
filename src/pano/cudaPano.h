@@ -2,10 +2,12 @@
 
 #include "cupano/cuda/cudaBlend.h"
 #include "cupano/cuda/cudaStatus.h"
+#include "cupano/pano/blendRoi.h"
 #include "cupano/pano/canvasManager.h"
 #include "cupano/pano/controlMasks.h"
 #include "cupano/pano/cudaMat.h"
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <string>
@@ -42,6 +44,13 @@ struct StitchingContext {
 
   // Laplacian Blend Scratch context
   std::unique_ptr<CudaBatchLaplacianBlendContext<BaseScalar_t<T_compute>>> laplacian_blend_context;
+
+  // Effective ROI metadata is kept with the scratch buffers so protected compatibility helpers
+  // preserve the same minimized semantics as the public process path.
+  bool minimizes_blend{false};
+  cv::Rect blend_roi_canvas{};
+  cv::Rect write_roi_canvas{};
+  std::array<blend_roi::RemapRoi, 2> remap_rois{};
 
   int batch_size() const {
     return batch_size_;
@@ -92,6 +101,18 @@ class CudaStitchPano {
     return status_;
   }
 
+  bool minimizes_blend() const {
+    return minimize_blend_ && blend_roi_canvas_.area() > 0 && write_roi_canvas_.area() > 0;
+  }
+
+  const cv::Rect& blend_roi_canvas() const {
+    return blend_roi_canvas_;
+  }
+
+  const cv::Rect& write_roi_canvas() const {
+    return write_roi_canvas_;
+  }
+
   CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process(
       const CudaMat<T_pipeline>& inputImage1,
       const CudaMat<T_pipeline>& inputImage2,
@@ -109,8 +130,18 @@ class CudaStitchPano {
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
+  CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process_impl_current(
+      const CudaMat<T_pipeline>& inputImage1,
+      const CudaMat<T_pipeline>& inputImage2,
+      cudaStream_t stream,
+      std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
+
   std::unique_ptr<StitchingContext<T_pipeline, T_compute>> stitch_context_;
   std::unique_ptr<CanvasManager> canvas_manager_;
+  bool minimize_blend_{false};
+  cv::Rect blend_roi_canvas_{};
+  cv::Rect write_roi_canvas_{};
+  std::array<blend_roi::RemapRoi, 2> remap_rois_{};
   CudaStatus status_;
 };
 

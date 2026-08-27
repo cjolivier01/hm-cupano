@@ -8,6 +8,7 @@
 #include "cupano/cuda/cudaBlendN.h"
 #include "cupano/cuda/cudaRemap.h"
 #include "cupano/cuda/cudaStatus.h"
+#include "cupano/pano/blendRoi.h"
 #include "cupano/pano/canvasManagerN.h"
 #include "cupano/pano/controlMasksN.h"
 #include "cupano/pano/cudaMat.h"
@@ -80,7 +81,13 @@ struct StitchingContextN {
 template <typename T_pipeline, typename T_compute>
 class CudaStitchPanoN {
  public:
-  CudaStitchPanoN(int batch_size, int num_levels, const ControlMasksN& control_masks, bool minimize_blend, bool quiet);
+  CudaStitchPanoN(
+      int batch_size,
+      int num_levels,
+      const ControlMasksN& control_masks,
+      bool minimize_blend,
+      bool quiet,
+      int max_output_width = 0);
   int canvas_width() const {
     return canvas_manager_->canvas_width();
   }
@@ -92,6 +99,15 @@ class CudaStitchPanoN {
   }
   const CudaStatus status() const {
     return status_;
+  }
+  bool minimizes_blend() const {
+    return minimize_blend_ && blend_roi_canvas_.area() > 0 && write_roi_canvas_.area() > 0;
+  }
+  const cv::Rect& blend_roi_canvas() const {
+    return blend_roi_canvas_;
+  }
+  const cv::Rect& write_roi_canvas() const {
+    return write_roi_canvas_;
   }
 
   // Inputs are pointers to N CudaMat<T_pipeline> with same batch.
@@ -128,20 +144,12 @@ class CudaStitchPanoN {
   CudaStatus blend_soft_dispatch(const std::vector<const BaseScalar_t<T_compute>*>& d_ptrs, cudaStream_t stream);
 
  private:
-  struct RemapRoiInfo {
-    // ROI within the remap map (local coordinates).
-    cv::Rect roi;
-    // Destination offsets for the full remap region in the destination surface coordinates.
-    int offset_x{0};
-    int offset_y{0};
-  };
-
   std::unique_ptr<StitchingContextN<T_pipeline, T_compute>> stitch_context_;
   std::unique_ptr<CanvasManagerN> canvas_manager_;
   bool minimize_blend_{false};
   cv::Rect blend_roi_canvas_{};
   cv::Rect write_roi_canvas_{};
-  std::vector<RemapRoiInfo> remap_rois_;
+  std::vector<blend_roi::RemapRoi> remap_rois_;
   CudaStatus status_;
 };
 

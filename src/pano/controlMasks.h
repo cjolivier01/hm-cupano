@@ -30,7 +30,7 @@ struct SpatialTiff {
 class ControlMasks {
  public:
   ControlMasks() = default;
-  ControlMasks(std::string game_dir);
+  ControlMasks(std::string game_dir, int max_output_width = 0);
 
   /**
    * @brief Loads the required images and position data from a directory.
@@ -38,13 +38,15 @@ class ControlMasks {
    * @param game_dir The directory from which to load the images/masks.
    * @return true if all images loaded successfully, false otherwise.
    */
-  bool load(std::string game_dir);
+  bool load(std::string game_dir, int max_output_width = 0);
 
   bool is_valid() const;
 
   size_t canvas_width() const;
 
   size_t canvas_height() const;
+
+  bool scale_to_max_output_width(int max_output_width);
 
   /// Column mapping for image1 (e.g., from row/col transformations).
   cv::Mat img1_col;

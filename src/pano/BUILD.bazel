@@ -126,6 +126,7 @@ cc_library(
 cc_library(
     name = "cuda_pano",
     hdrs = [
+        "blendRoi.h",
         "cudaPano.h",
         "cudaPano.inl",
         "cudaPano3.h",
@@ -166,6 +167,7 @@ cc_test(
   srcs = ["cudaPano3_test.cpp"],
   deps = [
     ":cuda_pano",
+    ":cuda_pano_n",
     "@googletest//:gtest",
     "@googletest//:gtest_main",
   ]
@@ -191,10 +193,42 @@ cc_test(
   ]
 )
 
+cc_test(
+  name = "controlMasks_test",
+  srcs = ["controlMasks_test.cpp"],
+  deps = [
+    ":canvas",
+    ":canvas_manager",
+    ":control_masks_n",
+    "@googletest//:gtest",
+    "@googletest//:gtest_main",
+  ],
+)
+
+cc_library(
+    name = "control_masks_n",
+    hdrs = [
+        "controlMasksN.h",
+    ],
+    srcs = [
+        "controlMasksN.cpp",
+    ],
+    copts = [
+        "--std=c++17",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":canvas",
+        "@opencv_linux//:opencv",
+    ],
+)
+
 # Header-only variant for N-image pano (no CUDA link), for compilation tests
 cc_library(
     name = "cuda_pano_n_headers",
     hdrs = [
+        "blendRoi.h",
         "cudaPanoN.h",
         "cudaPanoN.inl",
         "canvasManagerN.h",
@@ -221,13 +255,10 @@ cc_library(
 cc_library(
     name = "cuda_pano_n",
     hdrs = [
+        "blendRoi.h",
         "cudaPanoN.h",
         "cudaPanoN.inl",
         "canvasManagerN.h",
-        "controlMasksN.h",
-    ],
-    srcs = [
-        "controlMasksN.cpp",
     ],
     copts = [
         "--std=c++17",
@@ -238,6 +269,7 @@ cc_library(
         [
             ":cv_types",
             ":canvas",
+            ":control_masks_n",
             "@opencv_linux//:opencv",
         ]
         + select({

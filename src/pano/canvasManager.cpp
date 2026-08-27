@@ -1,5 +1,7 @@
 #include "canvasManager.h"
 
+#include <algorithm>
+
 namespace hm {
 namespace pano {
 
@@ -23,10 +25,15 @@ void CanvasManager::updateMinimizeBlend(const cv::Size& remapped_size_1, const c
   _x2 = canvas_info_.positions[1].x;
   _y2 = canvas_info_.positions[1].y;
 
-  // Compute the overlap width based on the first image's width minus the X of the second image.
+  // Compute the overlap width between the first image's right edge and the second image's left edge.
   int width_1 = _remapper_1.width;
-  _overlapping_width = width_1 - _x2;
-  assert(width_1 > _x2); // Must have positive overlap.
+  _overlapping_width = _x1 + width_1 - _x2;
+  const bool has_supported_overlap = _x1 <= _x2 && _overlapping_width > 0;
+  if (!_minimize_blend || !has_supported_overlap) {
+    _minimize_blend = false;
+    return;
+  }
+  _overlap_pad = std::min(_overlap_pad, std::max(0, std::min(_x2 - _x1, canvas_info_.width - width_1)));
 
   const int blend_width = _overlapping_width + 2 * _overlap_pad;
 
