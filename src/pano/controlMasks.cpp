@@ -23,8 +23,8 @@ namespace pano {
 namespace {
 
 constexpr uint16_t kUnmappedPositionValue = 65535;
-constexpr uint32_t kHardMaximumRemapDimension = 32768;
-constexpr uint64_t kHardMaximumRemapPixels = 128ULL * 1024ULL * 1024ULL;
+constexpr uint32_t kHardMaximumRemapDimension = 65536;
+constexpr uint64_t kHardMaximumRemapPixels = 256ULL * 1024ULL * 1024ULL;
 
 struct TiffInfo {
   bool validResolution = false; ///< Whether resolution tags were valid
@@ -147,8 +147,8 @@ cv::Size canvas_size(const std::vector<ScaledPlacement>& placements) {
   int width = 1;
   int height = 1;
   for (const ScaledPlacement& placement : placements) {
-    width = std::max(width, static_cast<int>(placement.position.xpos) + placement.size.width);
-    height = std::max(height, static_cast<int>(placement.position.ypos) + placement.size.height);
+    width = std::max(width, static_cast<int>(placement.position.xpos + placement.size.width));
+    height = std::max(height, static_cast<int>(placement.position.ypos + placement.size.height));
   }
   return cv::Size(width, height);
 }
