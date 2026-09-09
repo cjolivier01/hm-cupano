@@ -7,6 +7,7 @@
 #include <png.h>
 #include <tiffio.h>
 #include <unistd.h>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -265,11 +266,75 @@ TEST(ControlMasksTest, LoadRejectsOversizedRemapHeaderBeforeDecode) {
       ("cupano-control-masks-oversized-remap-test-" + std::to_string(::getpid()));
   std::filesystem::remove_all(root);
   ASSERT_TRUE(write_control_masks_files(root, true));
-  ASSERT_TRUE(write_uint16_tiff_header_only(root / "mapping_0000_x.tif", 32769, 1));
+  ASSERT_TRUE(write_uint16_tiff_header_only(root / "mapping_0000_x.tif", 65537, 1));
 
   ControlMasks masks(root.string());
   EXPECT_FALSE(masks.is_valid());
 
+  std::filesystem::remove_all(root);
+}
+
+TEST(ControlMasksTest, LoadAcceptsFractionalPlacementAtCanvasBoundary) {
+  const auto root =
+      std::filesystem::temp_directory_path() / ("cupano-fractional-canvas-test-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(root);
+  ASSERT_TRUE(write_control_masks_files(root, true));
+  ASSERT_TRUE(write_tiff(root / "mapping_0001.tif", 8, 4, std::nextafter(8.0f, 0.0f), 0.0f));
+
+  ControlMasks masks(root.string());
+  EXPECT_TRUE(masks.is_valid());
+  EXPECT_EQ(masks.canvas_width(), 16u);
+  std::filesystem::remove_all(root);
+}
+
+TEST(ControlMasks3Test, LoadAcceptsFractionalPlacementAtCanvasBoundary) {
+  const auto root =
+      std::filesystem::temp_directory_path() / ("cupano-fractional-canvas3-test-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(root);
+  ASSERT_TRUE(write_control_masks3_files(root));
+  ASSERT_TRUE(write_tiff(root / "mapping_0002.tif", 8, 4, std::nextafter(16.0f, 0.0f), 0.0f));
+
+  ControlMasks3 masks(root.string());
+  EXPECT_TRUE(masks.is_valid());
+  EXPECT_EQ(masks.canvas_width(), 24u);
+  std::filesystem::remove_all(root);
+}
+
+TEST(ControlMasksNTest, LoadAcceptsFractionalPlacementAtCanvasBoundary) {
+  const auto root =
+      std::filesystem::temp_directory_path() / ("cupano-fractional-canvas-n-test-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(root);
+  ASSERT_TRUE(write_control_masks3_files(root));
+  ASSERT_TRUE(write_tiff(root / "mapping_0002.tif", 8, 4, std::nextafter(16.0f, 0.0f), 0.0f));
+  cv::Mat seam(4, 24, CV_8U, cv::Scalar(0));
+  seam.colRange(8, 16).setTo(1);
+  seam.colRange(16, 24).setTo(2);
+  ASSERT_TRUE(cv::imwrite((root / "seam_file.png").string(), seam));
+
+  ControlMasksN masks(root.string(), 3);
+  EXPECT_TRUE(masks.is_valid());
+  EXPECT_EQ(masks.canvas_width(), 24u);
+  std::filesystem::remove_all(root);
+}
+
+TEST(ControlMasksTest, LoadAcceptsWideRemapsAndCanvas) {
+  const auto root = std::filesystem::temp_directory_path() / ("cupano-wide-canvas-test-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(root);
+  std::filesystem::create_directories(root);
+  for (int index = 0; index < 2; ++index) {
+    const auto stem = "mapping_000" + std::to_string(index);
+    ASSERT_TRUE(write_tiff(root / (stem + ".tif"), 32769, 1, index * 32767.0f, 0.0f));
+    const cv::Mat mapping(1, 32769, CV_16U, cv::Scalar(0));
+    ASSERT_TRUE(cv::imwrite((root / (stem + "_x.tif")).string(), mapping));
+    ASSERT_TRUE(cv::imwrite((root / (stem + "_y.tif")).string(), mapping));
+  }
+  cv::Mat seam(1, 65536, CV_8U, cv::Scalar(0));
+  seam.colRange(32768, 65536).setTo(255);
+  ASSERT_TRUE(cv::imwrite((root / "seam_file.png").string(), seam));
+
+  ControlMasks masks(root.string());
+  EXPECT_TRUE(masks.is_valid());
+  EXPECT_EQ(masks.canvas_width(), 65536u);
   std::filesystem::remove_all(root);
 }
 
