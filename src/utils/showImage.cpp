@@ -49,12 +49,15 @@ bool preview_key_handler(uint16_t event, int a, int b, void* user) {
   return false;
 }
 
-bool consume_terminal_key() {
+int read_terminal_key() {
   if (!kbhit()) {
-    return false;
+    return EOF;
   }
-  (void)getchar();
-  return true;
+  return getchar();
+}
+
+bool consume_terminal_key() {
+  return read_terminal_key() != EOF;
 }
 
 void wait_for_preview_key(glDisplay* display) {
@@ -182,8 +185,8 @@ int kbhit() {
 }
 
 int wait_key(CudaGLWindow* window = nullptr) {
-  int c;
-  while (!(c = kbhit())) {
+  int c = EOF;
+  while ((c = read_terminal_key()) == EOF) {
     if (window && window->isKeyPressed(GLFW_KEY_ESCAPE)) {
       // ESCAPE?
       constexpr int kEscapeKey = 27;
