@@ -3,6 +3,7 @@
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <optional>
 
 #include "cupano/cuda/cudaMakeFull.h"

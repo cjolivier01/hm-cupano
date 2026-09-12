@@ -26,7 +26,8 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = (
         [
-            ":show_image",
+            ":image_utils",
+            "//src/pano:cuda_matrix",
             "@opencv_linux//:opencv",
         ]
         + select({

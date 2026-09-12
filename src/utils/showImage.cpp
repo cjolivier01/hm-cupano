@@ -1,16 +1,14 @@
 #include "cupano/utils/showImage.h"
 #include "cupano/utils/cudaGLWindow.h"
-#include "cupano/utils/imageUtils.h"
 
-#include <set>
+#include <iostream>
 #include <memory>
+#include <mutex>
+#include <set>
+#include <stdexcept>
 #include <unordered_set>
 
-#include <opencv2/highgui.hpp>
-#include <opencv2/opencv.hpp>
-
 #include <fcntl.h>
-#include <opencv2/imgproc.hpp>
 #include <stdio.h>
 #include <termios.h>
 #include <unistd.h>
@@ -29,6 +27,14 @@ CudaGLWindow* get_gl_window(int w, int h, int channels, const char* title) {
 }
 
 } // namespace
+
+void warn_cpu_image_preview_unavailable() {
+  static std::once_flag once;
+  std::call_once(once, [] {
+    std::cerr << "CPU image preview is unavailable because the OpenCV GUI module is not linked; continuing headless."
+              << std::endl;
+  });
+}
 
 int kbhit() {
   struct termios oldt, newt;
@@ -69,25 +75,18 @@ int wait_key(CudaGLWindow* window = nullptr) {
 }
 
 void show_image(const std::string& label, const cv::Mat& img, bool wait, float scale, bool squish) {
-  if (scale != 0 && scale != 1) {
-    cv::Size newSize(static_cast<int>(scale * (img.cols + 0.5f)), static_cast<int>(scale * (img.rows + 0.5f)));
-    cv::Mat dest;
-    if (scale < 1) {
-      cv::resize(img, dest, newSize, 0.0, 0.0, cv::INTER_NEAREST);
-    } else {
-      cv::resize(img, dest, newSize, 0.0, 0.0, cv::INTER_NEAREST /*cv::INTER_LINEAR*/);
-    }
-    cv::imshow(label, convert_to_uchar(std::move(dest)));
-  } else {
-    cv::imshow(label, convert_to_uchar(img.clone()));
-  }
-  cv::waitKey(wait ? 0 : 1);
+  warn_cpu_image_preview_unavailable();
+  (void)label;
+  (void)img;
+  (void)wait;
+  (void)scale;
+  (void)squish;
 }
 
 template <typename PIXEL_T>
 void show_surface(const std::string& label, const CudaSurface<PIXEL_T>& surface, bool wait) {
-  CudaGLWindow* gl_window = get_gl_window(
-      surface.width, surface.height, sizeof(PIXEL_T) / sizeof(PIXEL_T::x), label.c_str());
+  CudaGLWindow* gl_window =
+      get_gl_window(surface.width, surface.height, sizeof(PIXEL_T) / sizeof(PIXEL_T::x), label.c_str());
   if (!gl_window) {
     return;
   }
@@ -110,20 +109,12 @@ bool destroy_surface_window() {
 }
 
 void display_scaled_image(const std::string& label, cv::Mat image, float scale, bool wait, bool squish) {
-  if (scale != 1.0f) {
-    // Calculate new dimensions
-    int newWidth = static_cast<int>(image.cols * scale);
-    int newHeight = static_cast<int>(image.rows * scale);
-
-    // Resize the image
-    cv::resize(image, image, cv::Size(newWidth, newHeight));
-  }
-  if (squish) {
-    stretch(image, 0.0f, 255.0f);
-  }
-  // Display the image
-  cv::imshow(label, convert_to_uchar(image));
-  cv::waitKey(wait ? 0 : 1); // Wait for a keystroke in the window
+  warn_cpu_image_preview_unavailable();
+  (void)label;
+  (void)image;
+  (void)scale;
+  (void)wait;
+  (void)squish;
 }
 
 std::pair<double, double> get_min_max(const cv::Mat& mat) {

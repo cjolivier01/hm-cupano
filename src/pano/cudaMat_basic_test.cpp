@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
 
 #include <cupano/pano/cudaMat.h>
 
@@ -22,4 +22,3 @@ TEST(CudaMatBasic, UploadDownloadUchar3) {
   EXPECT_EQ(rt.cols, 2);
   EXPECT_EQ(rt.type(), cpu.type());
 }
-

@@ -1,12 +1,9 @@
 #include "cupano/utils/imageUtils.h"
 
-#include <opencv2/highgui.hpp>
-#include <opencv2/opencv.hpp>
-#include <opencv2/imgproc.hpp>
-
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
+#include <stdexcept>
 
 namespace hm {
 namespace utils {
@@ -107,8 +104,10 @@ void stretch(cv::Mat& img, float lo, float hi) {
   } else if (type == CV_8UC3 || type == CV_8UC4) {
     // Convert to float and normalize to [0, 1]
     img.convertTo(img, CV_32F, 1.0 / 255.0);
-    if (type == CV_8UC3) img = img.reshape(3); // Ensure 3 channels
-    else if (type == CV_8UC4) img = img.reshape(4);
+    if (type == CV_8UC3)
+      img = img.reshape(3); // Ensure 3 channels
+    else if (type == CV_8UC4)
+      img = img.reshape(4);
   } else {
     CV_Error(cv::Error::StsUnsupportedFormat, "Unsupported image type in stretch()");
   }
@@ -131,11 +130,10 @@ void stretch(cv::Mat& img, float lo, float hi) {
   cv::Scalar sLo(lo, lo, lo, lo);
 
   // (img - imgMin) * scale + lo
-  cv::subtract(img, sMin, img);    // img -= imgMin
-  cv::multiply(img, scale, img);   // img *= scale
-  cv::add(img, sLo, img);          // img += lo
+  cv::subtract(img, sMin, img); // img -= imgMin
+  cv::multiply(img, scale, img); // img *= scale
+  cv::add(img, sLo, img); // img += lo
 }
-
 
 } // namespace utils
 } // namespace hm

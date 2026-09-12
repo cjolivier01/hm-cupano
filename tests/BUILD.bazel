@@ -8,7 +8,7 @@ cc_binary(
         "-lopencv_imgproc",
     ],
     visibility = ["//visibility:public"],
-    deps = ["//src/pano:cuda_pano", "@opencv_linux//:opencv"]
+    deps = ["//src/pano:cuda_pano", "//src/utils:show_image", "@opencv_linux//:opencv"]
         + select({
             "//:use_hip": ["@local_rocm//:hip_runtime"],
             "//:use_vulkan": [],
@@ -31,7 +31,12 @@ cc_binary(
         "//:use_vulkan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    deps = ["//src/pano:cuda_pano", "@ffmpeg_linux//:ffmpeg_libs", "@opencv_linux//:opencv"]
+    deps = [
+        "//src/pano:cuda_pano",
+        "//src/utils:show_image",
+        "@ffmpeg_linux//:ffmpeg_libs",
+        "@opencv_linux//:opencv",
+    ]
         + select({
             "//:use_hip": ["@local_rocm//:hip_runtime"],
             "//:use_vulkan": [],
@@ -54,7 +59,12 @@ cc_binary(
         "//:use_vulkan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    deps = ["//src/pano:cuda_pano", "@ffmpeg_linux//:ffmpeg_libs", "@opencv_linux//:opencv"]
+    deps = [
+        "//src/pano:cuda_pano",
+        "//src/utils:show_image",
+        "@ffmpeg_linux//:ffmpeg_libs",
+        "@opencv_linux//:opencv",
+    ]
         + select({
             "//:use_hip": ["@local_rocm//:hip_runtime"],
             "//:use_vulkan": [],
@@ -72,7 +82,7 @@ cc_binary(
         "-lopencv_imgproc",
     ],
     visibility = ["//visibility:public"],
-    deps = ["//src/pano:cuda_pano", "@opencv_linux//:opencv"]
+    deps = ["//src/pano:cuda_pano", "//src/utils:show_image", "@opencv_linux//:opencv"]
         + select({
             "//:use_hip": ["@local_rocm//:hip_runtime"],
             "//:use_vulkan": [],
@@ -90,7 +100,7 @@ cc_binary(
         "-lopencv_imgproc",
     ],
     visibility = ["//visibility:public"],
-    deps = ["//src/pano:cuda_pano_n", "@opencv_linux//:opencv"]
+    deps = ["//src/pano:cuda_pano_n", "//src/utils:show_image", "@opencv_linux//:opencv"]
         + select({
             "//:use_hip": ["@local_rocm//:hip_runtime"],
             "//:use_vulkan": [],

@@ -4,13 +4,16 @@
 #include "cupano/pano/cudaPanoN.h"
 #include "cupano/utils/showImage.h"
 
-#include <opencv2/opencv.hpp>
 #include "cupano/gpu/gpu_runtime.h"
 
 #include <cassert>
 #include <cmath>
 #include <iostream>
 #include <type_traits>
+
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include <getopt.h>
 #include <unistd.h>

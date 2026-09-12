@@ -1,6 +1,9 @@
 #pragma once
 
-#include <opencv2/opencv.hpp>
+#include <utility>
+#include <vector>
+
+#include <opencv2/core.hpp>
 
 namespace hm {
 namespace utils {

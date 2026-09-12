@@ -4,7 +4,6 @@
 #include <gtest/gtest.h>
 #include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
-#include <opencv2/opencv.hpp>
 
 #include <array>
 #include <cmath>

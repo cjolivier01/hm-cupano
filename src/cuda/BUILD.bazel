@@ -61,8 +61,9 @@ cuda_library(
         [
             "//src/gpu:gpu_runtime",
             ":cuda_blend_cuda_lib_headers",
-            "//src/utils:show_image",
             "//src/pano:canvas_manager",
+            "//src/pano:cuda_matrix",
+            "//src/utils:image_utils",
             "@opencv_linux//:opencv",
         ]
         + select({
@@ -83,6 +84,7 @@ cc_library(
     hdrs = [
         "cudaBlend.h",
         "cudaBlend3.h",
+        "cudaBlendPreviewWarning.h",
         "cudaFusedKernels3.h",
         "cudaBlendN.h",
         "cudaMakeFull.h",
@@ -243,6 +245,7 @@ cc_library(
     hdrs = [
         "cudaBlend.h",
         "cudaBlend3.h",
+        "cudaBlendPreviewWarning.h",
         "cudaFusedKernels3.h",
         "cudaBlendN.h",
         "cudaMakeFull.h",
@@ -259,8 +262,9 @@ cc_library(
     }),
     deps = [
         "//src/gpu:gpu_runtime",
-        "//src/utils:show_image",
         "//src/pano:canvas_manager",
+        "//src/pano:cuda_matrix",
+        "//src/utils:image_utils",
         "@opencv_linux//:opencv",
     ],
 )
@@ -272,6 +276,7 @@ cc_library(
         "cudaUtils.cuh",
         "cudaBlend.h",
         "cudaBlend3.h",
+        "cudaBlendPreviewWarning.h",
         "cudaFusedKernels3.h",
         "cudaBlendN.h",
         "cudaMakeFull.h",
@@ -284,8 +289,9 @@ cc_library(
     tags = ["manual"],
     deps = [
         "//src/gpu:gpu_runtime",
-        "//src/utils:show_image",
         "//src/pano:canvas_manager",
+        "//src/pano:cuda_matrix",
+        "//src/utils:image_utils",
         "@opencv_linux//:opencv",
         "@local_rocm//:rocm_sdk_core",
         "@local_rocm//:amdhip64",

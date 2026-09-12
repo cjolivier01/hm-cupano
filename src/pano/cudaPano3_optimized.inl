@@ -5,8 +5,6 @@
 #include "cupano/cuda/cudaRemap.h"
 #include "cupano/cuda/cudaTypes.h"
 #include "cupano/pano/cudaPano3.h"
-#include "cupano/utils/cudaBlendShow.h"
-#include "cupano/utils/showImage.h"
 
 namespace hm {
 namespace pano {
