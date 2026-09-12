@@ -1,8 +1,7 @@
 #pragma once
 
+#include <opencv2/opencv.hpp>
 #include <cstdint>
-
-#include <opencv2/core.hpp>
 
 namespace hm {
 namespace cv_type_traits {
@@ -62,7 +61,7 @@ struct CVType<long> {
 // Half-precision (if OpenCV has CV_16F defined, available since OpenCV 4.5+):
 #ifdef CV_16F
 #if defined(CV_VERSION_MAJOR) && CV_VERSION_MAJOR < 5
-#ifndef __aarch64__ // doesn't seem to be there on the jetson orin nx
+#ifndef __aarch64__  // doesn't seem to be there on the jetson orin nx
 template <>
 struct CVType<cv::float16_t> {
   static constexpr int value = CV_16F;

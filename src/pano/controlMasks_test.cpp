@@ -4,7 +4,6 @@
 #include "cupano/pano/controlMasksN.h"
 
 #include <gtest/gtest.h>
-#include <opencv2/imgcodecs.hpp>
 #include <png.h>
 #include <tiffio.h>
 #include <unistd.h>

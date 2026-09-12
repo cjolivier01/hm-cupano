@@ -37,7 +37,7 @@ python scripts/create_control_points.py <path to left video> <path to right vide
  
 Run the stitching test
 ```
-./bazel-bin/tests/test_cuda_blend --perf --output=myframe.png --directory=<directory where the video was/project files were saved>
+./bazel-bin/tests/test_cuda_blend --show --perf --output=myframe.png --directory=<directory where the video was/project files were saved>
 ```
 
 Left frame:
@@ -141,7 +141,7 @@ Run (soft seam example with 4 inputs):
 ./bazel-bin/tests/test_cuda_blend_n \
   --num-images=4 --levels=6 \
   --directory=<data_dir> \
-  --output=out.png
+  --output=out.png --show
 ```
 
 Run (hard seam, no pyramid):
@@ -176,7 +176,9 @@ Usage (two videos):
   --left=<left.mp4> --right=<right.mp4> \
   --control=<dir_with_mapping_and_seam> \
   --output=stitched_two.mp4 \
-  --levels=6 --gpu-decode=1 --gpu-encode=1
+  --levels=6 --gpu-decode=1 --gpu-encode=1 \
+  --show \
+  --show-scaled=0.5
 ```
 
 Usage (three videos):
@@ -192,7 +194,6 @@ Notes:
 - `--control` must point to a folder containing the Hugin-generated remaps and seam: `mapping_000{i}_{x,y}.tif`, `mapping_000{i}.tif`, and `seam_file.png` (2 files for two-video, 3 files for three-video).
 - The apps attempt GPU decode/encode via OpenCV cudacodec if available; otherwise they fall back to CPU.
 - Output codec defaults to `mp4v` for broad compatibility; override with `--fourcc=avc1` or `--fourcc=hevc` if supported.
-- CPU image preview flags are accepted for compatibility but run headless because the OpenCV GUI module is not linked; inspect output files instead.
 
 ## C++ GPU Backend Ports
 

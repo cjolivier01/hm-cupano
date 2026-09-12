@@ -16,15 +16,16 @@
  * __half, __nv_bfloat16) and uses CUDA streams for asynchronous execution.
  */
 
-#include "src/cuda/cudaBlendPreviewWarning.h"
 #include "src/pano/cudaMat.h"
+#include "src/utils/showImage.h"
 
 #include <cupano/gpu/gpu_runtime.h>
+
+#include <opencv2/opencv.hpp>
 
 #include <cassert>
 #include <cmath>
 #include <cstdio>
-#include <string>
 #include <vector>
 
 /**
@@ -136,7 +137,7 @@ struct CudaBatchLaplacianBlendContext3 {
 
   bool initialized{false}; ///< Flag indicating whether the context has been initialized.
 
-  // Headless compatibility hook for callers that still invoke debug display.
+  // Must link to utils for this
   inline void displayPyramids(int channels, float scale, bool wait) const;
 
   void show_image(
@@ -182,14 +183,15 @@ inline void CudaBatchLaplacianBlendContext3<T>::show_image(
     bool wait,
     float scale,
     bool squish) {
-  hm::cuda_blend_detail::warn_preview_unavailable();
-  (void)label;
-  (void)d_ptr;
-  (void)level;
-  (void)channels;
-  (void)wait;
-  (void)scale;
-  (void)squish;
+  if (channels == 3) {
+    assert(sizeof(T) * channels == sizeof(float3));
+    hm::CudaMat<float3> mat((float3*)d_ptr, 1, widths.at(level), heights.at(level));
+    hm::utils::show_image(label, mat.download(), wait, scale, squish);
+  } else {
+    assert(sizeof(T) * channels == sizeof(float4));
+    hm::CudaMat<float4> mat((float4*)d_ptr, 1, widths.at(level), heights.at(level));
+    hm::utils::show_image(label, mat.download(), wait, scale, squish);
+  }
 }
 
 template <typename T>
@@ -201,14 +203,7 @@ inline void CudaBatchLaplacianBlendContext3<T>::show_image(
     bool wait,
     float scale,
     bool squish) {
-  hm::cuda_blend_detail::warn_preview_unavailable();
-  (void)label;
-  (void)vec_d_ptrs;
-  (void)level;
-  (void)channels;
-  (void)wait;
-  (void)scale;
-  (void)squish;
+  show_image(label, vec_d_ptrs.at(level), level, channels, wait, scale, squish);
 }
 
 /**
@@ -291,3 +286,4 @@ cudaError_t cudaBatchedLaplacianBlendOptimized3(
     CudaBatchLaplacianBlendContext3<T>& context,
     int channels,
     cudaStream_t stream);
+

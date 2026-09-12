@@ -1,16 +1,12 @@
 #pragma once
 
+#include <opencv2/opencv.hpp>
 #include <string>
-#include <utility>
-
-#include <opencv2/core.hpp>
-
 #include "cupano/cuda/cudaTypes.h"
 
 namespace hm {
 namespace utils {
 
-void warn_cpu_image_preview_unavailable();
 void show_image(
     const std::string& label,
     const cv::Mat& img,
@@ -36,25 +32,19 @@ cv::Mat make_fake_mask_like(const cv::Mat& mask);
     ::hm::utils::show_surface(std::string(#_mat$), (_mat$)->surface(), /*wait=*/true); \
   } while (false)
 
-#define SHOW_IMAGE(_mat$)                              \
-  do {                                                 \
-    (void)(_mat$);                                     \
-    ::hm::utils::warn_cpu_image_preview_unavailable(); \
+#define SHOW_IMAGE(_mat$)                                                             \
+  do {                                                                                \
+    ::hm::utils::show_image(std::string(#_mat$), (_mat$)->download(), /*wait=*/true); \
   } while (false)
 
-#define SHOW_SCALED(_mat$, _scale$)                    \
-  do {                                                 \
-    (void)(_mat$);                                     \
-    (void)(_scale$);                                   \
-    ::hm::utils::warn_cpu_image_preview_unavailable(); \
+#define SHOW_SCALED(_mat$, _scale$)                                                                      \
+  do {                                                                                                   \
+    ::hm::utils::display_scaled_image(std::string(#_mat$), (_mat$)->download(), _scale$, /*wait=*/true); \
   } while (false)
 
-#define SHOW_SCALED_BATCH_ITEM(_mat$, _scale$, _batch_item$) \
-  do {                                                       \
-    (void)(_mat$);                                           \
-    (void)(_scale$);                                         \
-    (void)(_batch_item$);                                    \
-    ::hm::utils::warn_cpu_image_preview_unavailable();       \
+#define SHOW_SCALED_BATCH_ITEM(_mat$, _scale$, _batch_item$)                                                         \
+  do {                                                                                                               \
+    ::hm::utils::display_scaled_image(std::string(#_mat$), (_mat$)->download(_batch_item$), _scale$, /*wait=*/true); \
   } while (false)
 
 #define SHOW_SMALL(_mat$)     \

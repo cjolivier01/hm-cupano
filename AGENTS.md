@@ -22,7 +22,7 @@
 - Clean: `make clean` (or `make expunge` for a full clean).
 - Specific targets: `bazelisk build //src/pano:cuda_pano`.
 - GTest targets: `bazelisk test //src/pano:cudaPano3_test //src/cuda:cudaBlend3_test`.
-- Stitching demo (after build): `./bazel-bin/tests/test_cuda_blend --perf --output=out.png --directory=<data_dir>` or `./laplacian_blend.sh <data_dir>`.
+- Stitching demo (after build): `./bazel-bin/tests/test_cuda_blend --show --perf --output=out.png --directory=<data_dir>` or `./laplacian_blend.sh <data_dir>`.
 
 ## Coding Style & Conventions
 - Language: C++17 (most), CUDA C++14 in kernels.

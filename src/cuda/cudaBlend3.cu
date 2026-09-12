@@ -5,6 +5,7 @@
 #include "cudaTypes.h"
 #include "cudaUtils.cuh"
 #include "cupano/utils/imageUtils.h"
+#include "cupano/utils/showImage.h"
 
 #include <cupano/gpu/gpu_runtime.h>
 #include <device_launch_parameters.h>
@@ -14,7 +15,6 @@
 #include <csignal>
 #include <cstdio>
 #include <iostream>
-#include <string>
 #include <vector>
 
 using namespace hm::cupano::cuda;

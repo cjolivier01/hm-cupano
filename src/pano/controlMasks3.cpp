@@ -1,11 +1,11 @@
 #include "controlMasks3.h"
+#include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <png.h>
 #include <tiffio.h> // For TIFF metadata
 #include <algorithm>
 #include <cmath>
-#include <iostream>
 #include <optional>
 #include <set>
 #include <stdexcept>

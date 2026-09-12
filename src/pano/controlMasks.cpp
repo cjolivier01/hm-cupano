@@ -1,6 +1,5 @@
 #include "controlMasks.h"
 
-#include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <png.h>
 #include <tiffio.h> // For reading TIFF metadata
@@ -9,7 +8,6 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
-#include <iostream>
 #include <limits>
 #include <optional>
 #include <stdexcept>

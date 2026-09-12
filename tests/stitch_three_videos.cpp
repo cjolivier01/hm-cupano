@@ -4,8 +4,7 @@
  *
  * Demonstrates a complete I/O loop around the 3-camera CUDA panorama stitcher.
  * Attempts GPU-accelerated I/O via cudacodec when requested and available,
- * falling back to CPU I/O otherwise. Legacy preview flags are accepted but run
- * headless because the OpenCV GUI module is not linked.
+ * falling back to CPU I/O otherwise. Optionally previews the stitched result.
  *
  * Key options:
  *  - --left/--middle/--right (or --video0/1/2): input video paths
@@ -15,7 +14,7 @@
  *  - --levels: number of pyramid levels for the stitcher
  *  - --cuda-device: CUDA device id
  *  - --max-frames: limit processed frames (smoke tests)
- *  - --show / --show-scaled: accepted compatibility flags; CPU preview is headless
+ *  - --show / --show-scaled: optional display
  */
 
 #include "cupano/cuda/cudaStatus.h"
@@ -26,11 +25,11 @@
 
 #include "cupano/gpu/gpu_runtime.h"
 
-#include <opencv2/core.hpp>
 #include <opencv2/core/cuda.hpp>
 #include <opencv2/core/hal/interface.h>
+#include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
-#include <opencv2/videoio.hpp>
+#include <opencv2/opencv.hpp>
 
 #include <getopt.h>
 #include <unistd.h>
@@ -435,8 +434,8 @@ int main(int argc, char** argv) {
     std::cerr << "Usage: " << argv[0]
               << " --left <v0.mp4> --middle <v1.mp4> --right <v2.mp4> [--output <out.mp4>] --control <dir>"
               << " [--levels N] [--cuda-device K] [--gpu-decode 0|1] [--gpu-encode 0|1]"
-              << " [--fourcc mp4v|avc1|hevc] [--bitrate-kbps N] [--max-frames N]"
-              << " [--show] [--show-scaled]" << std::endl;
+              << " [--fourcc mp4v|avc1|hevc] [--bitrate-kbps N] [--max-frames N] [--show] [--show-scaled F]"
+              << std::endl;
     return 2;
   }
   if (control_dir.empty()) {

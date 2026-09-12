@@ -65,7 +65,7 @@ def _detect_opencv():
     fail("OpenCV headers not found (looked for opencv4/opencv2 or opencv5/opencv2)")
 
 
-_REQUIRED_OPENCV_CPU_LIBS = ["core", "imgproc", "imgcodecs", "video", "videoio"]
+_REQUIRED_OPENCV_CPU_LIBS = ["core", "imgproc", "imgcodecs", "highgui", "video", "videoio"]
 _REQUIRED_OPENCV_CUDA_LIBS = ["cudacodec", "cudaimgproc", "cudawarping"]
 _REQUIRED_CUDA_HEADERS = [
     "cudaarithm.hpp",
@@ -283,6 +283,7 @@ def opencv_library(name, backend = "auto", visibility = None):
         "-l:libopencv_core.so",
         "-l:libopencv_imgproc.so",
         "-l:libopencv_imgcodecs.so",
+        "-l:libopencv_highgui.so",
         "-l:libopencv_video.so",
         "-l:libopencv_videoio.so",
     ] + cuda_linkopts

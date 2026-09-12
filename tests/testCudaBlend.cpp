@@ -4,6 +4,7 @@
 #include "cupano/pano/cudaPano.h"
 #include "cupano/utils/showImage.h"
 
+#include <opencv2/opencv.hpp>
 #include "cupano/gpu/gpu_runtime.h"
 
 #include <cassert>
@@ -11,10 +12,10 @@
 #include <iostream>
 #include <type_traits>
 
-#include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
+#include <opencv2/highgui.hpp>
+
 #include <opencv2/imgcodecs.hpp>
-#include <opencv2/imgproc.hpp>
 
 #include <fcntl.h>
 #include <getopt.h>
@@ -52,7 +53,7 @@ int main(int argc, char** argv) {
   // Define the long options.
   // The 'val' field provides a short option equivalent.
   static struct option long_options[] = {
-      {"show", no_argument, 0, 's'}, // accepted for compatibility; CPU preview is headless
+      {"show", no_argument, 0, 's'}, // --show (flag)
       {"perf", no_argument, 0, 'p'}, // --perf (flag)
       {"game-id", required_argument, 0, 'g'}, // --game-id <value>
       {"levels", required_argument, 0, 'l'}, // --levels <value>
@@ -65,7 +66,7 @@ int main(int argc, char** argv) {
   };
 
   // The short options string:
-  // 's' for --show compatibility (no argument),
+  // 's' for --show (no argument),
   // 'g:' means option 'g' requires an argument,
   // 'd:' means option 'd' requires an argument.
   const char* short_opts = "spg:d:o:u:c:l:b:";
