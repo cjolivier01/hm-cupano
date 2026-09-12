@@ -114,7 +114,14 @@ cc_library(
     defines = ROCM_HIP_DEFINES,
     visibility = ["//visibility:public"],
     deps = (
-      ["//src/gpu:gpu_runtime", ":image_utils", ":gl_window", "//src/pano:cuda_matrix", "@opencv_linux//:opencv"]
+      [
+        "//src/gpu:gpu_runtime",
+        ":image_utils",
+        ":gl_window",
+        "//src/pano:cuda_matrix",
+        "@jetson-utils//display:display",
+        "@opencv_linux//:opencv",
+      ]
       + select({
         "//:use_hip": [
           "@local_rocm//:rocm_sdk_core",

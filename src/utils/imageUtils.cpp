@@ -1,7 +1,6 @@
 #include "cupano/utils/imageUtils.h"
 
-#include <opencv2/highgui.hpp>
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include <fcntl.h>
@@ -135,7 +134,6 @@ void stretch(cv::Mat& img, float lo, float hi) {
   cv::multiply(img, scale, img);   // img *= scale
   cv::add(img, sLo, img);          // img += lo
 }
-
 
 } // namespace utils
 } // namespace hm

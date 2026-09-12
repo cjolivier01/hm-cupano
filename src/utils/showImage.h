@@ -1,7 +1,10 @@
 #pragma once
 
-#include <opencv2/opencv.hpp>
 #include <string>
+#include <utility>
+
+#include <opencv2/core.hpp>
+
 #include "cupano/cuda/cudaTypes.h"
 
 namespace hm {

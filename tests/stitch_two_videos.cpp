@@ -32,7 +32,6 @@
 
 #include <opencv2/core/cuda.hpp>
 #include <opencv2/core/hal/interface.h>
-#include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/opencv.hpp>
 

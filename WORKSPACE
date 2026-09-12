@@ -18,6 +18,42 @@ rules_cuda_dependencies()
 
 register_detected_cuda_toolchains()
 
+git_repository(
+    name = "jetson-utils",
+    commit = "7efddeb92797c15a6a2dfea67244013b2c05b53d",
+    remote = "ssh://git@github.com/cjolivier01/jetson-utils",
+)
+
+load("@jetson-utils//bazel:dependencies.bzl", "local_cuda_sdk_repository")
+
+local_cuda_sdk_repository(
+    name = "cuda_sdk",
+)
+
+new_local_repository(
+    name = "glib",
+    build_file = "//buildfiles:third_party/glib.BUILD",
+    path = "/usr",
+)
+
+new_local_repository(
+    name = "gstreamer",
+    build_file = "//buildfiles:third_party/gstreamer.BUILD",
+    path = "/usr",
+)
+
+new_local_repository(
+    name = "json_glib",
+    build_file = "//buildfiles:third_party/json_glib.BUILD",
+    path = "/usr",
+)
+
+new_local_repository(
+    name = "libsoup",
+    build_file = "//buildfiles:third_party/libsoup.BUILD",
+    path = "/usr",
+)
+
 # External seam blender used to compute indexed seam masks for N-image/3-image paths
 git_repository(
     name = "multiblend",
