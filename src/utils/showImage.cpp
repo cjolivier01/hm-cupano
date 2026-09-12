@@ -1,13 +1,15 @@
 #include "cupano/utils/showImage.h"
 #include "cupano/utils/cudaGLWindow.h"
 #include "cupano/utils/imageUtils.h"
+#include "jetson-utils/display/glDisplay.h"
 
-#include <set>
+#include <algorithm>
+#include <cstddef>
 #include <memory>
+#include <set>
+#include <stdexcept>
+#include <unordered_map>
 #include <unordered_set>
-
-#include <opencv2/highgui.hpp>
-#include <opencv2/opencv.hpp>
 
 #include <fcntl.h>
 #include <opencv2/imgproc.hpp>
@@ -18,14 +20,141 @@
 namespace hm {
 namespace utils {
 
+int kbhit();
+
 namespace {
 thread_local std::unique_ptr<CudaGLWindow> gl_window;
+thread_local std::unordered_map<std::string, std::unique_ptr<glDisplay>> cpu_image_windows;
 
 CudaGLWindow* get_gl_window(int w, int h, int channels, const char* title) {
   if (!gl_window) {
     gl_window = std::make_unique<CudaGLWindow>(w, h, channels, title);
   }
   return gl_window.get();
+}
+
+bool preview_key_handler(uint16_t event, int a, int b, void* user) {
+  auto* pressed = static_cast<bool*>(user);
+  if (!pressed) {
+    return false;
+  }
+  if ((event == KEY_STATE || event == KEY_MODIFIED) && b == KEY_PRESSED) {
+    *pressed = true;
+  } else if (event == KEY_CHAR) {
+    (void)a;
+    *pressed = true;
+  } else if (event == WINDOW_CLOSED) {
+    *pressed = true;
+  }
+  return false;
+}
+
+int read_terminal_key() {
+  if (!kbhit()) {
+    return EOF;
+  }
+  return getchar();
+}
+
+bool consume_terminal_key() {
+  return read_terminal_key() != EOF;
+}
+
+void wait_for_preview_key(glDisplay* display) {
+  if (!display) {
+    return;
+  }
+  bool pressed = false;
+  display->AddEventHandler(preview_key_handler, &pressed);
+  while (display->IsOpen() && !pressed && !consume_terminal_key()) {
+    display->ProcessEvents();
+    usleep(1000);
+  }
+  display->RemoveEventHandler(preview_key_handler, &pressed);
+}
+
+glDisplay* get_cpu_image_window(const std::string& label, int width, int height) {
+  auto& window = cpu_image_windows[label];
+  if (window && window->IsClosed()) {
+    return nullptr;
+  }
+  if (!window) {
+    videoOptions options;
+    options.width = width;
+    options.height = height;
+    window.reset(glDisplay::Create(options));
+    if (window) {
+      window->SetTitle(label.c_str());
+    }
+  }
+  return window.get();
+}
+
+cv::Mat resize_for_preview(const cv::Mat& image, float scale) {
+  if (scale == 0.0f || scale == 1.0f) {
+    return image.clone();
+  }
+  const int width = std::max(1, static_cast<int>(scale * (image.cols + 0.5f)));
+  const int height = std::max(1, static_cast<int>(scale * (image.rows + 0.5f)));
+  cv::Mat resized;
+  cv::resize(image, resized, cv::Size(width, height), 0.0, 0.0, cv::INTER_NEAREST);
+  return resized;
+}
+
+cv::Mat prepare_cpu_preview_image(cv::Mat image, bool squish, imageFormat* format) {
+  if (image.empty()) {
+    throw std::invalid_argument("cannot show an empty image");
+  }
+  if (squish) {
+    stretch(image, 0.0f, 255.0f);
+  }
+  cv::Mat uchar_image = convert_to_uchar(std::move(image));
+  cv::Mat render_image;
+  switch (uchar_image.channels()) {
+    case 1:
+      cv::cvtColor(uchar_image, render_image, cv::COLOR_GRAY2RGB);
+      *format = IMAGE_RGB8;
+      break;
+    case 3:
+      cv::cvtColor(uchar_image, render_image, cv::COLOR_BGR2RGB);
+      *format = IMAGE_RGB8;
+      break;
+    case 4:
+      cv::cvtColor(uchar_image, render_image, cv::COLOR_BGRA2RGBA);
+      *format = IMAGE_RGBA8;
+      break;
+    default:
+      throw std::invalid_argument("only 1-, 3-, and 4-channel images can be shown");
+  }
+  return render_image.isContinuous() ? render_image : render_image.clone();
+}
+
+bool render_cpu_image(const std::string& label, cv::Mat image, bool wait, bool squish) {
+  imageFormat format = IMAGE_UNKNOWN;
+  cv::Mat render_image = prepare_cpu_preview_image(std::move(image), squish, &format);
+  void* device_image = nullptr;
+  const std::size_t bytes = render_image.total() * render_image.elemSize();
+  const cudaError_t alloc_status = cudaMalloc(&device_image, bytes);
+  if (alloc_status != cudaSuccess) {
+    throw std::runtime_error(std::string("cudaMalloc failed for preview image: ") + cudaGetErrorString(alloc_status));
+  }
+  const cudaError_t copy_status = cudaMemcpy(device_image, render_image.data, bytes, cudaMemcpyHostToDevice);
+  if (copy_status != cudaSuccess) {
+    cudaFree(device_image);
+    throw std::runtime_error(std::string("cudaMemcpy failed for preview image: ") + cudaGetErrorString(copy_status));
+  }
+  glDisplay* window = get_cpu_image_window(label, render_image.cols, render_image.rows);
+  if (!window) {
+    cudaFree(device_image);
+    return false;
+  }
+  window->Render(device_image, render_image.cols, render_image.rows, format);
+  if (wait) {
+    wait_for_preview_key(window);
+  }
+  const bool window_open = window->IsOpen();
+  cudaFree(device_image);
+  return window_open;
 }
 
 } // namespace
@@ -56,8 +185,8 @@ int kbhit() {
 }
 
 int wait_key(CudaGLWindow* window = nullptr) {
-  int c;
-  while (!(c = kbhit())) {
+  int c = EOF;
+  while ((c = read_terminal_key()) == EOF) {
     if (window && window->isKeyPressed(GLFW_KEY_ESCAPE)) {
       // ESCAPE?
       constexpr int kEscapeKey = 27;
@@ -68,26 +197,14 @@ int wait_key(CudaGLWindow* window = nullptr) {
   return c;
 }
 
-void show_image(const std::string& label, const cv::Mat& img, bool wait, float scale, bool squish) {
-  if (scale != 0 && scale != 1) {
-    cv::Size newSize(static_cast<int>(scale * (img.cols + 0.5f)), static_cast<int>(scale * (img.rows + 0.5f)));
-    cv::Mat dest;
-    if (scale < 1) {
-      cv::resize(img, dest, newSize, 0.0, 0.0, cv::INTER_NEAREST);
-    } else {
-      cv::resize(img, dest, newSize, 0.0, 0.0, cv::INTER_NEAREST /*cv::INTER_LINEAR*/);
-    }
-    cv::imshow(label, convert_to_uchar(std::move(dest)));
-  } else {
-    cv::imshow(label, convert_to_uchar(img.clone()));
-  }
-  cv::waitKey(wait ? 0 : 1);
+bool show_image(const std::string& label, const cv::Mat& img, bool wait, float scale, bool squish) {
+  return render_cpu_image(label, resize_for_preview(img, scale), wait, squish);
 }
 
 template <typename PIXEL_T>
 void show_surface(const std::string& label, const CudaSurface<PIXEL_T>& surface, bool wait) {
-  CudaGLWindow* gl_window = get_gl_window(
-      surface.width, surface.height, sizeof(PIXEL_T) / sizeof(PIXEL_T::x), label.c_str());
+  CudaGLWindow* gl_window =
+      get_gl_window(surface.width, surface.height, sizeof(PIXEL_T) / sizeof(PIXEL_T::x), label.c_str());
   if (!gl_window) {
     return;
   }
@@ -102,28 +219,19 @@ template void show_surface<float3>(const std::string& label, const CudaSurface<f
 template void show_surface<uchar4>(const std::string& label, const CudaSurface<uchar4>& surface, bool wait);
 
 bool destroy_surface_window() {
-  if (!gl_window) {
+  const bool destroyed = gl_window || !cpu_image_windows.empty();
+  if (gl_window) {
+    gl_window.reset();
+  }
+  cpu_image_windows.clear();
+  if (!destroyed) {
     return false;
   }
-  gl_window.reset();
   return true;
 }
 
-void display_scaled_image(const std::string& label, cv::Mat image, float scale, bool wait, bool squish) {
-  if (scale != 1.0f) {
-    // Calculate new dimensions
-    int newWidth = static_cast<int>(image.cols * scale);
-    int newHeight = static_cast<int>(image.rows * scale);
-
-    // Resize the image
-    cv::resize(image, image, cv::Size(newWidth, newHeight));
-  }
-  if (squish) {
-    stretch(image, 0.0f, 255.0f);
-  }
-  // Display the image
-  cv::imshow(label, convert_to_uchar(image));
-  cv::waitKey(wait ? 0 : 1); // Wait for a keystroke in the window
+bool display_scaled_image(const std::string& label, cv::Mat image, float scale, bool wait, bool squish) {
+  return render_cpu_image(label, resize_for_preview(image, scale), wait, squish);
 }
 
 std::pair<double, double> get_min_max(const cv::Mat& mat) {

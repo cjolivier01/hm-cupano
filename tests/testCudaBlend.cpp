@@ -13,7 +13,6 @@
 #include <type_traits>
 
 #include <opencv2/core/hal/interface.h>
-#include <opencv2/highgui.hpp>
 
 #include <opencv2/imgcodecs.hpp>
 

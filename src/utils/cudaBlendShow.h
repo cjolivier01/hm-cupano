@@ -3,12 +3,18 @@
 #include "src/cuda/cudaBlend.h"
 #include "src/cuda/cudaBlend3.h"
 #include "src/utils/imageUtils.h"
+#include "src/utils/showImage.h"
 
+#include <algorithm>
+#include <cassert>
+#include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include <cupano/gpu/gpu_runtime.h>
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
 
 namespace {
 /**
@@ -89,7 +95,8 @@ inline void displayPyramid(
     const std::vector<int>& heights,
     int channels,
     float scale,
-    int only_level = -1) {
+    int only_level = -1,
+    bool wait = false) {
   const int cvType = getCVTypeForPixel<T>(channels);
   int totalHeight = 0;
   int maxWidth = 0;
@@ -122,9 +129,6 @@ inline void displayPyramid(
     // hm::utils::stretch(levelMat, 0.0f, 255.0f);
     levelMat = convert_to_uchar(levelMat);
 
-    // cv::imshow(windowName, levelMat);
-    // cv::waitKey(0);
-
     levelMats.emplace_back(std::move(levelMat));
     if (only_level != -1) {
       break;
@@ -154,8 +158,7 @@ inline void displayPyramid(
     cv::resize(composite, composite, cv::Size(newWidth, newHeight));
   }
 
-  // Display the composite image.
-  cv::imshow(windowName, composite);
+  hm::utils::show_image(windowName, composite, wait);
 }
 
 } // namespace
@@ -180,10 +183,7 @@ inline void CudaBatchLaplacianBlendContext<T>::displayPyramids(int channels, flo
   displayPyramid("Blended Pyramid", d_blend, widths, heights, channels, scale);
 
   // Optionally, you could also display the reconstructed images from d_resonstruct if desired.
-  displayPyramid("Reconstructed", d_resonstruct, widths, heights, channels, scale);
-
-  // Wait for a key press to close the windows.
-  cv::waitKey(wait ? 0 : 1);
+  displayPyramid("Reconstructed", d_resonstruct, widths, heights, channels, scale, -1, wait);
 }
 
 template <typename T>
@@ -202,10 +202,7 @@ inline void CudaBatchLaplacianBlendContext3<T>::displayPyramids(int channels, fl
   // displayPyramid("Mask Pyramid", d_maskPyr, widths, heights, 1, scale); // assuming mask is single channel
   displayPyramid("Laplacian 1", d_lap1, widths, heights, channels, scale);
   displayPyramid("Laplacian 2", d_lap2, widths, heights, channels, scale);
-  displayPyramid("Laplacian 3", d_lap3, widths, heights, channels, scale);
+  displayPyramid("Laplacian 3", d_lap3, widths, heights, channels, scale, -1, wait);
   // displayPyramid("Blended Pyramid", d_blend, widths, heights, channels, scale);
   // Optionally, you could also display the reconstructed images from d_resonstruct if desired.
-
-  // Wait for a key press to close the windows.
-  cv::waitKey(0);
 }

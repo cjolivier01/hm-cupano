@@ -13,7 +13,6 @@
 #include <type_traits>
 
 #include <opencv2/core/hal/interface.h>
-#include <opencv2/highgui.hpp>
 
 #include <opencv2/imgcodecs.hpp>
 
@@ -195,9 +194,6 @@ int main(int argc, char** argv) {
       }
     }
   }
-
-  // cv::imshow("", sample_img_image_1);
-  // cv::waitKey(0);
 
   hm::CudaMat<T_pipeline> inputImage0(as_batch(sample_img_image_0, batch_size));
   hm::CudaMat<T_pipeline> inputImage1(as_batch(sample_img_image_1, batch_size));

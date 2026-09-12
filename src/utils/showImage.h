@@ -1,19 +1,22 @@
 #pragma once
 
-#include <opencv2/opencv.hpp>
 #include <string>
+#include <utility>
+
+#include <opencv2/core.hpp>
+
 #include "cupano/cuda/cudaTypes.h"
 
 namespace hm {
 namespace utils {
 
-void show_image(
+bool show_image(
     const std::string& label,
     const cv::Mat& img,
     bool wait = true,
     float scale = 0.0f,
     bool squish = false);
-void display_scaled_image(
+bool display_scaled_image(
     const std::string& label,
     cv::Mat image,
     float scale = 1.0,
