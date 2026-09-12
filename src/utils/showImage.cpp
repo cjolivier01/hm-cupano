@@ -49,13 +49,21 @@ bool preview_key_handler(uint16_t event, int a, int b, void* user) {
   return false;
 }
 
+bool consume_terminal_key() {
+  if (!kbhit()) {
+    return false;
+  }
+  (void)getchar();
+  return true;
+}
+
 void wait_for_preview_key(glDisplay* display) {
   if (!display) {
     return;
   }
   bool pressed = false;
   display->AddEventHandler(preview_key_handler, &pressed);
-  while (display->IsOpen() && !pressed && !kbhit()) {
+  while (display->IsOpen() && !pressed && !consume_terminal_key()) {
     display->ProcessEvents();
     usleep(1000);
   }
@@ -64,7 +72,10 @@ void wait_for_preview_key(glDisplay* display) {
 
 glDisplay* get_cpu_image_window(const std::string& label, int width, int height) {
   auto& window = cpu_image_windows[label];
-  if (!window || window->IsClosed()) {
+  if (window && window->IsClosed()) {
+    return nullptr;
+  }
+  if (!window) {
     videoOptions options;
     options.width = width;
     options.height = height;
@@ -115,7 +126,7 @@ cv::Mat prepare_cpu_preview_image(cv::Mat image, bool squish, imageFormat* forma
   return render_image.isContinuous() ? render_image : render_image.clone();
 }
 
-void render_cpu_image(const std::string& label, cv::Mat image, bool wait, bool squish) {
+bool render_cpu_image(const std::string& label, cv::Mat image, bool wait, bool squish) {
   imageFormat format = IMAGE_UNKNOWN;
   cv::Mat render_image = prepare_cpu_preview_image(std::move(image), squish, &format);
   void* device_image = nullptr;
@@ -130,13 +141,17 @@ void render_cpu_image(const std::string& label, cv::Mat image, bool wait, bool s
     throw std::runtime_error(std::string("cudaMemcpy failed for preview image: ") + cudaGetErrorString(copy_status));
   }
   glDisplay* window = get_cpu_image_window(label, render_image.cols, render_image.rows);
-  if (window) {
-    window->Render(device_image, render_image.cols, render_image.rows, format);
-    if (wait) {
-      wait_for_preview_key(window);
-    }
+  if (!window) {
+    cudaFree(device_image);
+    return false;
   }
+  window->Render(device_image, render_image.cols, render_image.rows, format);
+  if (wait) {
+    wait_for_preview_key(window);
+  }
+  const bool window_open = window->IsOpen();
   cudaFree(device_image);
+  return window_open;
 }
 
 } // namespace
@@ -179,8 +194,8 @@ int wait_key(CudaGLWindow* window = nullptr) {
   return c;
 }
 
-void show_image(const std::string& label, const cv::Mat& img, bool wait, float scale, bool squish) {
-  render_cpu_image(label, resize_for_preview(img, scale), wait, squish);
+bool show_image(const std::string& label, const cv::Mat& img, bool wait, float scale, bool squish) {
+  return render_cpu_image(label, resize_for_preview(img, scale), wait, squish);
 }
 
 template <typename PIXEL_T>
@@ -212,8 +227,8 @@ bool destroy_surface_window() {
   return true;
 }
 
-void display_scaled_image(const std::string& label, cv::Mat image, float scale, bool wait, bool squish) {
-  render_cpu_image(label, resize_for_preview(image, scale), wait, squish);
+bool display_scaled_image(const std::string& label, cv::Mat image, float scale, bool wait, bool squish) {
+  return render_cpu_image(label, resize_for_preview(image, scale), wait, squish);
 }
 
 std::pair<double, double> get_min_max(const cv::Mat& mat) {
