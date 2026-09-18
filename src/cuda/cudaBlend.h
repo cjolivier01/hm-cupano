@@ -225,10 +225,15 @@ cudaError_t cudaBatchedLaplacianBlend(
  * pyramid arrays and parameters. It builds Gaussian and Laplacian pyramids for the image sets and mask,
  * blends the Laplacian pyramids, and reconstructs the final blended image directly into device memory.
  *
+ * The mask is treated as constant for the lifetime of @p context: @p d_mask is only read on the first
+ * call (the one that initializes @p context), and its Gaussian pyramid is built exactly once at that
+ * point rather than on every call. Callers that need a different mask must use a fresh context.
+ *
  * @tparam T The image data type.
  * @param d_image1 Device pointer to the first set of full-resolution images.
  * @param d_image2 Device pointer to the second set of full-resolution images.
- * @param d_mask Device pointer to the shared mask.
+ * @param d_mask Device pointer to the shared mask. Read (and its contents consumed) only on the
+ *        initializing call; must remain unmodified while @p context is alive.
  * @param d_output Device pointer where the final blended images will be stored.
  * @param context Reference to a CudaBatchLaplacianBlendContext that holds preallocated buffers and blending parameters.
  * @param stream CUDA stream to use for all kernel launches and memory copies (default is 0).

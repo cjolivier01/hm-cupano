@@ -11,8 +11,23 @@
 #include <cstdio>
 #include <vector>
 
+// Device-side diagnostic printf for unexpected alpha values.
+//
+// Keep this out of optimized builds: a `printf` call site inside a kernel is an ABI boundary
+// that forces a local stack frame and spills, which raises register pressure and lowers
+// occupancy for *every* thread, even when the branch is never taken. `cudaBlend3.cu` already
+// guards the identical macro this way.
+#ifndef NDEBUG
 #define PRINT_STRANGE_ALPHAS
+#endif
 
+// NOTE: EXTRA_ALPHA_CHECKS is deliberately *not* guarded by NDEBUG. Despite the name it is not
+// a diagnostic - it selects the alpha-aware kernel variants that exclude fully transparent
+// source pixels from the 2x2 downsample average and from the bilinear upsample weights.
+// Turning it off changes blended pixel output (transparent canvas bleeds across the seam), so
+// it must stay identical between debug and release. The three-image and N-image paths
+// (`cudaBlend3.cu`, `cudaBlendN.cu`) implement the same alpha handling unconditionally, with no
+// macro at all.
 #define EXTRA_ALPHA_CHECKS
 
 using namespace hm::cupano::cuda;
@@ -610,19 +625,50 @@ __global__ void BatchedReconstructKernel(
 
   const F_T F_ONE = static_cast<F_T>(1.0);
 
-  // No center alignment — pure top-left pixel mapping
-  F_T gx = static_cast<F_T>(x) / 2.0f;
-  F_T gy = static_cast<F_T>(y) / 2.0f;
+  // No center alignment — pure top-left pixel mapping.
+  //
+  // gx = x / 2.0f is exact in IEEE-754 binary32 for every image size this code can handle
+  // (x < 2^24), so floorf(gx) == (x >> 1) and gx - gxi == (x - 2 * gxi) * 0.5f, both exactly.
+  // Computing the sample indices in integer arithmetic removes two floorf() calls and two
+  // F2I/I2F round trips per thread without changing a single result bit. The clamp against
+  // low{Width,Height} is preserved: with the pyramid invariant lowWidth == (highWidth + 1) / 2
+  // it never fires, but it keeps a mismatched caller in bounds exactly as before.
+  const int gxi = max(0, min(x >> 1, lowWidth - 1));
+  const int gyi = max(0, min(y >> 1, lowHeight - 1));
+  const int gxi1 = min(gxi + 1, lowWidth - 1);
+  const int gyi1 = min(gyi + 1, lowHeight - 1);
 
-  int gxi = max(0, min(static_cast<int>(floorf(gx)), lowWidth - 1));
-  int gyi = max(0, min(static_cast<int>(floorf(gy)), lowHeight - 1));
-  int gxi1 = min(gxi + 1, lowWidth - 1);
-  int gyi1 = min(gyi + 1, lowHeight - 1);
+  const F_T dx = static_cast<F_T>(x - 2 * gxi) * static_cast<F_T>(0.5f);
+  const F_T dy = static_cast<F_T>(y - 2 * gyi) * static_cast<F_T>(0.5f);
 
-  F_T dx = gx - static_cast<F_T>(gxi);
-  F_T dy = gy - static_cast<F_T>(gyi);
+  const int idxOut = (y * highWidth + x) * channels;
 
-  int idxOut = (y * highWidth + x) * channels;
+  // Everything below is loop-invariant across the channel loop: the four neighbour base
+  // offsets, the four bilinear weights, and - for RGBA - the four alpha predicates. They used
+  // to be recomputed for every channel, which re-read each of the four alphas once per channel
+  // (12 redundant global loads per output pixel for channels == 4) on top of the redundant
+  // index math. Hoisting them keeps the accumulation order, and therefore the result bits,
+  // identical.
+  const int idx00 = (gyi * lowWidth + gxi) * channels;
+  const int idx10 = (gyi * lowWidth + gxi1) * channels;
+  const int idx01 = (gyi1 * lowWidth + gxi) * channels;
+  const int idx11 = (gyi1 * lowWidth + gxi1) * channels;
+
+  const F_T w00 = (F_ONE - dx) * (F_ONE - dy);
+  const F_T w10 = dx * (F_ONE - dy);
+  const F_T w01 = (F_ONE - dx) * dy;
+  const F_T w11 = dx * dy;
+
+  bool keep00 = true;
+  bool keep10 = true;
+  bool keep01 = true;
+  bool keep11 = true;
+  if (channels == 4) {
+    keep00 = static_cast<F_T>(lowImage[idx00 + 3]) != F_T(0);
+    keep10 = static_cast<F_T>(lowImage[idx10 + 3]) != F_T(0);
+    keep01 = static_cast<F_T>(lowImage[idx01 + 3]) != F_T(0);
+    keep11 = static_cast<F_T>(lowImage[idx11 + 3]) != F_T(0);
+  }
 
   for (int c = 0; c < channels; ++c) {
     if (channels == 4 && c == 3) {
@@ -639,28 +685,21 @@ __global__ void BatchedReconstructKernel(
       continue;
     }
 
-    // Gather RGBA neighbor indices (needed to check alpha)
-    int idx00 = (gyi * lowWidth + gxi) * channels;
-    int idx10 = (gyi * lowWidth + gxi1) * channels;
-    int idx01 = (gyi1 * lowWidth + gxi) * channels;
-    int idx11 = (gyi1 * lowWidth + gxi1) * channels;
-
     // Alpha-aware bilinear interpolation
     F_T sum = 0;
     F_T weightSum = 0;
 
-    auto try_add = [&](int idx, F_T wx, F_T wy) {
-      F_T w = wx * wy;
-      if (channels == 4 && static_cast<F_T>(lowImage[idx + 3]) == F_T(0))
+    auto try_add = [&](int idx, bool keep, F_T w) {
+      if (!keep)
         return;
       sum += static_cast<F_T>(lowImage[idx + c]) * w;
       weightSum += w;
     };
 
-    try_add(idx00, F_ONE - dx, F_ONE - dy);
-    try_add(idx10, dx, F_ONE - dy);
-    try_add(idx01, F_ONE - dx, dy);
-    try_add(idx11, dx, dy);
+    try_add(idx00, keep00, w00);
+    try_add(idx10, keep10, w10);
+    try_add(idx01, keep01, w01);
+    try_add(idx11, keep11, w11);
 
     // Normalize or fall back
     F_T upVal = (weightSum > F_T(0)) ? (sum / weightSum) : F_T(0);
@@ -891,6 +930,33 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
 
   dim3 block(16, 16, 1);
 
+  // 0. Build the mask Gaussian pyramid - once, not per frame.
+  //
+  // context.d_maskPyr[0] is latched to the caller's `d_mask` during initialization above and is
+  // never rebound afterwards, and no kernel launched from here writes to it (only
+  // BatchedDownsampleKernelMask reads it, and BatchedBlendKernel reads the derived levels).
+  // The result is therefore byte-identical on every call, so rebuilding it per frame burned
+  // (numLevels - 1) kernel launches plus a full read+write of the whole mask pyramid for no
+  // effect.
+  //
+  // Contract: the mask contents must stay fixed for the lifetime of `context`. That was already
+  // the case for the mask *pointer* - `d_mask` is only read when !context.initialized - so a
+  // caller that wants a different mask already had to build a new context.
+  if (!context.initialized) {
+    for (int level = 0; level < context.numLevels - 1; level++) {
+      dim3 gridMask(
+          (context.widths[level + 1] + block.x - 1) / block.x, (context.heights[level + 1] + block.y - 1) / block.y, 1);
+      BatchedDownsampleKernelMask<T><<<gridMask, block, 0, stream>>>(
+          context.d_maskPyr[level],
+          context.widths[level],
+          context.heights[level],
+          context.d_maskPyr[level + 1],
+          context.widths[level + 1],
+          context.heights[level + 1]);
+      CUDA_CHECK(cudaGetLastError());
+    }
+  }
+
   // 1. Build Gaussian pyramids.
   for (int level = 0; level < context.numLevels - 1; level++) {
     dim3 grid(
@@ -909,18 +975,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
         context.batchSize,
         channels);
     CUDA_CHECK(cudaGetLastError());
-    {
-      dim3 gridMask(
-          (context.widths[level + 1] + block.x - 1) / block.x, (context.heights[level + 1] + block.y - 1) / block.y, 1);
-      BatchedDownsampleKernelMask<T><<<gridMask, block, 0, stream>>>(
-          context.d_maskPyr[level],
-          context.widths[level],
-          context.heights[level],
-          context.d_maskPyr[level + 1],
-          context.widths[level + 1],
-          context.heights[level + 1]);
-      CUDA_CHECK(cudaGetLastError());
-    }
   }
 
   // 2. Build Laplacian pyramids.
