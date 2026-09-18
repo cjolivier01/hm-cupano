@@ -394,28 +394,49 @@ __global__ void BatchedComputeLaplacianKernel(
   const T* lowImage = gaussLow + b * lowImageSize;
   T* lapImage = laplacian + b * highImageSize;
 
-  // map (x,y) in high-res to fractional coord in low-res
-  F_T gx = static_cast<F_T>(x) / 2.0f;
-  F_T gy = static_cast<F_T>(y) / 2.0f;
-  int gxi = floorf(gx);
-  int gyi = floorf(gy);
-  F_T dx = gx - static_cast<F_T>(gxi);
-  F_T dy = gy - static_cast<F_T>(gyi);
-  int gxi1 = min(gxi + 1, lowWidth - 1);
-  int gyi1 = min(gyi + 1, lowHeight - 1);
+  // Map (x,y) in high-res to a fractional coord in low-res. As in BatchedReconstructKernel,
+  // x / 2.0f is exact in binary32, so floorf(gx) == (x >> 1) and gx - gxi == (x - 2 * gxi) * 0.5f
+  // bit-for-bit; doing it in integer arithmetic drops the floorf() and the F2I/I2F round trips.
+  const int gxi = x >> 1;
+  const int gyi = y >> 1;
+  const F_T dx = static_cast<F_T>(x - 2 * gxi) * static_cast<F_T>(0.5f);
+  const F_T dy = static_cast<F_T>(y - 2 * gyi) * static_cast<F_T>(0.5f);
+  const int gxi1 = min(gxi + 1, lowWidth - 1);
+  const int gyi1 = min(gyi + 1, lowHeight - 1);
 
-  int idxHigh = (y * highWidth + x) * channels;
+  const int idxHigh = (y * highWidth + x) * channels;
+
+  // Loop-invariant across the channel loop: neighbour base offsets, bilinear weights, and the
+  // per-neighbour alpha predicates. These used to be recomputed - and the four alphas re-read
+  // from global memory - once per channel.
+  const int base00 = (gyi * lowWidth + gxi) * channels;
+  const int base10 = (gyi * lowWidth + gxi1) * channels;
+  const int base01 = (gyi1 * lowWidth + gxi) * channels;
+  const int base11 = (gyi1 * lowWidth + gxi1) * channels;
+
+  const F_T w00 = (1 - dx) * (1 - dy);
+  const F_T w10 = dx * (1 - dy);
+  const F_T w01 = (1 - dx) * dy;
+  const F_T w11 = dx * dy;
+
+  bool keep00 = true;
+  bool keep10 = true;
+  bool keep01 = true;
+  bool keep11 = true;
+  if (channels == 4) {
+    // alpha offset
+    const int aOff = 3;
+    keep00 = !is_zero(lowImage[base00 + aOff]);
+    keep10 = !is_zero(lowImage[base10 + aOff]);
+    keep01 = !is_zero(lowImage[base01 + aOff]);
+    keep11 = !is_zero(lowImage[base11 + aOff]);
+  }
 
   for (int c = 0; c < channels; ++c) {
     if (channels == 4 && c == 3) {
       // alpha channel: just copy high-res alpha
       lapImage[idxHigh + c] = highImage[idxHigh + c];
     } else {
-      // gather neighbor indices
-      int base00 = (gyi * lowWidth + gxi) * channels;
-      int base10 = (gyi * lowWidth + gxi1) * channels;
-      int base01 = (gyi1 * lowWidth + gxi) * channels;
-      int base11 = (gyi1 * lowWidth + gxi1) * channels;
       int idx00 = base00 + c;
       int idx10 = base10 + c;
       int idx01 = base01 + c;
@@ -429,29 +450,21 @@ __global__ void BatchedComputeLaplacianKernel(
 
       F_T upVal;
       if (channels == 4) {
-        // compute bilinear weights
-        F_T w00 = (1 - dx) * (1 - dy);
-        F_T w10 = dx * (1 - dy);
-        F_T w01 = (1 - dx) * dy;
-        F_T w11 = dx * dy;
-
         // accumulate only non-transparent neighbors
         F_T sumW = 0, sumV = 0;
-        // alpha offsets
-        int aOff = 3;
-        if (!is_zero(lowImage[base00 + aOff])) {
+        if (keep00) {
           sumW += w00;
           sumV += v00 * w00;
         }
-        if (!is_zero(lowImage[base10 + aOff])) {
+        if (keep10) {
           sumW += w10;
           sumV += v10 * w10;
         }
-        if (!is_zero(lowImage[base01 + aOff])) {
+        if (keep01) {
           sumW += w01;
           sumV += v01 * w01;
         }
-        if (!is_zero(lowImage[base11 + aOff])) {
+        if (keep11) {
           sumW += w11;
           sumV += v11 * w11;
         }
