@@ -14,9 +14,11 @@
 // Device-side diagnostic printf for unexpected alpha values.
 //
 // Keep this out of optimized builds: a `printf` call site inside a kernel is an ABI boundary
-// that forces a local stack frame and spills, which raises register pressure and lowers
-// occupancy for *every* thread, even when the branch is never taken. `cudaBlend3.cu` already
-// guards the identical macro this way.
+// that forces a local stack frame (STACK:8/16 on sm_120; no spills - LOCAL stays 0) and raises
+// register pressure for *every* thread, even when the branch is never taken. That is enough to
+// cost an occupancy bucket: BatchedReconstructKernel<float, float> goes 51 -> 48 registers,
+// which is 66.7% -> 83.3% theoretical occupancy at the 16x16 block size used here.
+// `cudaBlend3.cu` already guards the identical macro this way.
 #ifndef NDEBUG
 #define PRINT_STRANGE_ALPHAS
 #endif
@@ -407,8 +409,13 @@ __global__ void BatchedComputeLaplacianKernel(
   const int idxHigh = (y * highWidth + x) * channels;
 
   // Loop-invariant across the channel loop: neighbour base offsets, bilinear weights, and the
-  // per-neighbour alpha predicates. These used to be recomputed - and the four alphas re-read
-  // from global memory - once per channel.
+  // per-neighbour alpha predicates, all previously written inside the loop.
+  //
+  // As in BatchedReconstructKernel, nvcc -O2 already hoisted the four alpha loads, so no global
+  // traffic is saved. Unlike that kernel this one pays off in the generated code: hoisting lets
+  // nvcc fully unroll the channels == 4 path, which measures as -26% dynamic instructions
+  // (264.6 -> 195.4 per thread) and 48 -> 40 registers, i.e. 83.3% -> 100% theoretical occupancy
+  // for the float and __half instantiations.
   const int base00 = (gyi * lowWidth + gxi) * channels;
   const int base10 = (gyi * lowWidth + gxi1) * channels;
   const int base01 = (gyi1 * lowWidth + gxi) * channels;
@@ -657,11 +664,15 @@ __global__ void BatchedReconstructKernel(
   const int idxOut = (y * highWidth + x) * channels;
 
   // Everything below is loop-invariant across the channel loop: the four neighbour base
-  // offsets, the four bilinear weights, and - for RGBA - the four alpha predicates. They used
-  // to be recomputed for every channel, which re-read each of the four alphas once per channel
-  // (12 redundant global loads per output pixel for channels == 4) on top of the redundant
-  // index math. Hoisting them keeps the accumulation order, and therefore the result bits,
-  // identical.
+  // offsets, the four bilinear weights, and - for RGBA - the four alpha predicates. They were
+  // written inside the loop, so the source implied re-reading each alpha once per channel.
+  //
+  // Measured, don't assume: nvcc -O2 already hoisted those four loads on its own, so this saves
+  // no global traffic (`smsp__inst_executed_op_global_ld.sum` is unchanged, 20 LDG per RGBA
+  // pixel before and after). What it does buy is ~1 instruction/thread and, for the
+  // T = unsigned char instantiation, 54 -> 40 registers (66.7% -> 100% theoretical occupancy).
+  // Mostly this now says plainly what the code actually depends on. Accumulation order is
+  // unchanged, so the result bits are unchanged.
   const int idx00 = (gyi * lowWidth + gxi) * channels;
   const int idx10 = (gyi * lowWidth + gxi1) * channels;
   const int idx01 = (gyi1 * lowWidth + gxi) * channels;
@@ -954,7 +965,9 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
   //
   // Contract: the mask contents must stay fixed for the lifetime of `context`. That was already
   // the case for the mask *pointer* - `d_mask` is only read when !context.initialized - so a
-  // caller that wants a different mask already had to build a new context.
+  // caller that wants a different mask already had to build a new context. All calls sharing a
+  // context must also be issued on the same stream (or on streams ordered against the
+  // initializing call), which was already required by the reuse of every other context buffer.
   if (!context.initialized) {
     for (int level = 0; level < context.numLevels - 1; level++) {
       dim3 gridMask(
@@ -968,6 +981,12 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
           context.heights[level + 1]);
       CUDA_CHECK(cudaGetLastError());
     }
+  } else {
+    // Fail loudly if a caller swaps the mask on a live context. Level 0 stays the caller's own
+    // buffer and BatchedBlendKernel re-reads it every frame, so a swapped mask would blend a
+    // fresh level 0 against a stale level 1..N-1 pyramid - worse than either a fully fresh or a
+    // fully stale mask.
+    assert(context.d_maskPyr[0] == d_mask);
   }
 
   // 1. Build Gaussian pyramids.
