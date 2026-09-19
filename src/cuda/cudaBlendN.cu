@@ -135,10 +135,17 @@ __global__ void BatchedComputeLaplacianKernelN(
   if (x >= highW || y >= highH)
     return;
 
-  F_T gx = static_cast<F_T>(x) / 2, gy = static_cast<F_T>(y) / 2;
-  int gxi = floorf(gx), gyi = floorf(gy);
-  int gxi1 = min(gxi + 1, lowW - 1), gyi1 = min(gyi + 1, lowH - 1);
-  F_T dx = gx - gxi, dy = gy - gyi;
+  const int gxi = x >> 1;
+  const int gyi = y >> 1;
+  const int gxi1 = min(gxi + 1, lowW - 1);
+  const int gyi1 = min(gyi + 1, lowH - 1);
+  const F_T dx = static_cast<F_T>(x - 2 * gxi) * static_cast<F_T>(0.5f);
+  const F_T dy = static_cast<F_T>(y - 2 * gyi) * static_cast<F_T>(0.5f);
+
+  const F_T w00 = (1 - dx) * (1 - dy);
+  const F_T w10 = dx * (1 - dy);
+  const F_T w01 = (1 - dx) * dy;
+  const F_T w11 = dx * dy;
 
   int baseH = b * (highW * highH * CHANNELS) + (y * highW + x) * CHANNELS;
   int base00 = b * (lowW * lowH * CHANNELS) + (gyi * lowW + gxi) * CHANNELS;
@@ -154,6 +161,17 @@ __global__ void BatchedComputeLaplacianKernelN(
     const T* L11 = gaussLow[i] + base11;
     T* out = laplacian[i] + baseH;
 
+    bool keep00 = true;
+    bool keep10 = true;
+    bool keep01 = true;
+    bool keep11 = true;
+    if constexpr (CHANNELS == 4) {
+      keep00 = L00[3] != T(0);
+      keep10 = L10[3] != T(0);
+      keep01 = L01[3] != T(0);
+      keep11 = L11[3] != T(0);
+    }
+
     for (int c = 0; c < CHANNELS; ++c) {
       if (CHANNELS == 4 && c == 3) {
         out[3] = H[3];
@@ -164,22 +182,20 @@ __global__ void BatchedComputeLaplacianKernelN(
         F_T v11 = static_cast<F_T>(L11[c]);
         F_T up;
         if constexpr (CHANNELS == 4) {
-          F_T w00 = (1 - dx) * (1 - dy), w10 = dx * (1 - dy);
-          F_T w01 = (1 - dx) * dy, w11 = dx * dy;
           F_T sW = 0, sV = 0;
-          if (L00[3] != T(0)) {
+          if (keep00) {
             sW += w00;
             sV += v00 * w00;
           }
-          if (L10[3] != T(0)) {
+          if (keep10) {
             sW += w10;
             sV += v10 * w10;
           }
-          if (L01[3] != T(0)) {
+          if (keep01) {
             sW += w01;
             sV += v01 * w01;
           }
-          if (L11[3] != T(0)) {
+          if (keep11) {
             sW += w11;
             sV += v11 * w11;
           }
@@ -313,15 +329,13 @@ __global__ void BatchedReconstructKernelN(
   if (x >= highW || y >= highH)
     return;
 
-  // Map to lower-res coordinates (no center alignment)
-  F_T gx = static_cast<F_T>(x) / 2;
-  F_T gy = static_cast<F_T>(y) / 2;
-  int gxi = max(0, min(static_cast<int>(floorf(gx)), lowW - 1));
-  int gyi = max(0, min(static_cast<int>(floorf(gy)), lowH - 1));
-  int gxi1 = min(gxi + 1, lowW - 1);
-  int gyi1 = min(gyi + 1, lowH - 1);
-  F_T dx = gx - static_cast<F_T>(gxi);
-  F_T dy = gy - static_cast<F_T>(gyi);
+  // Map to lower-res coordinates (no center alignment).
+  const int gxi = max(0, min(x >> 1, lowW - 1));
+  const int gyi = max(0, min(y >> 1, lowH - 1));
+  const int gxi1 = min(gxi + 1, lowW - 1);
+  const int gyi1 = min(gyi + 1, lowH - 1);
+  const F_T dx = static_cast<F_T>(x - 2 * gxi) * static_cast<F_T>(0.5f);
+  const F_T dy = static_cast<F_T>(y - 2 * gyi) * static_cast<F_T>(0.5f);
 
   // Output pixel location
   int baseH = b * (highW * highH * CHANNELS) + (y * highW + x) * CHANNELS;
@@ -341,6 +355,22 @@ __global__ void BatchedReconstructKernelN(
     const T* lap = laplacians[i] + baseH;
     T* outPtr = out + baseH;
 
+    const F_T w00 = (F_T(1) - dx) * (F_T(1) - dy);
+    const F_T w10 = dx * (F_T(1) - dy);
+    const F_T w01 = (F_T(1) - dx) * dy;
+    const F_T w11 = dx * dy;
+
+    bool keep00 = true;
+    bool keep10 = true;
+    bool keep01 = true;
+    bool keep11 = true;
+    if constexpr (CHANNELS == 4) {
+      keep00 = !(static_cast<F_T>(L00[3]) == F_T(0));
+      keep10 = !(static_cast<F_T>(L10[3]) == F_T(0));
+      keep01 = !(static_cast<F_T>(L01[3]) == F_T(0));
+      keep11 = !(static_cast<F_T>(L11[3]) == F_T(0));
+    }
+
     for (int c = 0; c < CHANNELS; ++c) {
       if (CHANNELS == 4 && c == 3) {
         // Copy alpha directly
@@ -351,18 +381,17 @@ __global__ void BatchedReconstructKernelN(
       F_T sum = 0;
       F_T weightSum = 0;
 
-      auto try_add = [&](const T* px, F_T wx, F_T wy) {
-        F_T w = wx * wy;
-        if (CHANNELS == 4 && static_cast<F_T>(px[3]) == F_T(0))
+      auto try_add = [&](const T* px, bool keep, F_T w) {
+        if (!keep)
           return;
         sum += static_cast<F_T>(px[c]) * w;
         weightSum += w;
       };
 
-      try_add(L00, F_T(1) - dx, F_T(1) - dy);
-      try_add(L10, dx, F_T(1) - dy);
-      try_add(L01, F_T(1) - dx, dy);
-      try_add(L11, dx, dy);
+      try_add(L00, keep00, w00);
+      try_add(L10, keep10, w10);
+      try_add(L01, keep01, w01);
+      try_add(L11, keep11, w11);
 
       F_T interp = (weightSum > F_T(0)) ? (sum / weightSum) : F_T(0);
       outPtr[c] = static_cast<T>(interp + static_cast<F_T>(lap[c]));
@@ -392,15 +421,13 @@ __global__ void BatchedReconstructKernel1(
   if (x >= highW || y >= highH)
     return;
 
-  // Map to lower-res coordinates (no center alignment)
-  F_T gx = static_cast<F_T>(x) / 2;
-  F_T gy = static_cast<F_T>(y) / 2;
-  int gxi = max(0, min(static_cast<int>(floorf(gx)), lowW - 1));
-  int gyi = max(0, min(static_cast<int>(floorf(gy)), lowH - 1));
-  int gxi1 = min(gxi + 1, lowW - 1);
-  int gyi1 = min(gyi + 1, lowH - 1);
-  F_T dx = gx - static_cast<F_T>(gxi);
-  F_T dy = gy - static_cast<F_T>(gyi);
+  // Map to lower-res coordinates (no center alignment).
+  const int gxi = max(0, min(x >> 1, lowW - 1));
+  const int gyi = max(0, min(y >> 1, lowH - 1));
+  const int gxi1 = min(gxi + 1, lowW - 1);
+  const int gyi1 = min(gyi + 1, lowH - 1);
+  const F_T dx = static_cast<F_T>(x - 2 * gxi) * static_cast<F_T>(0.5f);
+  const F_T dy = static_cast<F_T>(y - 2 * gyi) * static_cast<F_T>(0.5f);
 
   // Output pixel location
   int baseH = b * (highW * highH * CHANNELS) + (y * highW + x) * CHANNELS;
@@ -418,6 +445,22 @@ __global__ void BatchedReconstructKernel1(
   const T* lap = laplacian + baseH;
   T* outPtr = out + baseH;
 
+  const F_T w00 = (F_T(1) - dx) * (F_T(1) - dy);
+  const F_T w10 = dx * (F_T(1) - dy);
+  const F_T w01 = (F_T(1) - dx) * dy;
+  const F_T w11 = dx * dy;
+
+  bool keep00 = true;
+  bool keep10 = true;
+  bool keep01 = true;
+  bool keep11 = true;
+  if constexpr (CHANNELS == 4) {
+    keep00 = !(static_cast<F_T>(L00[3]) == F_T(0));
+    keep10 = !(static_cast<F_T>(L10[3]) == F_T(0));
+    keep01 = !(static_cast<F_T>(L01[3]) == F_T(0));
+    keep11 = !(static_cast<F_T>(L11[3]) == F_T(0));
+  }
+
   for (int c = 0; c < CHANNELS; ++c) {
     if (CHANNELS == 4 && c == 3) {
       // Copy alpha directly.
@@ -425,25 +468,20 @@ __global__ void BatchedReconstructKernel1(
       continue;
     }
 
-    const F_T w00 = (F_T(1) - dx) * (F_T(1) - dy);
-    const F_T w10 = dx * (F_T(1) - dy);
-    const F_T w01 = (F_T(1) - dx) * dy;
-    const F_T w11 = dx * dy;
-
     F_T sum = 0;
     F_T weightSum = 0;
 
-    auto try_add = [&](const T* px, F_T w) {
-      if (CHANNELS == 4 && static_cast<F_T>(px[3]) == F_T(0))
+    auto try_add = [&](const T* px, bool keep, F_T w) {
+      if (!keep)
         return;
       sum += static_cast<F_T>(px[c]) * w;
       weightSum += w;
     };
 
-    try_add(L00, w00);
-    try_add(L10, w10);
-    try_add(L01, w01);
-    try_add(L11, w11);
+    try_add(L00, keep00, w00);
+    try_add(L10, keep10, w10);
+    try_add(L01, keep01, w01);
+    try_add(L11, keep11, w11);
 
     F_T interp = (weightSum > F_T(0)) ? (sum / weightSum) : F_T(0);
     outPtr[c] = static_cast<T>(interp + static_cast<F_T>(lap[c]));
@@ -656,12 +694,18 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
     const T* d_mask, // [H×W×N_IMAGES]
     T* d_output, // [batch×H×W×CHANNELS]
     CudaBatchLaplacianBlendContextN<T, N_IMAGES>& context,
-    cudaStream_t stream) {
+    cudaStream_t stream,
+    bool cacheMaskPyramid) {
   // 1) Validate
   if ((int)d_imagePtrs.size() != N_IMAGES)
     return cudaErrorInvalidValue;
   if (context.numLevels < 1)
     return cudaErrorInvalidValue;
+
+  // This API historically accepts a new mask pointer on every call. Preserve that behavior by
+  // rebuilding when the pointer changes even if caching is enabled. Same-pointer in-place updates
+  // cannot be detected; callers must leave caching disabled (the API default) for those calls.
+  const bool rebuildMaskPyramid = !context.initialized || !cacheMaskPyramid || context.d_maskPyr[0] != d_mask;
 
   // Bind level-0 pointers (safe even when already initialized).
   context.d_maskPyr[0] = const_cast<T*>(d_mask);
@@ -724,6 +768,19 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
   const int batchSize = context.batchSize;
   dim3 block(16, 16);
 
+  if (rebuildMaskPyramid) {
+    for (int lvl = 0; lvl < context.numLevels - 1; ++lvl) {
+      const int inW = context.widths[lvl];
+      const int inH = context.heights[lvl];
+      const int outW = context.widths[lvl + 1];
+      const int outH = context.heights[lvl + 1];
+      dim3 gridMask((outW + 15) / 16, (outH + 15) / 16);
+      FusedBatchedDownsampleMaskN<T, N_IMAGES>
+          <<<gridMask, block, 0, stream>>>(context.d_maskPyr[lvl], inW, inH, context.d_maskPyr[lvl + 1], outW, outH);
+      CUDA_CHECK(cudaGetLastError());
+    }
+  }
+
   // 3) Build Gaussian pyramids
   for (int lvl = 0; lvl < context.numLevels - 1; ++lvl) {
     int inW = context.widths[lvl], inH = context.heights[lvl];
@@ -742,12 +799,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
     // call downsample
     FusedBatchedDownsampleKernelN<T, F_T, N_IMAGES, CHANNELS>
         <<<gridImg, block, 0, stream>>>(context.d_ptrsA, inW, inH, context.d_ptrsC, outW, outH, batchSize);
-    CUDA_CHECK(cudaGetLastError());
-
-    // downsample mask
-    dim3 gridMask((outW + 15) / 16, (outH + 15) / 16);
-    FusedBatchedDownsampleMaskN<T, N_IMAGES>
-        <<<gridMask, block, 0, stream>>>(context.d_maskPyr[lvl], inW, inH, context.d_maskPyr[lvl + 1], outW, outH);
     CUDA_CHECK(cudaGetLastError());
   }
 
@@ -844,16 +895,9 @@ template cudaError_t cudaBatchedLaplacianBlendN<float, float, 3, 4>(
     int,
     cudaStream_t);
 
-#define INSTANTIATE_HALF_BLEND_N(N_IMAGES, CHANNELS)                                \
+#define INSTANTIATE_HALF_BLEND_N(N_IMAGES, CHANNELS)                                  \
   template cudaError_t cudaBatchedLaplacianBlendN<__half, float, N_IMAGES, CHANNELS>( \
-      const std::vector<const __half*>&,                                             \
-      const __half*,                                                                 \
-      __half*,                                                                       \
-      int,                                                                           \
-      int,                                                                           \
-      int,                                                                           \
-      int,                                                                           \
-      cudaStream_t);
+      const std::vector<const __half*>&, const __half*, __half*, int, int, int, int, cudaStream_t);
 
 INSTANTIATE_HALF_BLEND_N(2, 3)
 INSTANTIATE_HALF_BLEND_N(3, 3)
@@ -880,86 +924,100 @@ template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 2, 3>(
     const float*,
     float*,
     CudaBatchLaplacianBlendContextN<float, 2>&,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 3, 3>(
     const std::vector<const float*>&,
     const float*,
     float*,
     CudaBatchLaplacianBlendContextN<float, 3>&,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 4, 3>(
     const std::vector<const float*>&,
     const float*,
     float*,
     CudaBatchLaplacianBlendContextN<float, 4>&,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 5, 3>(
     const std::vector<const float*>&,
     const float*,
     float*,
     CudaBatchLaplacianBlendContextN<float, 5>&,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 6, 3>(
     const std::vector<const float*>&,
     const float*,
     float*,
     CudaBatchLaplacianBlendContextN<float, 6>&,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 7, 3>(
     const std::vector<const float*>&,
     const float*,
     float*,
     CudaBatchLaplacianBlendContextN<float, 7>&,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 8, 3>(
     const std::vector<const float*>&,
     const float*,
     float*,
     CudaBatchLaplacianBlendContextN<float, 8>&,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 
 template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 2, 4>(
     const std::vector<const float*>&,
     const float*,
     float*,
     CudaBatchLaplacianBlendContextN<float, 2>&,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 3, 4>(
     const std::vector<const float*>&,
     const float*,
     float*,
     CudaBatchLaplacianBlendContextN<float, 3>&,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 4, 4>(
     const std::vector<const float*>&,
     const float*,
     float*,
     CudaBatchLaplacianBlendContextN<float, 4>&,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 5, 4>(
     const std::vector<const float*>&,
     const float*,
     float*,
     CudaBatchLaplacianBlendContextN<float, 5>&,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 6, 4>(
     const std::vector<const float*>&,
     const float*,
     float*,
     CudaBatchLaplacianBlendContextN<float, 6>&,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 7, 4>(
     const std::vector<const float*>&,
     const float*,
     float*,
     CudaBatchLaplacianBlendContextN<float, 7>&,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 8, 4>(
     const std::vector<const float*>&,
     const float*,
     float*,
     CudaBatchLaplacianBlendContextN<float, 8>&,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 
 #define INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(N_IMAGES, CHANNELS)                                \
   template cudaError_t cudaBatchedLaplacianBlendWithContextN<__half, float, N_IMAGES, CHANNELS>( \
@@ -967,7 +1025,8 @@ template cudaError_t cudaBatchedLaplacianBlendWithContextN<float, float, 8, 4>(
       const __half*,                                                                             \
       __half*,                                                                                   \
       CudaBatchLaplacianBlendContextN<__half, N_IMAGES>&,                                        \
-      cudaStream_t);
+      cudaStream_t,                                                                              \
+      bool);
 
 INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(2, 3)
 INSTANTIATE_HALF_BLEND_N_WITH_CONTEXT(3, 3)

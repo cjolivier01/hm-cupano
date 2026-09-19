@@ -444,3 +444,61 @@ TEST(CudaBlend3SmallTest, MultiLevelOverlapHasNoAlphaHoles) {
     check_pixel(2, x);
   }
 }
+
+TEST(CudaBlend3SmallTest, DisabledMaskPyramidCacheTracksInPlaceUpdates) {
+  constexpr int W = 4;
+  constexpr int H = 4;
+  constexpr int C = 3;
+  constexpr int B = 1;
+  constexpr int L = 2;
+  constexpr int N = W * H * C * B;
+
+  std::vector<float> image1(N, 10.0f);
+  std::vector<float> image2(N, 50.0f);
+  std::vector<float> image3(N, 100.0f);
+  std::vector<float> mask(W * H * 3, 0.0f);
+  std::vector<float> output(N, 0.0f);
+  for (int pixel = 0; pixel < W * H; ++pixel) {
+    mask[pixel * 3] = 1.0f;
+  }
+
+  CudaVector d_image1(image1);
+  CudaVector d_image2(image2);
+  CudaVector d_image3(image3);
+  CudaVector d_mask(mask);
+  CudaVector d_output(output);
+  CudaBatchLaplacianBlendContext3<float> context(W, H, L, B);
+
+  ASSERT_EQ(
+      cudaBatchedLaplacianBlendWithContext3<float>(
+          d_image1.data(), d_image2.data(), d_image3.data(), d_mask.data(), d_output.data(), context, C, 0),
+      cudaSuccess);
+  CUDA_CHECK(cudaDeviceSynchronize());
+  CUDA_CHECK(cudaMemcpy(output.data(), d_output.data(), N * sizeof(float), cudaMemcpyDeviceToHost));
+  for (float value : output) {
+    EXPECT_NEAR(value, 10.0f, kEpsilon);
+  }
+
+  for (int pixel = 0; pixel < W * H; ++pixel) {
+    mask[pixel * 3] = 0.0f;
+    mask[pixel * 3 + 2] = 1.0f;
+  }
+  CUDA_CHECK(cudaMemcpy(d_mask.data(), mask.data(), mask.size() * sizeof(float), cudaMemcpyHostToDevice));
+  ASSERT_EQ(
+      cudaBatchedLaplacianBlendWithContext3<float>(
+          d_image1.data(),
+          d_image2.data(),
+          d_image3.data(),
+          d_mask.data(),
+          d_output.data(),
+          context,
+          C,
+          0,
+          /*cacheMaskPyramid=*/false),
+      cudaSuccess);
+  CUDA_CHECK(cudaDeviceSynchronize());
+  CUDA_CHECK(cudaMemcpy(output.data(), d_output.data(), N * sizeof(float), cudaMemcpyDeviceToHost));
+  for (float value : output) {
+    EXPECT_NEAR(value, 100.0f, kEpsilon);
+  }
+}

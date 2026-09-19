@@ -135,8 +135,9 @@ TEST(CudaBlendNSmallTest, HalfRgbaNonContextApiIsInstantiated) {
   std::vector<__half> h_mask(W * H * N, __float2half(0.0f));
   std::vector<__half> h_out(W * H * C * B, __float2half(0.0f));
 
-  EXPECT_EQ((cudaBatchedLaplacianBlendN<__half, float, N, C>(h_imgs, h_mask.data(), h_out.data(), W, H, L, B, 0)),
-            cudaErrorInvalidValue);
+  EXPECT_EQ(
+      (cudaBatchedLaplacianBlendN<__half, float, N, C>(h_imgs, h_mask.data(), h_out.data(), W, H, L, B, 0)),
+      cudaErrorInvalidValue);
 }
 
 // Test: Multi-level blend of constant inputs should match per-pixel weighted average.
@@ -258,4 +259,82 @@ TEST(CudaBlendNTest, MaskSelectsTransparentThenFallback) {
   cudaFree(d_img3);
   cudaFree(d_mask);
   cudaFree(d_out);
+}
+
+TEST(CudaBlendNTest, MaskCachePreservesDynamicMaskCompatibility) {
+  constexpr int W = 4;
+  constexpr int H = 4;
+  constexpr int C = 3;
+  constexpr int B = 1;
+  constexpr int L = 2;
+  constexpr int N = 3;
+  constexpr int image_value_count = W * H * C * B;
+  constexpr int mask_value_count = W * H * N;
+
+  const std::vector<float> h_image1(image_value_count, 10.0f);
+  const std::vector<float> h_image2(image_value_count, 50.0f);
+  const std::vector<float> h_image3(image_value_count, 100.0f);
+  std::vector<float> h_mask1(mask_value_count, 0.0f);
+  std::vector<float> h_mask2(mask_value_count, 0.0f);
+  std::vector<float> h_output(image_value_count, 0.0f);
+  for (int pixel = 0; pixel < W * H; ++pixel) {
+    h_mask1[pixel * N] = 1.0f;
+    h_mask2[pixel * N + 2] = 1.0f;
+  }
+
+  float* d_image1 = nullptr;
+  float* d_image2 = nullptr;
+  float* d_image3 = nullptr;
+  float* d_mask1 = nullptr;
+  float* d_mask2 = nullptr;
+  float* d_output = nullptr;
+  CUDA_CHECK(cudaMalloc(&d_image1, h_image1.size() * sizeof(float)));
+  CUDA_CHECK(cudaMalloc(&d_image2, h_image2.size() * sizeof(float)));
+  CUDA_CHECK(cudaMalloc(&d_image3, h_image3.size() * sizeof(float)));
+  CUDA_CHECK(cudaMalloc(&d_mask1, h_mask1.size() * sizeof(float)));
+  CUDA_CHECK(cudaMalloc(&d_mask2, h_mask2.size() * sizeof(float)));
+  CUDA_CHECK(cudaMalloc(&d_output, h_output.size() * sizeof(float)));
+  CUDA_CHECK(cudaMemcpy(d_image1, h_image1.data(), h_image1.size() * sizeof(float), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_image2, h_image2.data(), h_image2.size() * sizeof(float), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_image3, h_image3.data(), h_image3.size() * sizeof(float), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_mask1, h_mask1.data(), h_mask1.size() * sizeof(float), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_mask2, h_mask2.data(), h_mask2.size() * sizeof(float), cudaMemcpyHostToDevice));
+
+  const std::vector<const float*> d_images{d_image1, d_image2, d_image3};
+  CudaBatchLaplacianBlendContextN<float, N> context(W, H, L, B);
+  auto expect_output = [&](float expected) {
+    CUDA_CHECK(cudaDeviceSynchronize());
+    CUDA_CHECK(cudaMemcpy(h_output.data(), d_output, h_output.size() * sizeof(float), cudaMemcpyDeviceToHost));
+    for (float value : h_output) {
+      EXPECT_NEAR(value, expected, kTol);
+    }
+  };
+
+  ASSERT_EQ(
+      (cudaBatchedLaplacianBlendWithContextN<float, float, N, C>(d_images, d_mask1, d_output, context, 0)),
+      cudaSuccess);
+  expect_output(10.0f);
+
+  for (int pixel = 0; pixel < W * H; ++pixel) {
+    h_mask1[pixel * N] = 0.0f;
+    h_mask1[pixel * N + 1] = 1.0f;
+  }
+  CUDA_CHECK(cudaMemcpy(d_mask1, h_mask1.data(), h_mask1.size() * sizeof(float), cudaMemcpyHostToDevice));
+  ASSERT_EQ(
+      (cudaBatchedLaplacianBlendWithContextN<float, float, N, C>(d_images, d_mask1, d_output, context, 0)),
+      cudaSuccess);
+  expect_output(50.0f);
+
+  ASSERT_EQ(
+      (cudaBatchedLaplacianBlendWithContextN<float, float, N, C>(
+          d_images, d_mask2, d_output, context, 0, /*cacheMaskPyramid=*/true)),
+      cudaSuccess);
+  expect_output(100.0f);
+
+  cudaFree(d_image1);
+  cudaFree(d_image2);
+  cudaFree(d_image3);
+  cudaFree(d_mask1);
+  cudaFree(d_mask2);
+  cudaFree(d_output);
 }

@@ -263,6 +263,8 @@ cudaError_t cudaBatchedLaplacianBlend3(
  * parameters.
  * @param channels Number of image channels (e.g. 3 for RGB, 4 for RGBA).
  * @param stream   CUDA stream to use for all kernel launches and memory copies (default is 0).
+ * @param cacheMaskPyramid Whether to reuse the derived mask levels after the initializing call.
+ *        Pass false when changing the contents of the latched mask allocation between calls.
  * @return cudaError_t CUDA error code.
  */
 template <typename T, typename F_T = float>
@@ -274,7 +276,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     T* d_output,
     CudaBatchLaplacianBlendContext3<T>& context,
     int channels,
-    cudaStream_t stream);
+    cudaStream_t stream,
+    bool cacheMaskPyramid = true);
 
 template <typename T, typename F_T = float>
 cudaError_t cudaBatchedLaplacianBlendOptimized3(
@@ -286,4 +289,3 @@ cudaError_t cudaBatchedLaplacianBlendOptimized3(
     CudaBatchLaplacianBlendContext3<T>& context,
     int channels,
     cudaStream_t stream);
-
