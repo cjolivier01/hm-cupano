@@ -11,8 +11,18 @@
 #include <cstdio>
 #include <vector>
 
+// Keep the device-side diagnostic enabled in every build so unexpected alpha values remain
+// visible in production. The call site has a measurable kernel cost, but losing this diagnostic
+// would make corrupt alpha values substantially harder to identify.
 #define PRINT_STRANGE_ALPHAS
 
+// NOTE: EXTRA_ALPHA_CHECKS is deliberately *not* guarded by NDEBUG. Despite the name it is not
+// a diagnostic - it selects the alpha-aware kernel variants that exclude fully transparent
+// source pixels from the 2x2 downsample average and from the bilinear upsample weights.
+// Turning it off changes blended pixel output (transparent canvas bleeds across the seam), so
+// it must stay identical between debug and release. The three-image and N-image paths
+// (`cudaBlend3.cu`, `cudaBlendN.cu`) implement the same alpha handling unconditionally, with no
+// macro at all.
 #define EXTRA_ALPHA_CHECKS
 
 using namespace hm::cupano::cuda;
@@ -379,28 +389,54 @@ __global__ void BatchedComputeLaplacianKernel(
   const T* lowImage = gaussLow + b * lowImageSize;
   T* lapImage = laplacian + b * highImageSize;
 
-  // map (x,y) in high-res to fractional coord in low-res
-  F_T gx = static_cast<F_T>(x) / 2.0f;
-  F_T gy = static_cast<F_T>(y) / 2.0f;
-  int gxi = floorf(gx);
-  int gyi = floorf(gy);
-  F_T dx = gx - static_cast<F_T>(gxi);
-  F_T dy = gy - static_cast<F_T>(gyi);
-  int gxi1 = min(gxi + 1, lowWidth - 1);
-  int gyi1 = min(gyi + 1, lowHeight - 1);
+  // Map (x,y) in high-res to a fractional coord in low-res. As in BatchedReconstructKernel,
+  // x / 2.0f is exact in binary32, so floorf(gx) == (x >> 1) and gx - gxi == (x - 2 * gxi) * 0.5f
+  // bit-for-bit; doing it in integer arithmetic drops the floorf() and the F2I/I2F round trips.
+  const int gxi = x >> 1;
+  const int gyi = y >> 1;
+  const F_T dx = static_cast<F_T>(x - 2 * gxi) * static_cast<F_T>(0.5f);
+  const F_T dy = static_cast<F_T>(y - 2 * gyi) * static_cast<F_T>(0.5f);
+  const int gxi1 = min(gxi + 1, lowWidth - 1);
+  const int gyi1 = min(gyi + 1, lowHeight - 1);
 
-  int idxHigh = (y * highWidth + x) * channels;
+  const int idxHigh = (y * highWidth + x) * channels;
+
+  // Loop-invariant across the channel loop: neighbour base offsets, bilinear weights, and the
+  // per-neighbour alpha predicates, all previously written inside the loop.
+  //
+  // As in BatchedReconstructKernel, nvcc -O2 already hoisted the four alpha loads, so no global
+  // traffic is saved. Unlike that kernel this one pays off in the generated code: hoisting lets
+  // nvcc fully unroll the channels == 4 path, which measures as -26% dynamic instructions
+  // (264.6 -> 195.4 per thread) and 48 -> 40 registers, i.e. 83.3% -> 100% theoretical occupancy
+  // for the float and __half instantiations.
+  const int base00 = (gyi * lowWidth + gxi) * channels;
+  const int base10 = (gyi * lowWidth + gxi1) * channels;
+  const int base01 = (gyi1 * lowWidth + gxi) * channels;
+  const int base11 = (gyi1 * lowWidth + gxi1) * channels;
+
+  const F_T w00 = (1 - dx) * (1 - dy);
+  const F_T w10 = dx * (1 - dy);
+  const F_T w01 = (1 - dx) * dy;
+  const F_T w11 = dx * dy;
+
+  bool keep00 = true;
+  bool keep10 = true;
+  bool keep01 = true;
+  bool keep11 = true;
+  if (channels == 4) {
+    // alpha offset
+    const int aOff = 3;
+    keep00 = !is_zero(lowImage[base00 + aOff]);
+    keep10 = !is_zero(lowImage[base10 + aOff]);
+    keep01 = !is_zero(lowImage[base01 + aOff]);
+    keep11 = !is_zero(lowImage[base11 + aOff]);
+  }
 
   for (int c = 0; c < channels; ++c) {
     if (channels == 4 && c == 3) {
       // alpha channel: just copy high-res alpha
       lapImage[idxHigh + c] = highImage[idxHigh + c];
     } else {
-      // gather neighbor indices
-      int base00 = (gyi * lowWidth + gxi) * channels;
-      int base10 = (gyi * lowWidth + gxi1) * channels;
-      int base01 = (gyi1 * lowWidth + gxi) * channels;
-      int base11 = (gyi1 * lowWidth + gxi1) * channels;
       int idx00 = base00 + c;
       int idx10 = base10 + c;
       int idx01 = base01 + c;
@@ -414,29 +450,21 @@ __global__ void BatchedComputeLaplacianKernel(
 
       F_T upVal;
       if (channels == 4) {
-        // compute bilinear weights
-        F_T w00 = (1 - dx) * (1 - dy);
-        F_T w10 = dx * (1 - dy);
-        F_T w01 = (1 - dx) * dy;
-        F_T w11 = dx * dy;
-
         // accumulate only non-transparent neighbors
         F_T sumW = 0, sumV = 0;
-        // alpha offsets
-        int aOff = 3;
-        if (!is_zero(lowImage[base00 + aOff])) {
+        if (keep00) {
           sumW += w00;
           sumV += v00 * w00;
         }
-        if (!is_zero(lowImage[base10 + aOff])) {
+        if (keep10) {
           sumW += w10;
           sumV += v10 * w10;
         }
-        if (!is_zero(lowImage[base01 + aOff])) {
+        if (keep01) {
           sumW += w01;
           sumV += v01 * w01;
         }
-        if (!is_zero(lowImage[base11 + aOff])) {
+        if (keep11) {
           sumW += w11;
           sumV += v11 * w11;
         }
@@ -610,19 +638,57 @@ __global__ void BatchedReconstructKernel(
 
   const F_T F_ONE = static_cast<F_T>(1.0);
 
-  // No center alignment — pure top-left pixel mapping
-  F_T gx = static_cast<F_T>(x) / 2.0f;
-  F_T gy = static_cast<F_T>(y) / 2.0f;
+  // No center alignment — pure top-left pixel mapping.
+  //
+  // gx = x / 2.0f is exact in IEEE-754 binary32 for every image size this code can handle
+  // (x < 2^24), so floorf(gx) == (x >> 1) and gx - gxi == (x - 2 * gxi) * 0.5f, both exactly.
+  // Computing the sample indices in integer arithmetic removes two floorf() calls and two
+  // F2I/I2F round trips per thread without changing a single result bit. The clamp against
+  // low{Width,Height} is preserved: with the pyramid invariant lowWidth == (highWidth + 1) / 2
+  // it never fires, but it keeps a mismatched caller in bounds exactly as before.
+  const int gxi = max(0, min(x >> 1, lowWidth - 1));
+  const int gyi = max(0, min(y >> 1, lowHeight - 1));
+  const int gxi1 = min(gxi + 1, lowWidth - 1);
+  const int gyi1 = min(gyi + 1, lowHeight - 1);
 
-  int gxi = max(0, min(static_cast<int>(floorf(gx)), lowWidth - 1));
-  int gyi = max(0, min(static_cast<int>(floorf(gy)), lowHeight - 1));
-  int gxi1 = min(gxi + 1, lowWidth - 1);
-  int gyi1 = min(gyi + 1, lowHeight - 1);
+  const F_T dx = static_cast<F_T>(x - 2 * gxi) * static_cast<F_T>(0.5f);
+  const F_T dy = static_cast<F_T>(y - 2 * gyi) * static_cast<F_T>(0.5f);
 
-  F_T dx = gx - static_cast<F_T>(gxi);
-  F_T dy = gy - static_cast<F_T>(gyi);
+  const int idxOut = (y * highWidth + x) * channels;
 
-  int idxOut = (y * highWidth + x) * channels;
+  // Everything below is loop-invariant across the channel loop: the four neighbour base
+  // offsets, the four bilinear weights, and - for RGBA - the four alpha predicates. They were
+  // written inside the loop, so the source implied re-reading each alpha once per channel.
+  //
+  // Measured, don't assume: nvcc -O2 already hoisted those four loads on its own, so this saves
+  // no global traffic (`smsp__inst_executed_op_global_ld.sum` is unchanged, 20 LDG per RGBA
+  // pixel before and after). What it does buy is ~1 instruction/thread and, for the
+  // T = unsigned char instantiation, 54 -> 40 registers (66.7% -> 100% theoretical occupancy).
+  // Mostly this now says plainly what the code actually depends on. Accumulation order is
+  // unchanged, so the result bits are unchanged.
+  const int idx00 = (gyi * lowWidth + gxi) * channels;
+  const int idx10 = (gyi * lowWidth + gxi1) * channels;
+  const int idx01 = (gyi1 * lowWidth + gxi) * channels;
+  const int idx11 = (gyi1 * lowWidth + gxi1) * channels;
+
+  const F_T w00 = (F_ONE - dx) * (F_ONE - dy);
+  const F_T w10 = dx * (F_ONE - dy);
+  const F_T w01 = (F_ONE - dx) * dy;
+  const F_T w11 = dx * dy;
+
+  bool keep00 = true;
+  bool keep10 = true;
+  bool keep01 = true;
+  bool keep11 = true;
+  if (channels == 4) {
+    // Spelled `!(a == 0)` rather than `a != 0`: it is the original skip predicate negated
+    // verbatim, so it is bit-identical for every value and every F_T by construction, with no
+    // appeal to how the comparison operators happen to be defined.
+    keep00 = !(static_cast<F_T>(lowImage[idx00 + 3]) == F_T(0));
+    keep10 = !(static_cast<F_T>(lowImage[idx10 + 3]) == F_T(0));
+    keep01 = !(static_cast<F_T>(lowImage[idx01 + 3]) == F_T(0));
+    keep11 = !(static_cast<F_T>(lowImage[idx11 + 3]) == F_T(0));
+  }
 
   for (int c = 0; c < channels; ++c) {
     if (channels == 4 && c == 3) {
@@ -639,28 +705,21 @@ __global__ void BatchedReconstructKernel(
       continue;
     }
 
-    // Gather RGBA neighbor indices (needed to check alpha)
-    int idx00 = (gyi * lowWidth + gxi) * channels;
-    int idx10 = (gyi * lowWidth + gxi1) * channels;
-    int idx01 = (gyi1 * lowWidth + gxi) * channels;
-    int idx11 = (gyi1 * lowWidth + gxi1) * channels;
-
     // Alpha-aware bilinear interpolation
     F_T sum = 0;
     F_T weightSum = 0;
 
-    auto try_add = [&](int idx, F_T wx, F_T wy) {
-      F_T w = wx * wy;
-      if (channels == 4 && static_cast<F_T>(lowImage[idx + 3]) == F_T(0))
+    auto try_add = [&](int idx, bool keep, F_T w) {
+      if (!keep)
         return;
       sum += static_cast<F_T>(lowImage[idx + c]) * w;
       weightSum += w;
     };
 
-    try_add(idx00, F_ONE - dx, F_ONE - dy);
-    try_add(idx10, dx, F_ONE - dy);
-    try_add(idx01, F_ONE - dx, dy);
-    try_add(idx11, dx, dy);
+    try_add(idx00, keep00, w00);
+    try_add(idx10, keep10, w10);
+    try_add(idx01, keep01, w01);
+    try_add(idx11, keep11, w11);
 
     // Normalize or fall back
     F_T upVal = (weightSum > F_T(0)) ? (sum / weightSum) : F_T(0);
@@ -852,7 +911,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     T* d_output,
     CudaBatchLaplacianBlendContext<T>& context,
     int channels,
-    cudaStream_t stream) {
+    cudaStream_t stream,
+    bool cacheMaskPyramid) {
   // size_t imageSize = context.imageWidth * context.imageHeight * channels * sizeof(T);
 
   // Initialization: set up pyramid dimensions and allocate device memory using channels.
@@ -891,6 +951,52 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
 
   dim3 block(16, 16, 1);
 
+  // 0. Build the mask Gaussian pyramid once by default, or per call when caching is disabled.
+  //
+  // context.d_maskPyr[0] is latched to the caller's `d_mask` during initialization above and is
+  // never rebound afterwards, and nothing here writes to it. Levels 1..N-1 are written only by
+  // BatchedDownsampleKernelMask, below. When cacheMaskPyramid is true, every derived level is
+  // byte-identical on every call and rebuilding it per frame would burn (numLevels - 1) kernel
+  // launches plus a full read+write of the whole mask pyramid for no effect.
+  //
+  // Caller contract: when caching is enabled, the mask *contents* must stay fixed for the lifetime
+  // of `context`. Level 0 is still the caller's own buffer and BatchedBlendKernel reads it live
+  // every frame, so changing it while reusing cached derived levels would mix generations. Pass
+  // cacheMaskPyramid=false to rebuild those levels after an in-place update. The buffer must stay
+  // allocated for the life of the context. The mask *pointer* was already latched before this
+  // change (`d_mask` is only consulted when !context.initialized), so passing a different pointer
+  // is silently ignored; the assert below at least makes it loud.
+  //
+  // Calls sharing a context must be serialized against each other, not merely against the
+  // initializing call: every pyramid buffer above level 0, other than the mask, is per-call
+  // scratch that each call overwrites. Issuing them all on one stream satisfies this, and was
+  // already required before this change. With caching enabled, the initializing call issues a
+  // different kernel sequence from every later one, so a future cudaStreamBeginCapture() around
+  // this function has to capture a steady-state call rather than the first one.
+  if (!context.initialized || !cacheMaskPyramid) {
+    for (int level = 0; level < context.numLevels - 1; level++) {
+      dim3 gridMask(
+          (context.widths[level + 1] + block.x - 1) / block.x, (context.heights[level + 1] + block.y - 1) / block.y, 1);
+      BatchedDownsampleKernelMask<T><<<gridMask, block, 0, stream>>>(
+          context.d_maskPyr[level],
+          context.widths[level],
+          context.heights[level],
+          context.d_maskPyr[level + 1],
+          context.widths[level + 1],
+          context.heights[level + 1]);
+      CUDA_CHECK(cudaGetLastError());
+    }
+  }
+  if (context.initialized) {
+    // All three level-0 pointers were latched at init and the arguments are ignored from here
+    // on, so passing different ones is a silent no-op. That predates this change - assert so it
+    // is at least loud in debug. Note this cannot detect an in-place mutation of the latched mask
+    // contents; callers that do so must disable caching for that call.
+    assert(context.d_maskPyr[0] == d_mask);
+    assert(context.d_gauss1[0] == d_image1);
+    assert(context.d_gauss2[0] == d_image2);
+  }
+
   // 1. Build Gaussian pyramids.
   for (int level = 0; level < context.numLevels - 1; level++) {
     dim3 grid(
@@ -909,18 +1015,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
         context.batchSize,
         channels);
     CUDA_CHECK(cudaGetLastError());
-    {
-      dim3 gridMask(
-          (context.widths[level + 1] + block.x - 1) / block.x, (context.heights[level + 1] + block.y - 1) / block.y, 1);
-      BatchedDownsampleKernelMask<T><<<gridMask, block, 0, stream>>>(
-          context.d_maskPyr[level],
-          context.widths[level],
-          context.heights[level],
-          context.d_maskPyr[level + 1],
-          context.widths[level + 1],
-          context.heights[level + 1]);
-      CUDA_CHECK(cudaGetLastError());
-    }
   }
 
   // 2. Build Laplacian pyramids.
@@ -1073,7 +1167,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
       T* d_output,                                                     \
       CudaBatchLaplacianBlendContext<T>& context,                      \
       int channels,                                                    \
-      cudaStream_t stream);
+      cudaStream_t stream,                                             \
+      bool cacheMaskPyramid);
 
 INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(half)
 INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(float)

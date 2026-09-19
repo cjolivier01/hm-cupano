@@ -5,6 +5,7 @@
 
 #include <cuda_fp16.h>
 
+#include <algorithm>
 #include <vector>
 
 #define CUDA_CHECK(call)                                                                                      \
@@ -66,6 +67,70 @@ TEST(CudaBlendSmallTest, HalfRgbaAlphaZeroSkipsContribution) {
   const std::vector<float> expected{100.0f, 110.0f, 120.0f, 255.0f};
   for (int c = 0; c < channels; ++c) {
     EXPECT_NEAR(__half2float(h_output[c]), expected[c], 0.01f) << "Channel " << c << " mismatch.";
+  }
+
+  cudaFree(d_image1);
+  cudaFree(d_image2);
+  cudaFree(d_mask);
+  cudaFree(d_output);
+}
+
+TEST(CudaBlendSmallTest, DisabledMaskPyramidCacheTracksInPlaceUpdates) {
+  constexpr int width = 4;
+  constexpr int height = 4;
+  constexpr int channels = 3;
+  constexpr int batch_size = 1;
+  constexpr int num_levels = 2;
+  constexpr int image_value_count = width * height * channels * batch_size;
+  constexpr int mask_value_count = width * height;
+
+  const std::vector<float> h_image1(image_value_count, 10.0f);
+  const std::vector<float> h_image2(image_value_count, 100.0f);
+  std::vector<float> h_mask(mask_value_count, 1.0f);
+  std::vector<float> h_output(image_value_count, 0.0f);
+
+  float* d_image1 = nullptr;
+  float* d_image2 = nullptr;
+  float* d_mask = nullptr;
+  float* d_output = nullptr;
+  CUDA_CHECK(cudaMalloc(&d_image1, h_image1.size() * sizeof(float)));
+  CUDA_CHECK(cudaMalloc(&d_image2, h_image2.size() * sizeof(float)));
+  CUDA_CHECK(cudaMalloc(&d_mask, h_mask.size() * sizeof(float)));
+  CUDA_CHECK(cudaMalloc(&d_output, h_output.size() * sizeof(float)));
+  CUDA_CHECK(cudaMemcpy(d_image1, h_image1.data(), h_image1.size() * sizeof(float), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_image2, h_image2.data(), h_image2.size() * sizeof(float), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_mask, h_mask.data(), h_mask.size() * sizeof(float), cudaMemcpyHostToDevice));
+
+  {
+    CudaBatchLaplacianBlendContext<float> ctx(width, height, num_levels, batch_size);
+    ASSERT_EQ(
+        (cudaBatchedLaplacianBlendWithContext<float, float>(
+            d_image1, d_image2, d_mask, d_output, ctx, channels, cudaStream_t{})),
+        cudaSuccess);
+    CUDA_CHECK(cudaDeviceSynchronize());
+    CUDA_CHECK(cudaMemcpy(h_output.data(), d_output, h_output.size() * sizeof(float), cudaMemcpyDeviceToHost));
+    for (float value : h_output) {
+      EXPECT_NEAR(value, 10.0f, 1e-5f);
+    }
+
+    std::fill(h_mask.begin(), h_mask.end(), 0.0f);
+    CUDA_CHECK(cudaMemcpy(d_mask, h_mask.data(), h_mask.size() * sizeof(float), cudaMemcpyHostToDevice));
+    ASSERT_EQ(
+        (cudaBatchedLaplacianBlendWithContext<float, float>(
+            d_image1,
+            d_image2,
+            d_mask,
+            d_output,
+            ctx,
+            channels,
+            cudaStream_t{},
+            /*cacheMaskPyramid=*/false)),
+        cudaSuccess);
+    CUDA_CHECK(cudaDeviceSynchronize());
+    CUDA_CHECK(cudaMemcpy(h_output.data(), d_output, h_output.size() * sizeof(float), cudaMemcpyDeviceToHost));
+    for (float value : h_output) {
+      EXPECT_NEAR(value, 100.0f, 1e-5f);
+    }
   }
 
   cudaFree(d_image1);

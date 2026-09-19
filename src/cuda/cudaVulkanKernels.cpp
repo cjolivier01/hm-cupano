@@ -793,7 +793,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     T* d_output,
     CudaBatchLaplacianBlendContext<T>& context,
     int channels,
-    cudaStream_t) {
+    cudaStream_t,
+    bool) {
   if (!d_image1 || !d_image2 || !d_mask || !d_output) {
     return cudaErrorInvalidDevicePointer;
   }
@@ -829,7 +830,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     T* d_output,
     CudaBatchLaplacianBlendContext3<T>& context,
     int channels,
-    cudaStream_t) {
+    cudaStream_t,
+    bool) {
   if (!d_image1 || !d_image2 || !d_image3 || !d_mask || !d_output) {
     return cudaErrorInvalidDevicePointer;
   }
@@ -886,7 +888,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
     const T* d_mask,
     T* d_output,
     CudaBatchLaplacianBlendContextN<T, N_IMAGES>& context,
-    cudaStream_t) {
+    cudaStream_t,
+    bool) {
   if (d_imagePtrs.size() != static_cast<std::size_t>(N_IMAGES) || !d_mask || !d_output) {
     return cudaErrorInvalidValue;
   }
@@ -1804,7 +1807,8 @@ template cudaError_t cudaBatchedLaplacianBlendWithContext<float, float>(
     float*,
     CudaBatchLaplacianBlendContext<float>&,
     int,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 template cudaError_t cudaBatchedLaplacianBlendWithContext<unsigned char, float>(
     const unsigned char*,
     const unsigned char*,
@@ -1812,7 +1816,8 @@ template cudaError_t cudaBatchedLaplacianBlendWithContext<unsigned char, float>(
     unsigned char*,
     CudaBatchLaplacianBlendContext<unsigned char>&,
     int,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 
 template cudaError_t cudaBatchedLaplacianBlend3<float, float>(
     const float*,
@@ -1846,7 +1851,8 @@ template cudaError_t cudaBatchedLaplacianBlendWithContext3<float, float>(
     float*,
     CudaBatchLaplacianBlendContext3<float>&,
     int,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 template cudaError_t cudaBatchedLaplacianBlendWithContext3<unsigned char, float>(
     const unsigned char*,
     const unsigned char*,
@@ -1855,7 +1861,8 @@ template cudaError_t cudaBatchedLaplacianBlendWithContext3<unsigned char, float>
     unsigned char*,
     CudaBatchLaplacianBlendContext3<unsigned char>&,
     int,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 template cudaError_t cudaBatchedLaplacianBlendOptimized3<float, float>(
     const float*,
     const float*,
@@ -1881,7 +1888,8 @@ template cudaError_t cudaBatchedLaplacianBlendOptimized3<unsigned char, float>(
       const float*,                                                               \
       float*,                                                                     \
       CudaBatchLaplacianBlendContextN<float, N>&,                                 \
-      cudaStream_t);                                                              \
+      cudaStream_t,                                                               \
+      bool);                                                                      \
   template cudaError_t cudaBatchedLaplacianBlendN<float, float, N, C>(            \
       const std::vector<const float*>&, const float*, float*, int, int, int, int, cudaStream_t);
 

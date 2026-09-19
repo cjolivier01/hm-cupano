@@ -356,7 +356,7 @@ CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::blend_soft_dispatch(
         stitch_context_->laplacian_blend_context);                                        \
     return CudaStatus(                                                                    \
         cudaBatchedLaplacianBlendWithContextN<BaseScalar_t<T_compute>, float, NVAL, CH>(  \
-            d_ptrs, d_mask, out, ctx, stream));                                           \
+            d_ptrs, d_mask, out, ctx, stream, /*cacheMaskPyramid=*/true));                \
   } while (0)
 
   if (C == 3) {

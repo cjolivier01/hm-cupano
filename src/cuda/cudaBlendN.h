@@ -178,6 +178,9 @@ cudaError_t cudaBatchedLaplacianBlendN(
  * @param d_output    Device pointer for output array batch×H×W×CHANNELS.
  * @param context     Pre-initialized CudaBatchLaplacianBlendContextN.
  * @param stream      CUDA stream to use.
+ * @param cacheMaskPyramid Whether to reuse derived mask levels while the mask pointer is unchanged.
+ *                         Defaults to false to preserve the API's per-call mask update behavior.
+ *                         Pass false after mutating a mask allocation in place.
  */
 template <typename T, typename F_T = float, int N_IMAGES, int CHANNELS>
 cudaError_t cudaBatchedLaplacianBlendWithContextN(
@@ -185,4 +188,5 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
     const T* d_mask,
     T* d_output,
     CudaBatchLaplacianBlendContextN<T, N_IMAGES>& context,
-    cudaStream_t stream = 0);
+    cudaStream_t stream = 0,
+    bool cacheMaskPyramid = false);

@@ -8,6 +8,7 @@
 #include "cupano/gpu/gpu_runtime.h"
 
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 #include <type_traits>
@@ -220,9 +221,10 @@ int main(int argc, char** argv) {
   }
 
   if (perf) {
-    auto start_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-            .count();
+    // steady_clock, not system_clock: the latter is not monotonic. And keep sub-millisecond
+    // resolution - truncating to whole milliseconds over 100 frames quantizes the result to
+    // ~0.2%, which is coarser than most of what this benchmark is used to detect.
+    const auto start = std::chrono::steady_clock::now();
 
     size_t frame_count = 100;
     for (size_t i = 0; i < frame_count; ++i) {
@@ -230,12 +232,12 @@ int main(int argc, char** argv) {
       cudaStreamSynchronize(stream);
     }
 
-    auto stop_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-            .count();
-    float ms = stop_ms - start_ms;
-    float sec_per_frame = (ms / 1000) / (frame_count * pano.batch_size());
-    std::cout << "Blend speed: " << (1.0 / sec_per_frame) << "fps" << std::endl;
+    const auto stop = std::chrono::steady_clock::now();
+    const double ms = std::chrono::duration<double, std::milli>(stop - start).count();
+    const double frames = static_cast<double>(frame_count) * pano.batch_size();
+    const double sec_per_frame = (ms / 1000.0) / frames;
+    std::cout << "Blend speed: " << (1.0 / sec_per_frame) << "fps"
+              << " (" << (ms / frames) << " ms/frame)" << std::endl;
   }
   cudaStreamDestroy(stream);
 

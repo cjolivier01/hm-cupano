@@ -19,9 +19,8 @@
 
 using namespace hm::cupano::cuda;
 
-#ifndef NDEBUG
+// Keep unexpected alpha diagnostics available in production, matching the two-image path.
 #define PRINT_STRANGE_ALPHAS
-#endif
 
 namespace {
 
@@ -295,17 +294,35 @@ __global__ void BatchedComputeLaplacianKernel(
   const T* lowImage = gaussLow + b * lowImageSize;
   T* lapImage = laplacian + b * highImageSize;
 
-  // map (x,y) in high-res to fractional coord in low-res
-  F_T gx = static_cast<F_T>(x) / 2.0f;
-  F_T gy = static_cast<F_T>(y) / 2.0f;
-  int gxi = floorf(gx);
-  int gyi = floorf(gy);
-  F_T dx = gx - static_cast<F_T>(gxi);
-  F_T dy = gy - static_cast<F_T>(gyi);
-  int gxi1 = min(gxi + 1, lowWidth - 1);
-  int gyi1 = min(gyi + 1, lowHeight - 1);
+  // x / 2 is exact here. Compute the sample coordinates without floorf/F2I round trips.
+  const int gxi = x >> 1;
+  const int gyi = y >> 1;
+  const F_T dx = static_cast<F_T>(x - 2 * gxi) * static_cast<F_T>(0.5f);
+  const F_T dy = static_cast<F_T>(y - 2 * gyi) * static_cast<F_T>(0.5f);
+  const int gxi1 = min(gxi + 1, lowWidth - 1);
+  const int gyi1 = min(gyi + 1, lowHeight - 1);
 
-  int idxHigh = (y * highWidth + x) * CHANNELS;
+  const int idxHigh = (y * highWidth + x) * CHANNELS;
+  const int base00 = (gyi * lowWidth + gxi) * CHANNELS;
+  const int base10 = (gyi * lowWidth + gxi1) * CHANNELS;
+  const int base01 = (gyi1 * lowWidth + gxi) * CHANNELS;
+  const int base11 = (gyi1 * lowWidth + gxi1) * CHANNELS;
+
+  const F_T w00 = (1 - dx) * (1 - dy);
+  const F_T w10 = dx * (1 - dy);
+  const F_T w01 = (1 - dx) * dy;
+  const F_T w11 = dx * dy;
+
+  bool keep00 = true;
+  bool keep10 = true;
+  bool keep01 = true;
+  bool keep11 = true;
+  if constexpr (CHANNELS == 4) {
+    keep00 = lowImage[base00 + 3] != T(0);
+    keep10 = lowImage[base10 + 3] != T(0);
+    keep01 = lowImage[base01 + 3] != T(0);
+    keep11 = lowImage[base11 + 3] != T(0);
+  }
 
 #pragma unroll
   for (int c = 0; c < CHANNELS; ++c) {
@@ -313,11 +330,6 @@ __global__ void BatchedComputeLaplacianKernel(
       // alpha channel: just copy high-res alpha
       lapImage[idxHigh + c] = highImage[idxHigh + c];
     } else {
-      // gather neighbor indices
-      int base00 = (gyi * lowWidth + gxi) * CHANNELS;
-      int base10 = (gyi * lowWidth + gxi1) * CHANNELS;
-      int base01 = (gyi1 * lowWidth + gxi) * CHANNELS;
-      int base11 = (gyi1 * lowWidth + gxi1) * CHANNELS;
       int idx00 = base00 + c;
       int idx10 = base10 + c;
       int idx01 = base01 + c;
@@ -331,29 +343,21 @@ __global__ void BatchedComputeLaplacianKernel(
 
       F_T upVal;
       if constexpr (CHANNELS == 4) {
-        // compute bilinear weights
-        F_T w00 = (1 - dx) * (1 - dy);
-        F_T w10 = dx * (1 - dy);
-        F_T w01 = (1 - dx) * dy;
-        F_T w11 = dx * dy;
-
         // accumulate only non-transparent neighbors
         F_T sumW = 0, sumV = 0;
-        // alpha offsets
-        int aOff = 3;
-        if (lowImage[base00 + aOff] != T(0)) {
+        if (keep00) {
           sumW += w00;
           sumV += v00 * w00;
         }
-        if (lowImage[base10 + aOff] != T(0)) {
+        if (keep10) {
           sumW += w10;
           sumV += v10 * w10;
         }
-        if (lowImage[base01 + aOff] != T(0)) {
+        if (keep01) {
           sumW += w01;
           sumV += v01 * w01;
         }
-        if (lowImage[base11 + aOff] != T(0)) {
+        if (keep11) {
           sumW += w11;
           sumV += v11 * w11;
         }
@@ -571,19 +575,36 @@ __global__ void BatchedReconstructKernel(
 
   const F_T F_ONE = static_cast<F_T>(1.0);
 
-  // No center alignment — pure top-left pixel mapping
-  F_T gx = static_cast<F_T>(x) / 2.0f;
-  F_T gy = static_cast<F_T>(y) / 2.0f;
+  // No center alignment — pure top-left pixel mapping.
+  const int gxi = max(0, min(x >> 1, lowWidth - 1));
+  const int gyi = max(0, min(y >> 1, lowHeight - 1));
+  const int gxi1 = min(gxi + 1, lowWidth - 1);
+  const int gyi1 = min(gyi + 1, lowHeight - 1);
 
-  int gxi = max(0, min(static_cast<int>(floorf(gx)), lowWidth - 1));
-  int gyi = max(0, min(static_cast<int>(floorf(gy)), lowHeight - 1));
-  int gxi1 = min(gxi + 1, lowWidth - 1);
-  int gyi1 = min(gyi + 1, lowHeight - 1);
+  const F_T dx = static_cast<F_T>(x - 2 * gxi) * static_cast<F_T>(0.5f);
+  const F_T dy = static_cast<F_T>(y - 2 * gyi) * static_cast<F_T>(0.5f);
 
-  F_T dx = gx - static_cast<F_T>(gxi);
-  F_T dy = gy - static_cast<F_T>(gyi);
+  const int idxOut = (y * highWidth + x) * channels;
+  const int idx00 = (gyi * lowWidth + gxi) * channels;
+  const int idx10 = (gyi * lowWidth + gxi1) * channels;
+  const int idx01 = (gyi1 * lowWidth + gxi) * channels;
+  const int idx11 = (gyi1 * lowWidth + gxi1) * channels;
 
-  int idxOut = (y * highWidth + x) * channels;
+  const F_T w00 = (F_ONE - dx) * (F_ONE - dy);
+  const F_T w10 = dx * (F_ONE - dy);
+  const F_T w01 = (F_ONE - dx) * dy;
+  const F_T w11 = dx * dy;
+
+  bool keep00 = true;
+  bool keep10 = true;
+  bool keep01 = true;
+  bool keep11 = true;
+  if (channels == 4) {
+    keep00 = !(static_cast<F_T>(lowImage[idx00 + 3]) == F_T(0));
+    keep10 = !(static_cast<F_T>(lowImage[idx10 + 3]) == F_T(0));
+    keep01 = !(static_cast<F_T>(lowImage[idx01 + 3]) == F_T(0));
+    keep11 = !(static_cast<F_T>(lowImage[idx11 + 3]) == F_T(0));
+  }
 
   for (int c = 0; c < channels; ++c) {
     if (channels == 4 && c == 3) {
@@ -600,28 +621,21 @@ __global__ void BatchedReconstructKernel(
       continue;
     }
 
-    // Gather RGBA neighbor indices (needed to check alpha)
-    int idx00 = (gyi * lowWidth + gxi) * channels;
-    int idx10 = (gyi * lowWidth + gxi1) * channels;
-    int idx01 = (gyi1 * lowWidth + gxi) * channels;
-    int idx11 = (gyi1 * lowWidth + gxi1) * channels;
-
     // Alpha-aware bilinear interpolation
     F_T sum = 0;
     F_T weightSum = 0;
 
-    auto try_add = [&](int idx, F_T wx, F_T wy) {
-      F_T w = wx * wy;
-      if (channels == 4 && static_cast<F_T>(lowImage[idx + 3]) == F_T(0))
+    auto try_add = [&](int idx, bool keep, F_T w) {
+      if (!keep)
         return;
       sum += static_cast<F_T>(lowImage[idx + c]) * w;
       weightSum += w;
     };
 
-    try_add(idx00, F_ONE - dx, F_ONE - dy);
-    try_add(idx10, dx, F_ONE - dy);
-    try_add(idx01, F_ONE - dx, dy);
-    try_add(idx11, dx, dy);
+    try_add(idx00, keep00, w00);
+    try_add(idx10, keep10, w10);
+    try_add(idx01, keep01, w01);
+    try_add(idx11, keep11, w11);
 
     // Normalize or fall back
     F_T upVal = (weightSum > F_T(0)) ? (sum / weightSum) : F_T(0);
@@ -893,7 +907,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     T* d_output,
     CudaBatchLaplacianBlendContext3<T>& context,
     int channels,
-    cudaStream_t stream) {
+    cudaStream_t stream,
+    bool cacheMaskPyramid) {
   // --------------- Initialization: allocate buffers if needed ---------------
   if (!context.initialized) {
     int maxLevels = context.numLevels;
@@ -970,6 +985,27 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
 
   dim3 block(16, 16, 1);
 
+  // The level-0 mask pointer is latched during initialization. Cache its derived levels by
+  // default; callers that update the latched allocation in place can request a rebuild.
+  if (!context.initialized || !cacheMaskPyramid) {
+    for (int level = 0; level < context.numLevels - 1; level++) {
+      const int wH = context.widths[level];
+      const int hH = context.heights[level];
+      const int wL = context.widths[level + 1];
+      const int hL = context.heights[level + 1];
+      dim3 gridMask((wL + block.x - 1) / block.x, (hL + block.y - 1) / block.y, 1);
+      FusedBatchedDownsampleMask3<T>
+          <<<gridMask, block, 0, stream>>>(context.d_maskPyr[level], wH, hH, context.d_maskPyr[level + 1], wL, hL);
+      CUDA_CHECK(cudaGetLastError());
+    }
+  }
+  if (context.initialized) {
+    assert(context.d_maskPyr[0] == d_mask);
+    assert(context.d_gauss1[0] == d_image1);
+    assert(context.d_gauss2[0] == d_image2);
+    assert(context.d_gauss3[0] == d_image3);
+  }
+
   // --------------- Build Gaussian pyramids (downsample) ---------------
   for (int level = 0; level < context.numLevels - 1; level++) {
     int wH = context.widths[level];
@@ -1023,13 +1059,6 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     // true); context.show_image(std::string("d_gauss2 level ") + std::to_string(level), context.d_gauss2, level,
     // channels, true); context.show_image(std::string("d_gauss3 level ") + std::to_string(level), context.d_gauss3,
     // level, channels, true);
-
-    // Downsample the 3-channel mask
-    dim3 gridMask((wL + block.x - 1) / block.x, (hL + block.y - 1) / block.y, 1);
-
-    FusedBatchedDownsampleMask3<T>
-        <<<gridMask, block, 0, stream>>>(context.d_maskPyr[level], wH, hH, context.d_maskPyr[level + 1], wL, hL);
-    CUDA_CHECK(cudaGetLastError());
   }
 
   // --------------- Build Laplacian pyramids ---------------
@@ -1213,7 +1242,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
       T* d_output,                                                      \
       CudaBatchLaplacianBlendContext3<T>& context,                      \
       int channels,                                                     \
-      cudaStream_t stream);
+      cudaStream_t stream,                                              \
+      bool cacheMaskPyramid);
 
 template cudaError_t cudaBatchedLaplacianBlend3<float, float>(
     const float* h_image1,
@@ -1262,7 +1292,8 @@ template cudaError_t cudaBatchedLaplacianBlendWithContext3<float, float>(
     float* d_output,
     CudaBatchLaplacianBlendContext3<float>& context,
     int channels,
-    cudaStream_t stream);
+    cudaStream_t stream,
+    bool cacheMaskPyramid);
 
 template cudaError_t cudaBatchedLaplacianBlendWithContext3<__half, float>(
     const __half* d_image1,
@@ -1272,7 +1303,8 @@ template cudaError_t cudaBatchedLaplacianBlendWithContext3<__half, float>(
     __half* d_output,
     CudaBatchLaplacianBlendContext3<__half>& context,
     int channels,
-    cudaStream_t stream);
+    cudaStream_t stream,
+    bool cacheMaskPyramid);
 
 template cudaError_t cudaBatchedLaplacianBlendWithContext3<unsigned char, float>(
     const unsigned char* d_image1,
@@ -1282,4 +1314,5 @@ template cudaError_t cudaBatchedLaplacianBlendWithContext3<unsigned char, float>
     unsigned char* d_output,
     CudaBatchLaplacianBlendContext3<unsigned char>& context,
     int channels,
-    cudaStream_t stream);
+    cudaStream_t stream,
+    bool cacheMaskPyramid);
