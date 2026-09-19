@@ -225,20 +225,28 @@ cudaError_t cudaBatchedLaplacianBlend(
  * pyramid arrays and parameters. It builds Gaussian and Laplacian pyramids for the image sets and mask,
  * blends the Laplacian pyramids, and reconstructs the final blended image directly into device memory.
  *
- * The mask is treated as constant for the lifetime of @p context: @p d_mask is latched on the first
- * call (the one that initializes @p context), and its Gaussian pyramid is built exactly once at that
- * point rather than on every call. Callers that need a different mask must use a fresh context; a
- * debug build asserts if @p d_mask changes.
+ * @p d_image1, @p d_image2 and @p d_mask are all latched as pyramid level 0 on the first call (the
+ * one that initializes @p context); on later calls the arguments are ignored and the latched
+ * pointers are used instead. A debug build asserts if any of them changes. Note the assert only
+ * catches a changed *pointer* - changed buffer *contents* are not detected.
  *
- * Because the mask pyramid (like every other context buffer) is written once and then reused, all
- * calls sharing a @p context must be issued on the same @p stream, or on streams explicitly ordered
- * against the initializing call.
+ * The mask is additionally treated as constant: its Gaussian pyramid is built exactly once, on the
+ * initializing call, instead of on every call. Level 0 is still the caller's own buffer and is read
+ * on every call, so @p d_mask must stay allocated for the lifetime of @p context, and its contents
+ * must not change - mutating them in place would leave a fresh level 0 against a stale level
+ * 1..numLevels-1. Callers that need a different mask must use a fresh context.
+ *
+ * Calls sharing a @p context must be serialized against each other, not merely against the
+ * initializing call: every pyramid buffer other than the mask is per-call scratch that each call
+ * overwrites. Issuing all calls on the same @p stream satisfies this.
  *
  * @tparam T The image data type.
- * @param d_image1 Device pointer to the first set of full-resolution images.
- * @param d_image2 Device pointer to the second set of full-resolution images.
- * @param d_mask Device pointer to the shared mask. Read (and its contents consumed) only on the
- *        initializing call; must remain unmodified while @p context is alive.
+ * @param d_image1 Device pointer to the first set of full-resolution images. Latched on the
+ *        initializing call; the argument is ignored on later calls.
+ * @param d_image2 Device pointer to the second set of full-resolution images. Latched on the
+ *        initializing call; the argument is ignored on later calls.
+ * @param d_mask Device pointer to the shared mask. Latched on the initializing call and read by
+ *        every call thereafter; must stay allocated and unmodified while @p context is alive.
  * @param d_output Device pointer where the final blended images will be stored.
  * @param context Reference to a CudaBatchLaplacianBlendContext that holds preallocated buffers and blending parameters.
  * @param stream CUDA stream to use for all kernel launches and memory copies (default is 0).

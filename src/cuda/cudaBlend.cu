@@ -688,10 +688,13 @@ __global__ void BatchedReconstructKernel(
   bool keep01 = true;
   bool keep11 = true;
   if (channels == 4) {
-    keep00 = static_cast<F_T>(lowImage[idx00 + 3]) != F_T(0);
-    keep10 = static_cast<F_T>(lowImage[idx10 + 3]) != F_T(0);
-    keep01 = static_cast<F_T>(lowImage[idx01 + 3]) != F_T(0);
-    keep11 = static_cast<F_T>(lowImage[idx11 + 3]) != F_T(0);
+    // Spelled `!(a == 0)`, not `a != 0`: it is the original skip predicate negated verbatim. The
+    // two agree for F_T == float, but not for a hypothetical F_T == __half, where `!=` lowers to
+    // the ordered __hne (NaN -> false) while !(a == b) lowers to !__heq (NaN -> true).
+    keep00 = !(static_cast<F_T>(lowImage[idx00 + 3]) == F_T(0));
+    keep10 = !(static_cast<F_T>(lowImage[idx10 + 3]) == F_T(0));
+    keep01 = !(static_cast<F_T>(lowImage[idx01 + 3]) == F_T(0));
+    keep11 = !(static_cast<F_T>(lowImage[idx11 + 3]) == F_T(0));
   }
 
   for (int c = 0; c < channels; ++c) {
@@ -957,17 +960,22 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
   // 0. Build the mask Gaussian pyramid - once, not per frame.
   //
   // context.d_maskPyr[0] is latched to the caller's `d_mask` during initialization above and is
-  // never rebound afterwards, and no kernel launched from here writes to it (only
-  // BatchedDownsampleKernelMask reads it, and BatchedBlendKernel reads the derived levels).
-  // The result is therefore byte-identical on every call, so rebuilding it per frame burned
-  // (numLevels - 1) kernel launches plus a full read+write of the whole mask pyramid for no
-  // effect.
+  // never rebound afterwards, and nothing here writes to it. Levels 1..N-1 are written only by
+  // BatchedDownsampleKernelMask, below. So every derived level is byte-identical on every call,
+  // and rebuilding them per frame burned (numLevels - 1) kernel launches plus a full read+write
+  // of the whole mask pyramid for no effect.
   //
-  // Contract: the mask contents must stay fixed for the lifetime of `context`. That was already
-  // the case for the mask *pointer* - `d_mask` is only read when !context.initialized - so a
-  // caller that wants a different mask already had to build a new context. All calls sharing a
-  // context must also be issued on the same stream (or on streams ordered against the
-  // initializing call), which was already required by the reuse of every other context buffer.
+  // Caller contract, and the one thing this changes: the mask *contents* must stay fixed for the
+  // lifetime of `context`. Level 0 is still the caller's own buffer and BatchedBlendKernel reads
+  // it live every frame, so mutating it in place now yields a fresh level 0 against a stale
+  // level 1..N-1 - previously the whole pyramid tracked the edit. That buffer must also stay
+  // allocated for the life of the context. The mask *pointer* was already latched before this
+  // change (`d_mask` is only consulted when !context.initialized), so passing a different
+  // pointer was, and still is, silently ignored; the assert below at least makes it loud.
+  //
+  // Calls sharing a context must be serialized against each other, not merely against the
+  // initializing call: every other pyramid buffer is per-call scratch that each call overwrites.
+  // Issuing them all on one stream satisfies this, and was already required before this change.
   if (!context.initialized) {
     for (int level = 0; level < context.numLevels - 1; level++) {
       dim3 gridMask(
@@ -982,11 +990,13 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
       CUDA_CHECK(cudaGetLastError());
     }
   } else {
-    // Fail loudly if a caller swaps the mask on a live context. Level 0 stays the caller's own
-    // buffer and BatchedBlendKernel re-reads it every frame, so a swapped mask would blend a
-    // fresh level 0 against a stale level 1..N-1 pyramid - worse than either a fully fresh or a
-    // fully stale mask.
+    // All three level-0 pointers were latched at init and the arguments are ignored from here
+    // on, so passing different ones is a silent no-op. That predates this change - assert so it
+    // is at least loud in debug. Note this cannot detect the failure mode the mask move actually
+    // introduces (in-place mutation of the latched mask contents); that stays a caller contract.
     assert(context.d_maskPyr[0] == d_mask);
+    assert(context.d_gauss1[0] == d_image1);
+    assert(context.d_gauss2[0] == d_image2);
   }
 
   // 1. Build Gaussian pyramids.
