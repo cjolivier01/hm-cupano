@@ -188,9 +188,10 @@ int main(int argc, char** argv) {
     }
     const auto stop = std::chrono::steady_clock::now();
     const double ms = std::chrono::duration<double, std::milli>(stop - start).count();
-    const double sec_per_frame = (ms / 1000.0) / (frame_count * pano.batch_size());
+    const double frames = static_cast<double>(frame_count) * pano.batch_size();
+    const double sec_per_frame = (ms / 1000.0) / frames;
     std::cout << "Blend speed: " << (1.0 / sec_per_frame) << "fps"
-              << " (" << (ms / frame_count) << " ms/frame)" << std::endl;
+              << " (" << (ms / frames) << " ms/frame)" << std::endl;
   }
 
   cudaStreamDestroy(stream);

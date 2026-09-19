@@ -974,8 +974,11 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
   // pointer was, and still is, silently ignored; the assert below at least makes it loud.
   //
   // Calls sharing a context must be serialized against each other, not merely against the
-  // initializing call: every other pyramid buffer is per-call scratch that each call overwrites.
-  // Issuing them all on one stream satisfies this, and was already required before this change.
+  // initializing call: every pyramid buffer above level 0, other than the mask, is per-call
+  // scratch that each call overwrites. Issuing them all on one stream satisfies this, and was
+  // already required before this change. Note also that the initializing call now issues a
+  // different kernel sequence from every later one, so a future cudaStreamBeginCapture() around
+  // this function has to capture a steady-state call rather than the first one.
   if (!context.initialized) {
     for (int level = 0; level < context.numLevels - 1; level++) {
       dim3 gridMask(

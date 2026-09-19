@@ -91,7 +91,7 @@ struct CudaBatchLaplacianBlendContext {
       maybeCudaFree(d_lap2[level]);
       maybeCudaFree(d_blend[level]);
       if (level) {
-        // Level 0 pointers are owned by user code (passed into the function each time)
+        // Level 0 pointers are owned by user code (latched from the initializing call's arguments)
         maybeCudaFree(d_gauss1[level]);
         maybeCudaFree(d_gauss2[level]);
         maybeCudaFree(d_maskPyr[level]);
@@ -222,13 +222,15 @@ cudaError_t cudaBatchedLaplacianBlend(
  * @brief Performs batched Laplacian blending using a preallocated context.
  *
  * This host function leverages a preallocated CudaBatchLaplacianBlendContext to store intermediate
- * pyramid arrays and parameters. It builds Gaussian and Laplacian pyramids for the image sets and mask,
- * blends the Laplacian pyramids, and reconstructs the final blended image directly into device memory.
+ * pyramid arrays and parameters. It builds Laplacian pyramids for the image sets, the Gaussian
+ * pyramid for the images, blends the Laplacian pyramids, and reconstructs the final blended image
+ * directly into device memory. The mask's Gaussian pyramid is built once (see below), not per call.
  *
  * @p d_image1, @p d_image2 and @p d_mask are all latched as pyramid level 0 on the first call (the
  * one that initializes @p context); on later calls the arguments are ignored and the latched
- * pointers are used instead. A debug build asserts if any of them changes. Note the assert only
- * catches a changed *pointer* - changed buffer *contents* are not detected.
+ * pointers are used instead. When @p numLevels == 1, @p d_output is latched as well. A debug build
+ * asserts if @p d_image1, @p d_image2 or @p d_mask changes. Note the assert only catches a changed
+ * *pointer* - changed buffer *contents* are not detected.
  *
  * The mask is additionally treated as constant: its Gaussian pyramid is built exactly once, on the
  * initializing call, instead of on every call. Level 0 is still the caller's own buffer and is read
@@ -237,8 +239,12 @@ cudaError_t cudaBatchedLaplacianBlend(
  * 1..numLevels-1. Callers that need a different mask must use a fresh context.
  *
  * Calls sharing a @p context must be serialized against each other, not merely against the
- * initializing call: every pyramid buffer other than the mask is per-call scratch that each call
- * overwrites. Issuing all calls on the same @p stream satisfies this.
+ * initializing call: every pyramid buffer above level 0, other than the mask, is per-call scratch
+ * that each call overwrites. Issuing all calls on the same @p stream satisfies this.
+ *
+ * Because the mask pyramid is built only on the initializing call, that call issues a different
+ * kernel sequence from every later one. Any future use of cudaStreamBeginCapture() around this
+ * function must therefore capture a steady-state call, not the first one.
  *
  * @tparam T The image data type.
  * @param d_image1 Device pointer to the first set of full-resolution images. Latched on the
