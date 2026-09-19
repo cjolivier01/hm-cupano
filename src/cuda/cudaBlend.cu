@@ -688,9 +688,9 @@ __global__ void BatchedReconstructKernel(
   bool keep01 = true;
   bool keep11 = true;
   if (channels == 4) {
-    // Spelled `!(a == 0)`, not `a != 0`: it is the original skip predicate negated verbatim. The
-    // two agree for F_T == float, but not for a hypothetical F_T == __half, where `!=` lowers to
-    // the ordered __hne (NaN -> false) while !(a == b) lowers to !__heq (NaN -> true).
+    // Spelled `!(a == 0)` rather than `a != 0`: it is the original skip predicate negated
+    // verbatim, so it is bit-identical for every value and every F_T by construction, with no
+    // appeal to how the comparison operators happen to be defined.
     keep00 = !(static_cast<F_T>(lowImage[idx00 + 3]) == F_T(0));
     keep10 = !(static_cast<F_T>(lowImage[idx10 + 3]) == F_T(0));
     keep01 = !(static_cast<F_T>(lowImage[idx01 + 3]) == F_T(0));
