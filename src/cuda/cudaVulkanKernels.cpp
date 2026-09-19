@@ -793,7 +793,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     T* d_output,
     CudaBatchLaplacianBlendContext<T>& context,
     int channels,
-    cudaStream_t) {
+    cudaStream_t,
+    bool) {
   if (!d_image1 || !d_image2 || !d_mask || !d_output) {
     return cudaErrorInvalidDevicePointer;
   }
@@ -1804,7 +1805,8 @@ template cudaError_t cudaBatchedLaplacianBlendWithContext<float, float>(
     float*,
     CudaBatchLaplacianBlendContext<float>&,
     int,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 template cudaError_t cudaBatchedLaplacianBlendWithContext<unsigned char, float>(
     const unsigned char*,
     const unsigned char*,
@@ -1812,7 +1814,8 @@ template cudaError_t cudaBatchedLaplacianBlendWithContext<unsigned char, float>(
     unsigned char*,
     CudaBatchLaplacianBlendContext<unsigned char>&,
     int,
-    cudaStream_t);
+    cudaStream_t,
+    bool);
 
 template cudaError_t cudaBatchedLaplacianBlend3<float, float>(
     const float*,

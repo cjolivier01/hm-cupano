@@ -11,17 +11,10 @@
 #include <cstdio>
 #include <vector>
 
-// Device-side diagnostic printf for unexpected alpha values.
-//
-// Keep this out of optimized builds: a `printf` call site inside a kernel is an ABI boundary
-// that forces a local stack frame (STACK:8/16 on sm_120; no spills - LOCAL stays 0) and raises
-// register pressure for *every* thread, even when the branch is never taken. That is enough to
-// cost an occupancy bucket: BatchedReconstructKernel<float, float> goes 51 -> 48 registers,
-// which is 66.7% -> 83.3% theoretical occupancy at the 16x16 block size used here.
-// `cudaBlend3.cu` already guards the identical macro this way.
-#ifndef NDEBUG
+// Keep the device-side diagnostic enabled in every build so unexpected alpha values remain
+// visible in production. The call site has a measurable kernel cost, but losing this diagnostic
+// would make corrupt alpha values substantially harder to identify.
 #define PRINT_STRANGE_ALPHAS
-#endif
 
 // NOTE: EXTRA_ALPHA_CHECKS is deliberately *not* guarded by NDEBUG. Despite the name it is not
 // a diagnostic - it selects the alpha-aware kernel variants that exclude fully transparent
@@ -918,7 +911,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     T* d_output,
     CudaBatchLaplacianBlendContext<T>& context,
     int channels,
-    cudaStream_t stream) {
+    cudaStream_t stream,
+    bool cacheMaskPyramid) {
   // size_t imageSize = context.imageWidth * context.imageHeight * channels * sizeof(T);
 
   // Initialization: set up pyramid dimensions and allocate device memory using channels.
@@ -957,29 +951,29 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
 
   dim3 block(16, 16, 1);
 
-  // 0. Build the mask Gaussian pyramid - once, not per frame.
+  // 0. Build the mask Gaussian pyramid once by default, or per call when caching is disabled.
   //
   // context.d_maskPyr[0] is latched to the caller's `d_mask` during initialization above and is
   // never rebound afterwards, and nothing here writes to it. Levels 1..N-1 are written only by
-  // BatchedDownsampleKernelMask, below. So every derived level is byte-identical on every call,
-  // and rebuilding them per frame burned (numLevels - 1) kernel launches plus a full read+write
-  // of the whole mask pyramid for no effect.
+  // BatchedDownsampleKernelMask, below. When cacheMaskPyramid is true, every derived level is
+  // byte-identical on every call and rebuilding it per frame would burn (numLevels - 1) kernel
+  // launches plus a full read+write of the whole mask pyramid for no effect.
   //
-  // Caller contract, and the one thing this changes: the mask *contents* must stay fixed for the
-  // lifetime of `context`. Level 0 is still the caller's own buffer and BatchedBlendKernel reads
-  // it live every frame, so mutating it in place now yields a fresh level 0 against a stale
-  // level 1..N-1 - previously the whole pyramid tracked the edit. That buffer must also stay
+  // Caller contract: when caching is enabled, the mask *contents* must stay fixed for the lifetime
+  // of `context`. Level 0 is still the caller's own buffer and BatchedBlendKernel reads it live
+  // every frame, so changing it while reusing cached derived levels would mix generations. Pass
+  // cacheMaskPyramid=false to rebuild those levels after an in-place update. The buffer must stay
   // allocated for the life of the context. The mask *pointer* was already latched before this
-  // change (`d_mask` is only consulted when !context.initialized), so passing a different
-  // pointer was, and still is, silently ignored; the assert below at least makes it loud.
+  // change (`d_mask` is only consulted when !context.initialized), so passing a different pointer
+  // is silently ignored; the assert below at least makes it loud.
   //
   // Calls sharing a context must be serialized against each other, not merely against the
   // initializing call: every pyramid buffer above level 0, other than the mask, is per-call
   // scratch that each call overwrites. Issuing them all on one stream satisfies this, and was
-  // already required before this change. Note also that the initializing call now issues a
+  // already required before this change. With caching enabled, the initializing call issues a
   // different kernel sequence from every later one, so a future cudaStreamBeginCapture() around
   // this function has to capture a steady-state call rather than the first one.
-  if (!context.initialized) {
+  if (!context.initialized || !cacheMaskPyramid) {
     for (int level = 0; level < context.numLevels - 1; level++) {
       dim3 gridMask(
           (context.widths[level + 1] + block.x - 1) / block.x, (context.heights[level + 1] + block.y - 1) / block.y, 1);
@@ -992,11 +986,12 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
           context.heights[level + 1]);
       CUDA_CHECK(cudaGetLastError());
     }
-  } else {
+  }
+  if (context.initialized) {
     // All three level-0 pointers were latched at init and the arguments are ignored from here
     // on, so passing different ones is a silent no-op. That predates this change - assert so it
-    // is at least loud in debug. Note this cannot detect the failure mode the mask move actually
-    // introduces (in-place mutation of the latched mask contents); that stays a caller contract.
+    // is at least loud in debug. Note this cannot detect an in-place mutation of the latched mask
+    // contents; callers that do so must disable caching for that call.
     assert(context.d_maskPyr[0] == d_mask);
     assert(context.d_gauss1[0] == d_image1);
     assert(context.d_gauss2[0] == d_image2);
@@ -1172,7 +1167,8 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
       T* d_output,                                                     \
       CudaBatchLaplacianBlendContext<T>& context,                      \
       int channels,                                                    \
-      cudaStream_t stream);
+      cudaStream_t stream,                                             \
+      bool cacheMaskPyramid);
 
 INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(half)
 INSTANTIATE_CUDA_BATCHED_LAPLACIAN_BLEND(float)
