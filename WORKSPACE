@@ -20,7 +20,7 @@ register_detected_cuda_toolchains()
 
 git_repository(
     name = "jetson-utils",
-    commit = "7efddeb92797c15a6a2dfea67244013b2c05b53d",
+    commit = "49fb10dc2e13990897c1a1e77a212b4d5fead7af",
     remote = "ssh://git@github.com/cjolivier01/jetson-utils",
 )
 
