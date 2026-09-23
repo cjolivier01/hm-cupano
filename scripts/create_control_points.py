@@ -160,6 +160,36 @@ def synchronize_by_audio(
     return left_frame_offset, right_frame_offset
 
 
+def parse_timecode(timecode: str) -> float:
+    """
+    Parse a timecode into seconds.
+
+    Accepts "HH:MM:SS", "MM:SS" or "SS", where the rightmost field is always
+    seconds and may carry a fractional part (e.g. "09:42", "1:02:03.5", "12.25").
+
+    Args:
+        timecode: The timecode string.
+
+    Returns:
+        The number of seconds the timecode represents.
+
+    Raises:
+        ValueError: If the timecode cannot be parsed.
+    """
+    parts: List[str] = timecode.strip().split(":")
+    if len(parts) > 3:
+        raise ValueError(f"Invalid timecode (expected [[HH:]MM:]SS[.sss]): {timecode!r}")
+    seconds: float = 0.0
+    try:
+        for part in parts:
+            seconds = seconds * 60.0 + float(part)
+    except ValueError:
+        raise ValueError(
+            f"Invalid timecode (expected [[HH:]MM:]SS[.sss]): {timecode!r}"
+        ) from None
+    return seconds
+
+
 def extract_frame(video_path: str, frame_idx: Optional[float]) -> np.ndarray:
     """
     Extract a single frame from a video file using OpenCV.
@@ -670,6 +700,15 @@ def main() -> None:
     parser.add_argument("--lfo", default=None, help="Left frame offset")
     parser.add_argument("--rfo", default=None, help="Right frame offset")
     parser.add_argument(
+        "--stitch-frame-time",
+        default=None,
+        help=(
+            "Synchronized time at which the frame used for control point matching "
+            "appears, as [[HH:]MM:]SS[.sss] (e.g. 09:42, 1:02:03.5, 12.25). "
+            "Measured from the audio-synchronized start of the videos."
+        ),
+    )
+    parser.add_argument(
         "--synchronize-only",
         action="store_true",
         help="Only synchronize and print out the frame offsets",
@@ -709,16 +748,31 @@ def main() -> None:
         if (args.lfo is None and args.rfo is None) or args.synchronize_only:
             lfo, rfo = synchronize_by_audio(args.left, args.right)
         else:
-            lfo, rfo = args.lfo, args.rfo
+            lfo = float(args.lfo) if args.lfo is not None else 0.0
+            rfo = float(args.rfo) if args.rfo is not None else 0.0
 
         if args.synchronize_only:
             print(f"Left frame offset: {lfo}")
             print(f"Right frame offset: {rfo}")
             exit(0)
 
+        # Advance both videos past their sync points to the requested stitch time.
+        if args.stitch_frame_time is not None:
+            stitch_seconds: float = parse_timecode(args.stitch_frame_time)
+            left_fps, _ = get_video_fps_and_duration(args.left)
+            right_fps, _ = get_video_fps_and_duration(args.right)
+            lfo += stitch_seconds * left_fps
+            rfo += stitch_seconds * right_fps
+            print(
+                f"Stitching at {stitch_seconds} seconds past the sync point "
+                f"(left frame {lfo}, right frame {rfo})"
+            )
+
         print("Extracting frames at the sync points...")
     else:
         lfo, rfo = None, None
+        if args.stitch_frame_time is not None:
+            print("Ignoring --stitch-frame-time: the inputs are images, not videos")
 
     # Ensure frame indices are integers.
     frame1: np.ndarray = extract_frame(args.left, lfo)
