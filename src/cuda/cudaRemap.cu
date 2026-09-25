@@ -50,7 +50,7 @@ __global__ void BatchedRemapKernelEx(
     int srcIdx = srcY * srcW + srcX;
     destImage[destIdx] = perform_cast<T_out>(srcImage[srcIdx]);
   } else {
-    destImage[destIdx] = perform_cast<T_out>(deflt);
+    destImage[destIdx] = remap_default<T_out>(deflt);
   }
 }
 
@@ -109,7 +109,7 @@ __global__ void BatchedRemapKernelExOffset(
     *dest_pos = perform_cast<T_out>(*src_pos);
   } else {
     if (!no_unmapped_write || srcX != kUnmappedPositionValue) {
-      *dest_pos = perform_cast<T_out>(deflt);
+      *dest_pos = remap_default<T_out>(deflt);
       if constexpr (sizeof(T_out) / sizeof(BaseScalar_t<T_out>) == 4) {
         // Has an alpha channel, so clear it
         if (srcX == kUnmappedPositionValue) {
@@ -185,7 +185,7 @@ __global__ void BatchedRemapKernelExOffsetROI(
     *dest_pos = perform_cast<T_out>(*src_pos);
   } else {
     if (!no_unmapped_write || srcX != kUnmappedPositionValue) {
-      *dest_pos = perform_cast<T_out>(deflt);
+      *dest_pos = remap_default<T_out>(deflt);
       if constexpr (sizeof(T_out) / sizeof(BaseScalar_t<T_out>) == 4) {
         if (srcX == kUnmappedPositionValue) {
           dest_pos->w = 0;
@@ -240,7 +240,7 @@ __global__ void BatchedRemapKernelExOffsetWithDestMap(
       const T_in* src_pos = surface_ptr(src, b, srcX, srcY);
       *surface_ptr(dest, b, destX, destY) = perform_cast<T_out>(*src_pos);
     } else {
-      *surface_ptr(dest, b, destX, destY) = perform_cast<T_out>(deflt);
+      *surface_ptr(dest, b, destX, destY) = remap_default<T_out>(deflt);
     }
   }
 }
@@ -248,7 +248,7 @@ __global__ void BatchedRemapKernelExOffsetWithDestMap(
 //------------------------------------------------------------------------------
 // NEW: Fused hard-seam remap for N images (select per-pixel input by dest map)
 //------------------------------------------------------------------------------
-template <typename T>
+template <typename T, typename T_out>
 __global__ void BatchedRemapHardSeamKernelN(
     const CudaSurface<T>* inputs, // length n_images
     const unsigned short* const* mapX_ptrs, // length n_images
@@ -257,7 +257,7 @@ __global__ void BatchedRemapHardSeamKernelN(
     const int2* sizes, // length n_images (w,h)
     int n_images,
     const unsigned char* dest_image_map, // [H×W] indexed [0..n_images-1]
-    CudaSurface<T> dest,
+    CudaSurface<T_out> dest,
     int batchSize) {
   int b = blockIdx.z;
   if (b >= batchSize)
@@ -289,7 +289,7 @@ __global__ void BatchedRemapHardSeamKernelN(
 
   const CudaSurface<T> src = inputs[imageIndex];
   if (srcX < static_cast<int>(src.width) && srcY < static_cast<int>(src.height)) {
-    *surface_ptr(dest, b, x, y) = *surface_ptr(src, b, srcX, srcY);
+    *surface_ptr(dest, b, x, y) = perform_cast<T_out>(*surface_ptr(src, b, srcX, srcY));
   }
 }
 
@@ -414,7 +414,7 @@ cudaError_t batched_remap_kernel_ex_offset_with_dest_map(
   return cudaGetLastError();
 }
 
-template <typename T>
+template <typename T, typename T_out>
 cudaError_t batched_remap_hard_seam_kernel_n(
     const CudaSurface<T>* d_inputs,
     const unsigned short* const* d_mapX_ptrs,
@@ -423,7 +423,7 @@ cudaError_t batched_remap_hard_seam_kernel_n(
     const int2* d_sizes,
     int n_images,
     const unsigned char* dest_image_map,
-    CudaSurface<T> dest,
+    CudaSurface<T_out> dest,
     int batchSize,
     cudaStream_t stream) {
   dim3 blockDim(16, 16, 1);
@@ -431,7 +431,7 @@ cudaError_t batched_remap_hard_seam_kernel_n(
       (static_cast<int>(dest.width) + blockDim.x - 1) / blockDim.x,
       (static_cast<int>(dest.height) + blockDim.y - 1) / blockDim.y,
       batchSize);
-  BatchedRemapHardSeamKernelN<T><<<gridDim, blockDim, 0, stream>>>(
+  BatchedRemapHardSeamKernelN<T, T_out><<<gridDim, blockDim, 0, stream>>>(
       d_inputs, d_mapX_ptrs, d_mapY_ptrs, d_offsets, d_sizes, n_images, dest_image_map, dest, batchSize);
   return cudaGetLastError();
 }
@@ -571,3 +571,19 @@ INSTANTIATE_BATCHED_REMAP_HARD_SEAM_N(uchar3)
 INSTANTIATE_BATCHED_REMAP_HARD_SEAM_N(uchar4)
 INSTANTIATE_BATCHED_REMAP_HARD_SEAM_N(float3)
 INSTANTIATE_BATCHED_REMAP_HARD_SEAM_N(float4)
+INSTANTIATE_BATCHED_REMAP_HARD_SEAM_N(half4)
+
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET(Rgb10A2, half4)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_ROI(Rgb10A2, half4)
+INSTANTIATE_BATCHED_REMAP_KERNEL_EX_OFFSET_WITH_DEST_MAP(Rgb10A2, half4)
+template cudaError_t batched_remap_hard_seam_kernel_n<Rgb10A2, half4>(
+    const CudaSurface<Rgb10A2>*,
+    const unsigned short* const*,
+    const unsigned short* const*,
+    const int2*,
+    const int2*,
+    int,
+    const unsigned char*,
+    CudaSurface<half4>,
+    int,
+    cudaStream_t);

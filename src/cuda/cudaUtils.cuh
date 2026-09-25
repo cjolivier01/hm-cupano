@@ -83,6 +83,26 @@ __device__ inline T_dest perform_cast(const T_src& src) {
   return static_cast<T_dest>(src);
 }
 
+template <>
+__device__ inline half4 perform_cast(const Rgb10A2& src) {
+  constexpr float scale = 255.0f / 1023.0f;
+  return {
+      __float2half(float(src.value & 1023u) * scale),
+      __float2half(float((src.value >> 10) & 1023u) * scale),
+      __float2half(float((src.value >> 20) & 1023u) * scale),
+      __float2half(255.0f)};
+}
+
+// An invalid remap must stay transparent; it is not a valid packed black sample.
+template <typename T_out, typename T_in>
+__device__ inline T_out remap_default(const T_in& value) {
+  return perform_cast<T_out>(value);
+}
+template <>
+__device__ inline half4 remap_default(const Rgb10A2&) {
+  return half4{};
+}
+
 #define DECLARE_PERFORM_CAST_UCHAR_3(_src$)                                                       \
   template <>                                                                                     \
   __device__ inline uchar3 perform_cast(const _src$& src) {                                       \

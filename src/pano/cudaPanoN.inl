@@ -287,8 +287,9 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
 }
 
 template <typename T_pipeline, typename T_compute>
+template <typename T_input>
 CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::remap_soft(
-    const CudaMat<T_pipeline>& input,
+    const CudaMat<T_input>& input,
     const CudaMat<uint16_t>& map_x,
     const CudaMat<uint16_t>& map_y,
     CudaMat<T_compute>& dest_canvas,
@@ -296,7 +297,7 @@ CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::remap_soft(
     int dest_y,
     int batch_size,
     cudaStream_t stream) {
-  const T_pipeline default_pixel = T_pipeline{};
+  const T_input default_pixel = T_input{};
   return batched_remap_kernel_ex_offset(
       input.surface(),
       dest_canvas.surface(),
@@ -313,8 +314,9 @@ CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::remap_soft(
 }
 
 template <typename T_pipeline, typename T_compute>
+template <typename T_input>
 CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::remap_hard(
-    const CudaMat<T_pipeline>& input,
+    const CudaMat<T_input>& input,
     const CudaMat<uint16_t>& map_x,
     const CudaMat<uint16_t>& map_y,
     uint8_t image_index,
@@ -324,7 +326,7 @@ CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::remap_hard(
     int dest_y,
     int batch_size,
     cudaStream_t stream) {
-  const T_pipeline default_pixel = T_pipeline{};
+  const T_input default_pixel = T_input{};
   return batched_remap_kernel_ex_offset_with_dest_map(
       input.surface(),
       dest_canvas.surface(),
@@ -350,13 +352,12 @@ CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::blend_soft_dispatch(
   auto d_mask = stitch_context_->cudaBlendSoftSeam.get();
   auto out = stitch_context_->cudaBlendOut->data_raw();
 
-#define BLEND_N_CASE(NVAL, CH)                                                            \
-  do {                                                                                    \
-    auto& ctx = std::get<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, NVAL>>( \
-        stitch_context_->laplacian_blend_context);                                        \
-    return CudaStatus(                                                                    \
-        cudaBatchedLaplacianBlendWithContextN<BaseScalar_t<T_compute>, float, NVAL, CH>(  \
-            d_ptrs, d_mask, out, ctx, stream, /*cacheMaskPyramid=*/true));                \
+#define BLEND_N_CASE(NVAL, CH)                                                                         \
+  do {                                                                                                 \
+    auto& ctx = std::get<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, NVAL>>(              \
+        stitch_context_->laplacian_blend_context);                                                     \
+    return CudaStatus(cudaBatchedLaplacianBlendWithContextN<BaseScalar_t<T_compute>, float, NVAL, CH>( \
+        d_ptrs, d_mask, out, ctx, stream, /*cacheMaskPyramid=*/true));                                 \
   } while (0)
 
   if (C == 3) {
@@ -405,13 +406,16 @@ CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::blend_soft_dispatch(
 }
 
 template <typename T_pipeline, typename T_compute>
+template <typename T_input>
 CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T_compute>::process(
-    const std::vector<const CudaMat<T_pipeline>*>& inputs,
+    const std::vector<const CudaMat<T_input>*>& inputs,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
+  static_assert(
+      std::is_same_v<T_input, T_pipeline> ||
+          (std::is_same_v<T_input, Rgb10A2> && std::is_same_v<T_pipeline, half4> && std::is_same_v<T_compute, half4>),
+      "Packed RGB10A2 inputs require half4 pipeline and compute types");
   CUDA_RETURN_IF_ERROR(status_);
-  if (!canvas)
-    return CudaStatus(cudaErrorInvalidDevicePointer, "Canvas must be provided");
   if ((int)inputs.size() != stitch_context_->n_images)
     return CudaStatus(cudaErrorInvalidValue, "inputs size != N");
   for (auto* in : inputs) {
@@ -421,28 +425,28 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T
   if (canvas->batch_size() != stitch_context_->batch_size())
     return CudaStatus(cudaErrorInvalidValue, "Canvas batch mismatch");
 
-  const T_pipeline default_pixel = T_pipeline{};
+  const T_input default_pixel = T_input{};
 
   if (stitch_context_->is_hard_seam()) {
     auto cuerr = cudaMemsetAsync(canvas->data(), 0, canvas->size(), stream);
     if (cuerr != cudaSuccess)
       return CudaStatus(cuerr);
 
-    std::vector<CudaSurface<T_pipeline>> h_inputs(stitch_context_->n_images);
+    std::vector<CudaSurface<T_input>> h_inputs(stitch_context_->n_images);
     for (int i = 0; i < stitch_context_->n_images; ++i) {
       h_inputs[i] = inputs[i]->surface();
     }
     cuerr = cudaMemcpyAsync(
-        stitch_context_->d_input_surfaces.get(),
+        reinterpret_cast<CudaSurface<T_input>*>(stitch_context_->d_input_surfaces.get()),
         h_inputs.data(),
-        static_cast<size_t>(stitch_context_->n_images) * sizeof(CudaSurface<T_pipeline>),
+        static_cast<size_t>(stitch_context_->n_images) * sizeof(CudaSurface<T_input>),
         cudaMemcpyHostToDevice,
         stream);
     if (cuerr != cudaSuccess)
       return CudaStatus(cuerr);
 
-    cuerr = batched_remap_hard_seam_kernel_n<T_pipeline>(
-        stitch_context_->d_input_surfaces.get(),
+    cuerr = batched_remap_hard_seam_kernel_n<T_input, T_pipeline>(
+        reinterpret_cast<CudaSurface<T_input>*>(stitch_context_->d_input_surfaces.get()),
         stitch_context_->d_remap_x_ptrs.get(),
         stitch_context_->d_remap_y_ptrs.get(),
         stitch_context_->d_offsets.get(),
@@ -477,21 +481,21 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T
 
     // First fill the entire canvas using a fused hard-seam remap. This gives a correct baseline outside the
     // soft seam ROI at much lower cost than remapping N full-frame buffers.
-    std::vector<CudaSurface<T_pipeline>> h_inputs(stitch_context_->n_images);
+    std::vector<CudaSurface<T_input>> h_inputs(stitch_context_->n_images);
     for (int i = 0; i < stitch_context_->n_images; ++i) {
       h_inputs[i] = inputs[i]->surface();
     }
     cuerr = cudaMemcpyAsync(
-        stitch_context_->d_input_surfaces.get(),
+        reinterpret_cast<CudaSurface<T_input>*>(stitch_context_->d_input_surfaces.get()),
         h_inputs.data(),
-        static_cast<size_t>(stitch_context_->n_images) * sizeof(CudaSurface<T_pipeline>),
+        static_cast<size_t>(stitch_context_->n_images) * sizeof(CudaSurface<T_input>),
         cudaMemcpyHostToDevice,
         stream);
     if (cuerr != cudaSuccess)
       return CudaStatus(cuerr);
 
-    cuerr = batched_remap_hard_seam_kernel_n<T_pipeline>(
-        stitch_context_->d_input_surfaces.get(),
+    cuerr = batched_remap_hard_seam_kernel_n<T_input, T_pipeline>(
+        reinterpret_cast<CudaSurface<T_input>*>(stitch_context_->d_input_surfaces.get()),
         stitch_context_->d_remap_x_ptrs.get(),
         stitch_context_->d_remap_y_ptrs.get(),
         stitch_context_->d_offsets.get(),

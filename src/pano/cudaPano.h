@@ -113,26 +113,31 @@ class CudaStitchPano {
     return write_roi_canvas_;
   }
 
+  // Rgb10A2 inputs fuse unpacking into remapping and require half4 pipeline/compute types.
+  // All inputs must remain alive until work on stream completes; calls sharing a stitcher are serialized.
+  template <typename T_input = T_pipeline>
   CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process(
-      const CudaMat<T_pipeline>& inputImage1,
-      const CudaMat<T_pipeline>& inputImage2,
+      const CudaMat<T_input>& inputImage1,
+      const CudaMat<T_input>& inputImage2,
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
   CudaStatus dump_soft_blend_pyramid(const std::string& directory, cudaStream_t stream) const;
 
  protected:
+  template <typename T_input>
   static CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process_impl(
-      const CudaMat<T_pipeline>& inputImage1,
-      const CudaMat<T_pipeline>& inputImage2,
+      const CudaMat<T_input>& inputImage1,
+      const CudaMat<T_input>& inputImage2,
       StitchingContext<T_pipeline, T_compute>& stitch_context,
       const CanvasManager& canvas_manager,
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
+  template <typename T_input>
   CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process_impl_current(
-      const CudaMat<T_pipeline>& inputImage1,
-      const CudaMat<T_pipeline>& inputImage2,
+      const CudaMat<T_input>& inputImage1,
+      const CudaMat<T_input>& inputImage2,
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 

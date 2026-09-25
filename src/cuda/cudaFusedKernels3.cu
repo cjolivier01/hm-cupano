@@ -129,7 +129,7 @@ __global__ void FusedRemapToFullKernel3(
 /**
  * Fused kernel for hard seam - processes all three images based on mask
  */
-template <typename T_pipeline>
+template <typename T_pipeline, typename T_output>
 __global__ void FusedRemapHardSeam3(
     // Input surfaces
     CudaSurface<T_pipeline> inputImage0,
@@ -152,7 +152,7 @@ __global__ void FusedRemapHardSeam3(
     // Hard seam mask
     const unsigned char* hardSeamMask,
     // Output canvas
-    CudaSurface<T_pipeline> canvas,
+    CudaSurface<T_output> canvas,
     // Canvas positions
     int canvas0_x,
     int canvas0_y,
@@ -220,7 +220,7 @@ __global__ void FusedRemapHardSeam3(
   }
 
   if (pixel_set) {
-    *surface_ptr(canvas, b, x, y) = pixel_value;
+    *surface_ptr(canvas, b, x, y) = perform_cast<T_output>(pixel_value);
   }
 }
 
@@ -285,7 +285,7 @@ CudaStatus launchFusedRemapToFullKernel3(
   return CudaStatus(cudaGetLastError());
 }
 
-template <typename T_pipeline>
+template <typename T_pipeline, typename T_output>
 CudaStatus launchFusedRemapHardSeam3(
     const CudaMat<T_pipeline>& inputImage0,
     const CudaMat<T_pipeline>& inputImage1,
@@ -297,14 +297,14 @@ CudaStatus launchFusedRemapHardSeam3(
     const CudaMat<uint16_t>& remap_2_x,
     const CudaMat<uint16_t>& remap_2_y,
     const CudaMat<unsigned char>& hardSeamMask,
-    CudaMat<T_pipeline>& canvas,
+    CudaMat<T_output>& canvas,
     const CanvasManager3& canvas_manager,
     cudaStream_t stream) {
   dim3 block(16, 16);
   dim3 grid(
       (canvas.width() + block.x - 1) / block.x, (canvas.height() + block.y - 1) / block.y, inputImage0.batch_size());
 
-  FusedRemapHardSeam3<T_pipeline><<<grid, block, 0, stream>>>(
+  FusedRemapHardSeam3<T_pipeline, T_output><<<grid, block, 0, stream>>>(
       inputImage0.surface(),
       inputImage1.surface(),
       inputImage2.surface(),
@@ -374,11 +374,28 @@ INSTANTIATE_FUSED_KERNELS(uchar3, float4)
 INSTANTIATE_FUSED_KERNELS(uchar4, float4)
 INSTANTIATE_FUSED_KERNELS(float3, float3)
 INSTANTIATE_FUSED_KERNELS(float4, float4)
+INSTANTIATE_FUSED_KERNELS(half4, half4)
+INSTANTIATE_FUSED_KERNELS(Rgb10A2, half4)
 
 INSTANTIATE_CANVAS_KERNELS(uchar3)
 INSTANTIATE_CANVAS_KERNELS(uchar4)
 INSTANTIATE_CANVAS_KERNELS(float3)
 INSTANTIATE_CANVAS_KERNELS(float4)
+INSTANTIATE_CANVAS_KERNELS(half4)
+template CudaStatus launchFusedRemapHardSeam3<Rgb10A2, half4>(
+    const CudaMat<Rgb10A2>&,
+    const CudaMat<Rgb10A2>&,
+    const CudaMat<Rgb10A2>&,
+    const CudaMat<uint16_t>&,
+    const CudaMat<uint16_t>&,
+    const CudaMat<uint16_t>&,
+    const CudaMat<uint16_t>&,
+    const CudaMat<uint16_t>&,
+    const CudaMat<uint16_t>&,
+    const CudaMat<unsigned char>&,
+    CudaMat<half4>&,
+    const CanvasManager3&,
+    cudaStream_t);
 
 } // namespace cuda
 } // namespace pano

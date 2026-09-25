@@ -45,3 +45,6 @@
 - Requires NVIDIA CUDA toolkit/driver and OpenCV dev headers (`/usr/include` by default).
 - External tools for config: Hugin/Enblend (`sudo apt-get install hugin hugin-tools enblend`).
 - Generate control points: `python scripts/create_control_points.py <left.mp4> <right.mp4>` before running demos.
+
+## Packed RGB10 panorama input
+- Packed `CudaMat<Rgb10A2>` inputs fuse RGB10 unpacking into remapping for half4 panoramas across 2/3/N cameras. Existing half4 inputs retain the staged path, and the three-camera `fused` argument retains its original route semantics. See `docs/low-memory-stitching.md`.

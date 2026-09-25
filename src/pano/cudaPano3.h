@@ -122,10 +122,13 @@ class CudaStitchPano3 {
    * three “full” images + 3‐channel mask.  If hard‐seam, it instead calls
    * a conditional “dest_map” remap.  Finally returns the updated canvas.
    */
+  // Rgb10A2 inputs fuse unpacking into remapping and require half4 pipeline/compute types.
+  // All inputs must remain alive until work on stream completes; calls sharing a stitcher are serialized.
+  template <typename T_input = T_pipeline>
   CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process(
-      const CudaMat<T_pipeline>& inputImage0,
-      const CudaMat<T_pipeline>& inputImage1,
-      const CudaMat<T_pipeline>& inputImage2,
+      const CudaMat<T_input>& inputImage0,
+      const CudaMat<T_input>& inputImage1,
+      const CudaMat<T_input>& inputImage2,
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas,
       bool fused = true);
@@ -146,52 +149,58 @@ class CudaStitchPano3 {
    * three “full” images + 3‐channel mask.  If hard‐seam, it instead calls
    * a conditional “dest_map” remap.  Finally returns the updated canvas.
    */
+  template <typename T_input>
   CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process_optimized(
-      const CudaMat<T_pipeline>& inputImage0,
-      const CudaMat<T_pipeline>& inputImage1,
-      const CudaMat<T_pipeline>& inputImage2,
+      const CudaMat<T_input>& inputImage0,
+      const CudaMat<T_input>& inputImage1,
+      const CudaMat<T_input>& inputImage2,
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
  protected:
   // Original process_impl for compatibility
+  template <typename T_input>
   static CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process_impl(
-      const CudaMat<T_pipeline>& inputImage0,
-      const CudaMat<T_pipeline>& inputImage1,
-      const CudaMat<T_pipeline>& inputImage2,
+      const CudaMat<T_input>& inputImage0,
+      const CudaMat<T_input>& inputImage1,
+      const CudaMat<T_input>& inputImage2,
       StitchingContext3<T_pipeline, T_compute>& stitch_context,
       const CanvasManager3& canvas_manager,
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
+  template <typename T_input>
   CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process_impl_current(
-      const CudaMat<T_pipeline>& inputImage0,
-      const CudaMat<T_pipeline>& inputImage1,
-      const CudaMat<T_pipeline>& inputImage2,
+      const CudaMat<T_input>& inputImage0,
+      const CudaMat<T_input>& inputImage1,
+      const CudaMat<T_input>& inputImage2,
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
   // Optimized process_impl with fused kernels
+  template <typename T_input>
   static CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process_impl_optimized(
-      const CudaMat<T_pipeline>& inputImage0,
-      const CudaMat<T_pipeline>& inputImage1,
-      const CudaMat<T_pipeline>& inputImage2,
+      const CudaMat<T_input>& inputImage0,
+      const CudaMat<T_input>& inputImage1,
+      const CudaMat<T_input>& inputImage2,
       StitchingContext3<T_pipeline, T_compute>& stitch_context,
       const CanvasManager3& canvas_manager,
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
+  template <typename T_input>
   CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process_impl_optimized_current(
-      const CudaMat<T_pipeline>& inputImage0,
-      const CudaMat<T_pipeline>& inputImage1,
-      const CudaMat<T_pipeline>& inputImage2,
+      const CudaMat<T_input>& inputImage0,
+      const CudaMat<T_input>& inputImage1,
+      const CudaMat<T_input>& inputImage2,
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
  private:
   // Legacy remap functions (kept for compatibility)
+  template <typename T_input>
   static CudaStatus remap_to_surface_for_blending(
-      const CudaMat<T_pipeline>& inputImage,
+      const CudaMat<T_input>& inputImage,
       const CudaMat<uint16_t>& map_x,
       const CudaMat<uint16_t>& map_y,
       CudaMat<T_compute>& dest_canvas,
@@ -200,8 +209,9 @@ class CudaStitchPano3 {
       int batch_size,
       cudaStream_t stream);
 
+  template <typename T_input>
   static CudaStatus remap_to_surface_for_hard_seam(
-      const CudaMat<T_pipeline>& inputImage,
+      const CudaMat<T_input>& inputImage,
       const CudaMat<uint16_t>& map_x,
       const CudaMat<uint16_t>& map_y,
       uint8_t canvas_position_image_index,

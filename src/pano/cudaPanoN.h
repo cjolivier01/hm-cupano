@@ -111,15 +111,19 @@ class CudaStitchPanoN {
   }
 
   // Inputs are pointers to N CudaMat<T_pipeline> with same batch.
+  // Rgb10A2 inputs fuse unpacking into remapping and require half4 pipeline/compute types.
+  // All inputs must remain alive until work on stream completes; calls sharing a stitcher are serialized.
+  template <typename T_input = T_pipeline>
   CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process(
-      const std::vector<const CudaMat<T_pipeline>*>& inputs,
+      const std::vector<const CudaMat<T_input>*>& inputs,
       cudaStream_t stream,
       std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
 
  private:
   // Internal helpers
+  template <typename T_input>
   CudaStatus remap_soft(
-      const CudaMat<T_pipeline>& input,
+      const CudaMat<T_input>& input,
       const CudaMat<uint16_t>& map_x,
       const CudaMat<uint16_t>& map_y,
       CudaMat<T_compute>& dest_canvas,
@@ -128,8 +132,9 @@ class CudaStitchPanoN {
       int batch_size,
       cudaStream_t stream);
 
+  template <typename T_input>
   CudaStatus remap_hard(
-      const CudaMat<T_pipeline>& input,
+      const CudaMat<T_input>& input,
       const CudaMat<uint16_t>& map_x,
       const CudaMat<uint16_t>& map_y,
       uint8_t image_index,

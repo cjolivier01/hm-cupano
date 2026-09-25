@@ -149,6 +149,7 @@ int cudaPixelTypeToCvType(CudaPixelType fmt) {
       return CV_16UC3;
     case CUDA_PIXEL_USHORT4:
       return CV_16UC4;
+    case CUDA_PIXEL_RGB10A2:
     case CUDA_PIXEL_INT1:
       return CV_32SC1;
     case CUDA_PIXEL_INT3:
@@ -167,7 +168,7 @@ int cudaPixelTypeToCvType(CudaPixelType fmt) {
       return CV_16FC3;
     case CUDA_PIXEL_HALF4:
       return CV_16FC4;
-    // For bfloat16 we also use 16-bit float codes (even though representation differs)
+      // For bfloat16 we also use 16-bit float codes (even though representation differs)
 #if GPU_HAS_BF16
     case CUDA_PIXEL_BF16_1:
       return CV_16FC1;
@@ -203,6 +204,7 @@ size_t cudaPixelElementSize(CudaPixelType fmt) {
       return 6;
     case CUDA_PIXEL_USHORT4:
       return 8;
+    case CUDA_PIXEL_RGB10A2:
     case CUDA_PIXEL_INT1:
       return 4;
     case CUDA_PIXEL_INT3:
