@@ -1,5 +1,10 @@
 #include <gtest/gtest.h>
+
+#include <algorithm>
 #include <cstring>
+#include <memory>
+#include <vector>
+
 #include "cupano/pano/cudaPano.h"
 #include "cupano/pano/cudaPano3.h"
 #include "cupano/pano/cudaPanoN.h"
