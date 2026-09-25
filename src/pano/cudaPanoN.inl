@@ -416,6 +416,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T
           (std::is_same_v<T_input, Rgb10A2> && std::is_same_v<T_pipeline, half4> && std::is_same_v<T_compute, half4>),
       "Packed RGB10A2 inputs require half4 pipeline and compute types");
   CUDA_RETURN_IF_ERROR(status_);
+  if (!canvas)
+    return CudaStatus(cudaErrorInvalidDevicePointer, "Canvas must be provided");
   if ((int)inputs.size() != stitch_context_->n_images)
     return CudaStatus(cudaErrorInvalidValue, "inputs size != N");
   for (auto* in : inputs) {
