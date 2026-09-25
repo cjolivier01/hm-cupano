@@ -271,13 +271,13 @@ __global__ void FusedBatchedDownsampleMask3(
 // We will launch this separately for each of the three Gaussian pyramids.
 template <typename T, typename F_T, int CHANNELS>
 __global__ void BatchedComputeLaplacianKernel(
-    const T* __restrict__ gaussHigh,
+    const T* gaussHigh,
     int highWidth,
     int highHeight,
     const T* __restrict__ gaussLow,
     int lowWidth,
     int lowHeight,
-    T* __restrict__ laplacian,
+    T* laplacian,
     int batchSize) {
   int b = blockIdx.z;
   if (b >= batchSize)
@@ -385,11 +385,11 @@ __global__ void BatchedComputeLaplacianKernel(
 // to the valid contributor with the highest alpha (similar to cudaBlend.cu behavior).
 template <typename T, typename F_T>
 __global__ void BatchedBlendKernel3(
-    const T* __restrict__ lap1,
-    const T* __restrict__ lap2,
-    const T* __restrict__ lap3,
+    const T* lap1,
+    const T* lap2,
+    const T* lap3,
     const T* __restrict__ mask, // [H×W×3], single (non‐batched) mask
-    T* __restrict__ blended, // output [batch × H × W × channels]
+    T* blended, // output [batch × H × W × channels]
     int width,
     int height,
     int batchSize,
@@ -548,14 +548,14 @@ __global__ void BatchedReconstructKernel(
     const T* __restrict__ lowerRes,
     int lowWidth,
     int lowHeight,
-    const T* __restrict__ lap,
+    const T* lap,
     int highWidth,
     int highHeight,
-    T* __restrict__ reconstruction,
+    T* reconstruction,
     int batchSize,
     int channels) {
   assert(lowerRes != reconstruction);
-  assert(lap != reconstruction);
+  // lap can equal reconstruction in destructive scratch mode.
 
   int b = blockIdx.z;
   if (b >= batchSize)
@@ -945,14 +945,16 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
       size_t sizeMask = static_cast<size_t>(w) * h * 3 * sizeof(T);
 
       // Allocate Laplacian and blend buffers
-      CUDA_CHECK(cudaMalloc((void**)&context.d_lap1[level], sizeImg));
-      context.allocation_size += sizeImg;
-      CUDA_CHECK(cudaMalloc((void**)&context.d_lap2[level], sizeImg));
-      context.allocation_size += sizeImg;
-      CUDA_CHECK(cudaMalloc((void**)&context.d_lap3[level], sizeImg));
-      context.allocation_size += sizeImg;
-      CUDA_CHECK(cudaMalloc((void**)&context.d_blend[level], sizeImg));
-      context.allocation_size += sizeImg;
+      if (!context.reuseInputs) {
+        CUDA_CHECK(cudaMalloc((void**)&context.d_lap1[level], sizeImg));
+        context.allocation_size += sizeImg;
+        CUDA_CHECK(cudaMalloc((void**)&context.d_lap2[level], sizeImg));
+        context.allocation_size += sizeImg;
+        CUDA_CHECK(cudaMalloc((void**)&context.d_lap3[level], sizeImg));
+        context.allocation_size += sizeImg;
+        CUDA_CHECK(cudaMalloc((void**)&context.d_blend[level], sizeImg));
+        context.allocation_size += sizeImg;
+      }
 
       if (level > 0) {
         // For levels > 0, allocate gauss and mask as well
@@ -964,8 +966,10 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
         context.allocation_size += sizeImg;
         CUDA_CHECK(cudaMalloc((void**)&context.d_gauss3[level], sizeImg));
         context.allocation_size += sizeImg;
-        CUDA_CHECK(cudaMalloc((void**)&context.d_reconstruct[level], sizeImg));
-        context.allocation_size += sizeImg;
+        if (!context.reuseInputs) {
+          CUDA_CHECK(cudaMalloc((void**)&context.d_reconstruct[level], sizeImg));
+          context.allocation_size += sizeImg;
+        }
       } else {
         // Level 0: pointers come from user
         context.d_maskPyr[0] = const_cast<T*>(d_mask);
@@ -975,6 +979,14 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
 
         // The output pointer will be used for reconstruction when level==0
         context.d_reconstruct[0] = d_output;
+      }
+      if (context.reuseInputs) {
+        context.d_lap1[level] = context.d_gauss1[level];
+        context.d_lap2[level] = context.d_gauss2[level];
+        context.d_lap3[level] = context.d_gauss3[level];
+        context.d_blend[level] = context.d_gauss1[level];
+        if (level > 0)
+          context.d_reconstruct[level] = context.d_blend[level];
       }
     }
   }
@@ -1154,9 +1166,14 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
   size_t lastSize =
       static_cast<size_t>(context.widths[last]) * context.heights[last] * channels * context.batchSize * sizeof(T);
 
-  CUDA_CHECK(cudaMemcpyAsync(context.d_lap1[last], context.d_gauss1[last], lastSize, cudaMemcpyDeviceToDevice, stream));
-  CUDA_CHECK(cudaMemcpyAsync(context.d_lap2[last], context.d_gauss2[last], lastSize, cudaMemcpyDeviceToDevice, stream));
-  CUDA_CHECK(cudaMemcpyAsync(context.d_lap3[last], context.d_gauss3[last], lastSize, cudaMemcpyDeviceToDevice, stream));
+  if (!context.reuseInputs) {
+    CUDA_CHECK(
+        cudaMemcpyAsync(context.d_lap1[last], context.d_gauss1[last], lastSize, cudaMemcpyDeviceToDevice, stream));
+    CUDA_CHECK(
+        cudaMemcpyAsync(context.d_lap2[last], context.d_gauss2[last], lastSize, cudaMemcpyDeviceToDevice, stream));
+    CUDA_CHECK(
+        cudaMemcpyAsync(context.d_lap3[last], context.d_gauss3[last], lastSize, cudaMemcpyDeviceToDevice, stream));
+  }
 
   // --------------- Blend the Laplacian pyramids ---------------
   for (int level = 0; level < context.numLevels; level++) {
@@ -1182,12 +1199,14 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
   assert(d_reconstruct);
 
   // Copy blended at coarsest level into d_reconstruct
-  CUDA_CHECK(cudaMemcpyAsync(
-      d_reconstruct,
-      context.d_blend[last],
-      static_cast<size_t>(context.widths[last]) * context.heights[last] * channels * context.batchSize * sizeof(T),
-      cudaMemcpyDeviceToDevice,
-      stream));
+  if (d_reconstruct != context.d_blend[last]) {
+    CUDA_CHECK(cudaMemcpyAsync(
+        d_reconstruct,
+        context.d_blend[last],
+        static_cast<size_t>(context.widths[last]) * context.heights[last] * channels * context.batchSize * sizeof(T),
+        cudaMemcpyDeviceToDevice,
+        stream));
+  }
 
   for (int level = context.numLevels - 2; level >= 0; level--) {
     int wH = context.widths[level];

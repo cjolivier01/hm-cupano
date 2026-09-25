@@ -30,7 +30,8 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
     const ControlMasks3& control_masks,
     bool quiet,
     int max_output_width,
-    bool minimize_blend)
+    bool minimize_blend,
+    bool compact_workspace)
     : minimize_blend_(minimize_blend && num_levels > 0) {
   if (!control_masks.is_valid()) {
     status_ = CudaStatus(cudaErrorFileNotFound, "Stitching masks (3‐image) were not able to be loaded");
@@ -134,7 +135,8 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
             seam_color.cols,
             seam_color.rows,
             num_levels,
-            /*batch_size=*/batch_size);
+            /*batch_size=*/batch_size,
+            /*reuse_inputs=*/compact_workspace);
   } else {
     // Hard-seam: single channel
     stitch_context_->cudaBlendHardSeam = std::make_unique<CudaMat<unsigned char>>(seam_indexed);
@@ -336,6 +338,12 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
       : cv::Rect(0, 0, stitch_context.cudaFull0->width(), stitch_context.cudaFull0->height());
   const int src_x = stitch_context.minimizes_blend ? write_roi.x - stitch_context.blend_roi_canvas.x : 0;
   const int src_y = stitch_context.minimizes_blend ? write_roi.y - stitch_context.blend_roi_canvas.y : 0;
+  if constexpr (std::is_same_v<T_pipeline, T_compute>) {
+    if (canvas->data_raw() == blended.data_raw()) {
+      assert(!stitch_context.minimizes_blend);
+      return std::move(canvas);
+    }
+  }
   const CudaStatus copy_status = copy_roi_batched<T_compute, T_pipeline>(
       blended.surface(),
       write_roi.width,
@@ -382,6 +390,19 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
           (std::is_same_v<T_input, Rgb10A2> && std::is_same_v<T_pipeline, half4> && std::is_same_v<T_compute, half4>),
       "Packed RGB10A2 inputs require half4 pipeline and compute types");
   CUDA_RETURN_IF_ERROR(status_);
+  if (!canvas) {
+    if constexpr (std::is_same_v<T_pipeline, T_compute>) {
+      if (!stitch_context_->is_hard_seam() && !stitch_context_->minimizes_blend &&
+          stitch_context_->laplacian_blend_context->reuseInputs) {
+        auto& scratch = *stitch_context_->cudaFull0;
+        canvas = std::make_unique<CudaMat<T_pipeline>>(scratch.data(), batch_size(), canvas_width(), canvas_height());
+      }
+    }
+    if (!canvas)
+      canvas = std::make_unique<CudaMat<T_pipeline>>(batch_size(), canvas_width(), canvas_height());
+    if (!canvas->is_valid())
+      return CudaStatus(cudaErrorMemoryAllocation, "Could not allocate panorama output");
+  }
   if (fused)
     return process_optimized(inputImage0, inputImage1, inputImage2, stream, std::move(canvas));
 

@@ -165,6 +165,10 @@ inline void displayPyramid(
 
 template <typename T>
 inline void CudaBatchLaplacianBlendContext<T>::displayPyramids(int channels, float scale, bool wait) const {
+  if (reuseInputs) {
+    printf("Intermediate pyramids are overwritten in compact mode.\n");
+    return;
+  }
   // Determine the OpenCV type from T and the number of channels.
   const int cvType = getCVTypeForPixel<T>(channels);
   if (cvType == -1) {
@@ -188,6 +192,10 @@ inline void CudaBatchLaplacianBlendContext<T>::displayPyramids(int channels, flo
 
 template <typename T>
 inline void CudaBatchLaplacianBlendContext3<T>::displayPyramids(int channels, float scale, bool wait) const {
+  if (reuseInputs) {
+    printf("Intermediate pyramids are overwritten in compact mode.\n");
+    return;
+  }
   // Determine the OpenCV type from T and the number of channels.
   const int cvType = getCVTypeForPixel<T>(channels);
   if (cvType == -1) {

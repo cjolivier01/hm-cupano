@@ -56,11 +56,17 @@ struct CudaBatchLaplacianBlendContext3 {
    * @param num_levels Number of pyramid levels to build.
    * @param batch_size Number of images in the batch.
    */
-  CudaBatchLaplacianBlendContext3(int image_width, int image_height, int max_levels, int batch_size)
+  CudaBatchLaplacianBlendContext3(
+      int image_width,
+      int image_height,
+      int max_levels,
+      int batch_size,
+      bool reuse_inputs = false)
       : numLevels(max_levels),
         imageWidth(image_width),
         imageHeight(image_height),
         batchSize(batch_size),
+        reuseInputs(reuse_inputs),
         widths(max_levels),
         heights(max_levels),
         d_gauss1(max_levels, nullptr),
@@ -96,17 +102,20 @@ struct CudaBatchLaplacianBlendContext3 {
    */
   ~CudaBatchLaplacianBlendContext3() {
     for (int level = 0; level < numLevels; level++) {
-      maybeCudaFree(d_lap1[level]);
-      maybeCudaFree(d_lap2[level]);
-      maybeCudaFree(d_lap3[level]);
-      maybeCudaFree(d_blend[level]);
+      if (!reuseInputs) {
+        maybeCudaFree(d_lap1[level]);
+        maybeCudaFree(d_lap2[level]);
+        maybeCudaFree(d_lap3[level]);
+        maybeCudaFree(d_blend[level]);
+      }
       if (level) {
         // Level 0 pointers are owned by user code (passed into the function each time)
         maybeCudaFree(d_gauss1[level]);
         maybeCudaFree(d_gauss2[level]);
         maybeCudaFree(d_gauss3[level]);
         maybeCudaFree(d_maskPyr[level]);
-        maybeCudaFree(d_reconstruct[level]);
+        if (!reuseInputs)
+          maybeCudaFree(d_reconstruct[level]);
       }
     }
   }
@@ -115,6 +124,8 @@ struct CudaBatchLaplacianBlendContext3 {
   const int imageWidth; ///< Width of the full-resolution image.
   const int imageHeight; ///< Height of the full-resolution image.
   const int batchSize; ///< Number of images in the batch.
+  // Destructive scratch mode: writable inputs must be refilled before every call.
+  const bool reuseInputs;
   size_t allocation_size{0}; ///< Total allocated device memory size (in bytes).
 
   std::vector<int> widths; ///< Width of images at each pyramid level.

@@ -4,6 +4,7 @@
 #include <opencv2/core.hpp>
 
 #include <cmath>
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -342,4 +343,53 @@ TEST(CudaPanoNMinimizeBlendTest, MultiSeamIntersectionMatchesFullBlend) {
   ASSERT_FALSE(full.empty());
   ASSERT_FALSE(mini.empty());
   expect_mats_near(full, mini, kTol);
+}
+
+namespace {
+template <typename Pixel>
+void check_compact_borrowed_4() {
+  constexpr int w = 97, h = 35, n = 4;
+  constexpr int canvas_width = w + 24 * (n - 1);
+  cv::Mat seam(h, canvas_width, CV_8U, cv::Scalar(0));
+  for (int x = 0; x < canvas_width; ++x)
+    seam.col(x).setTo(std::min(n - 1, x * n / canvas_width));
+  auto masks = make_masks({{w, h}, {w, h}, {w, h}, {w, h}}, {{0, 0}, {24, 0}, {48, 0}, {72, 0}}, seam);
+  for (int levels : {1, 4}) {
+    hm::pano::cuda::CudaStitchPanoN<Pixel, Pixel> reference(1, levels, masks, false, true, 0, false);
+    hm::pano::cuda::CudaStitchPanoN<Pixel, Pixel> compact(1, levels, masks, false, true, 0, true);
+    ASSERT_TRUE(reference.status().ok()) << reference.status().message();
+    ASSERT_TRUE(compact.status().ok()) << compact.status().message();
+    for (int frame = 0; frame < 3; ++frame) {
+      std::vector<std::unique_ptr<hm::CudaMat<Pixel>>> inputs;
+      std::vector<const hm::CudaMat<Pixel>*> ptrs;
+      for (int i = 0; i < n; ++i) {
+        cv::Mat host = make_pattern_image_f4(w, h, frame + i);
+        if (sizeof(Pixel) == 8)
+          host.convertTo(host, CV_16FC4);
+        inputs.push_back(std::make_unique<hm::CudaMat<Pixel>>(host));
+        ptrs.push_back(inputs.back().get());
+      }
+      auto expected = reference.process(ptrs, 0, nullptr);
+      ASSERT_TRUE(expected.ok()) << expected.status().message();
+      auto actual = compact.process(ptrs, 0, nullptr);
+      ASSERT_TRUE(actual.ok()) << actual.status().message();
+      CUDA_CHECK(cudaDeviceSynchronize());
+      auto owned = expected.ConsumeValueOrDie();
+      auto borrowed = actual.ConsumeValueOrDie();
+      EXPECT_EQ(borrowed->width(), canvas_width);
+      EXPECT_EQ(borrowed->height(), h);
+      cv::Mat a = owned->download(), b = borrowed->download();
+      // Compare raw bytes, including alpha and half precision rounding.
+      ASSERT_EQ(a.total() * a.elemSize(), b.total() * b.elemSize());
+      EXPECT_EQ(std::memcmp(a.data, b.data, a.total() * a.elemSize()), 0) << "frame=" << frame << " levels=" << levels;
+      // Destroy the non-owning wrapper before the next frame reuses scratch.
+    }
+  }
+}
+} // namespace
+TEST(CudaPanoNCompactTest, BorrowedOutputMatchesOwnedFloat4) {
+  check_compact_borrowed_4<float4>();
+}
+TEST(CudaPanoNCompactTest, BorrowedOutputMatchesOwnedHalf4) {
+  check_compact_borrowed_4<half4>();
 }

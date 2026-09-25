@@ -451,6 +451,10 @@ class CudaMat {
   /// @brief Returns the number of images in the batch.
   constexpr int batch_size() const;
 
+  bool owns_memory() const {
+    return owns_;
+  }
+
   constexpr int channels() const {
     return sizeof(T) / sizeof(BaseScalar_t<T>);
   }

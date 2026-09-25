@@ -377,6 +377,8 @@ cudaError_t cudaBatchedLaplacianBlendOptimized3(
     CudaBatchLaplacianBlendContext3<T>& context,
     int channels,
     cudaStream_t stream) {
+  if (context.reuseInputs)
+    return cudaErrorInvalidValue;
   // Initialize context if needed
   if (!context.initialized) {
     int maxLevels = context.numLevels;

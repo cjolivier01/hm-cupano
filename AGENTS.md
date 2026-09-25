@@ -46,5 +46,10 @@
 - External tools for config: Hugin/Enblend (`sudo apt-get install hugin hugin-tools enblend`).
 - Generate control points: `python scripts/create_control_points.py <left.mp4> <right.mp4>` before running demos.
 
-## Packed RGB10 panorama input
-- Packed `CudaMat<Rgb10A2>` inputs fuse RGB10 unpacking into remapping for half4 panoramas across 2/3/N cameras. Existing half4 inputs retain the staged path, and the three-camera `fused` argument retains its original route semantics. See `docs/low-memory-stitching.md`.
+## Low-memory panorama paths
+- `CudaStitchPano`, `CudaStitchPano3`, and `CudaStitchPanoN` accept opt-in `compact_workspace=false`. It reuses writable remap scratch through Gaussian, Laplacian, blend, and reconstruction lifetimes without changing precision, dimensions, pyramid levels, or arithmetic.
+- Low-level blend contexts expose `reuseInputs`; callers must refill writable input storage before each call and serialize context use. Intermediate pyramids no longer retain their original meanings; diagnostic display/dump entry points reject compact mode.
+- A null panorama output requests managed allocation. With equal pipeline/compute pixel types and full-canvas soft blending in compact mode, the returned `CudaMat` is a non-owning view valid until the next process call or stitcher destruction. Consume on the same stream; do not retain across reloads. Other cases return owned output.
+- The separate optimized three-image low-level blend API rejects compact contexts. The panorama fused remap route uses the supported reference blender. CUDA half4 hard/fused remap instantiations support half4 panorama linkage for all camera counts.
+
+- Packed `CudaMat<Rgb10A2>` inputs fuse RGB10 unpacking into remapping for half4 panoramas across 2/3/N cameras. Existing half4 inputs retain the staged path; three-camera `fused` keeps its original route semantics. `CudaMat::owns_memory()` identifies reusable owned output versus borrowed compact scratch. See `docs/low-memory-stitching.md`.

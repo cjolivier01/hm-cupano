@@ -106,6 +106,12 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
                                                             : cv::Rect(0, 0, blended.width(), blended.height());
   const int src_x = stitch_context.minimizes_blend ? write_roi.x - stitch_context.blend_roi_canvas.x : 0;
   const int src_y = stitch_context.minimizes_blend ? write_roi.y - stitch_context.blend_roi_canvas.y : 0;
+  if constexpr (std::is_same_v<T_pipeline, T_compute>) {
+    if (canvas->data_raw() == blended.data_raw()) {
+      assert(!stitch_context.minimizes_blend);
+      return std::move(canvas);
+    }
+  }
   const CudaStatus copy_status = copy_roi_batched<T_compute, T_pipeline>(
       blended.surface(),
       write_roi.width,

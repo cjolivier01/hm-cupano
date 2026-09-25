@@ -83,7 +83,8 @@ class CudaStitchPano {
       const ControlMasks& control_masks,
       bool quiet = false,
       bool minimize_blend = true,
-      [[maybe_unused]] int max_output_width = 0);
+      [[maybe_unused]] int max_output_width = 0,
+      bool compact_workspace = false);
 
   int canvas_width() const {
     return canvas_manager_->canvas_width();
@@ -113,6 +114,9 @@ class CudaStitchPano {
     return write_roi_canvas_;
   }
 
+  // A null canvas requests managed output. With compact_workspace, equal pipeline/compute pixel types,
+  // and full-canvas soft blending, this is a non-owning view of internal scratch. It remains valid only
+  // until the next process call or stitcher destruction. Consume it on the same stream before reuse.
   // Rgb10A2 inputs fuse unpacking into remapping and require half4 pipeline/compute types.
   // All inputs must remain alive until work on stream completes; calls sharing a stitcher are serialized.
   template <typename T_input = T_pipeline>

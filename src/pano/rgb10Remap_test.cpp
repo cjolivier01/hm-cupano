@@ -116,18 +116,19 @@ TEST(Rgb10Remap, TwoCameras) {
     m.positions = mn.positions;
     m.whole_seam_mask_image = 1 - mn.whole_seam_mask_indexed;
     for (int levels : {0, 1, 4})
-      for (bool minimize : {false, true}) {
-        SCOPED_TRACE(::testing::Message() << levels << '/' << minimize);
-        cuda::CudaStitchPano<half4, half4> a(B, levels, m, true, minimize, 0), b(B, levels, m, true, minimize, 0);
-        if (minimize && levels > 0 && !invalid_maps) {
-          ASSERT_TRUE(a.minimizes_blend());
-          ASSERT_TRUE(b.minimizes_blend());
+      for (bool minimize : {false, true})
+        for (bool compact : {false, true}) {
+          SCOPED_TRACE(::testing::Message() << levels << '/' << minimize << '/' << compact);
+          cuda::CudaStitchPano<half4, half4> a(B, levels, m, true, minimize, 0, compact),
+              b(B, levels, m, true, minimize, 0, compact);
+          if (minimize && levels > 0 && !invalid_maps) {
+            ASSERT_TRUE(a.minimizes_blend());
+            ASSERT_TRUE(b.minimizes_blend());
+          }
+          parity(a, b, 2, [](auto& pano, const auto& inputs, auto stream) {
+            return pano.process(*inputs[0], *inputs[1], stream, nullptr);
+          });
         }
-        parity(a, b, 2, [](auto& pano, const auto& inputs, auto stream) {
-          auto canvas = std::make_unique<CudaMat<half4>>(B, pano.canvas_width(), pano.canvas_height());
-          return pano.process(*inputs[0], *inputs[1], stream, std::move(canvas));
-        });
-      }
   }
 }
 TEST(Rgb10Remap, ThreeCameras) {
@@ -144,18 +145,19 @@ TEST(Rgb10Remap, ThreeCameras) {
     m.whole_seam_mask_image = mn.whole_seam_mask_indexed;
     for (bool fused : {false, true})
       for (int levels : {0, 1, 4})
-        for (bool minimize : {false, true}) {
-          SCOPED_TRACE(::testing::Message() << levels << '/' << minimize);
-          cuda::CudaStitchPano3<half4, half4> a(B, levels, m, true, 0, minimize), b(B, levels, m, true, 0, minimize);
-          if (minimize && levels > 0 && !invalid_maps) {
-            ASSERT_TRUE(a.minimizes_blend());
-            ASSERT_TRUE(b.minimizes_blend());
+        for (bool minimize : {false, true})
+          for (bool compact : {false, true}) {
+            SCOPED_TRACE(::testing::Message() << levels << '/' << minimize << '/' << compact);
+            cuda::CudaStitchPano3<half4, half4> a(B, levels, m, true, 0, minimize, compact),
+                b(B, levels, m, true, 0, minimize, compact);
+            if (minimize && levels > 0 && !invalid_maps) {
+              ASSERT_TRUE(a.minimizes_blend());
+              ASSERT_TRUE(b.minimizes_blend());
+            }
+            parity(a, b, 3, [fused](auto& pano, const auto& inputs, auto stream) {
+              return pano.process(*inputs[0], *inputs[1], *inputs[2], stream, nullptr, fused);
+            });
           }
-          parity(a, b, 3, [fused](auto& pano, const auto& inputs, auto stream) {
-            auto canvas = std::make_unique<CudaMat<half4>>(B, pano.canvas_width(), pano.canvas_height());
-            return pano.process(*inputs[0], *inputs[1], *inputs[2], stream, std::move(canvas), fused);
-          });
-        }
   }
 }
 TEST(Rgb10Remap, NCameras) {
@@ -163,18 +165,19 @@ TEST(Rgb10Remap, NCameras) {
     for (int n : {2, 3, 4, 8}) {
       auto m = masks_n(n, invalid_maps);
       for (int levels : {0, 1, 4})
-        for (bool minimize : {false, true}) {
-          SCOPED_TRACE(::testing::Message() << n << '/' << levels << '/' << minimize);
-          cuda::CudaStitchPanoN<half4, half4> a(B, levels, m, minimize, true, 0), b(B, levels, m, minimize, true, 0);
-          if (minimize && levels > 0 && !invalid_maps && n <= 4) {
-            ASSERT_TRUE(a.minimizes_blend());
-            ASSERT_TRUE(b.minimizes_blend());
+        for (bool minimize : {false, true})
+          for (bool compact : {false, true}) {
+            SCOPED_TRACE(::testing::Message() << n << '/' << levels << '/' << minimize << '/' << compact);
+            cuda::CudaStitchPanoN<half4, half4> a(B, levels, m, minimize, true, 0, compact),
+                b(B, levels, m, minimize, true, 0, compact);
+            if (minimize && levels > 0 && !invalid_maps && n <= 4) {
+              ASSERT_TRUE(a.minimizes_blend());
+              ASSERT_TRUE(b.minimizes_blend());
+            }
+            parity(a, b, n, [](auto& pano, const auto& inputs, auto stream) {
+              return pano.process(inputs, stream, nullptr);
+            });
           }
-          parity(a, b, n, [](auto& pano, const auto& inputs, auto stream) {
-            auto canvas = std::make_unique<CudaMat<half4>>(B, pano.canvas_width(), pano.canvas_height());
-            return pano.process(inputs, stream, std::move(canvas));
-          });
-        }
     }
   }
 }

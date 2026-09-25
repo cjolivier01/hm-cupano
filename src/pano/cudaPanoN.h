@@ -37,7 +37,7 @@ struct StitchingContextN {
   std::vector<std::unique_ptr<CudaMat<T_compute>>> cudaFull; // size N
   // Cached raw pointers to cudaFull buffers for blending (length N).
   std::vector<const BaseScalar_t<T_compute>*> cudaFull_raw;
-  // Soft seam blend output (separate from inputs so cudaFull buffers never get "contaminated" by output).
+  // Soft seam output; compact mode borrows the first remapped input after its last use.
   std::unique_ptr<CudaMat<T_compute>> cudaBlendOut;
   // Soft seam mask: [H x W x N] base scalars (not batched)
   std::unique_ptr<BaseScalar_t<T_compute>, CudaFreeDeleter<BaseScalar_t<T_compute>>> cudaBlendSoftSeam;
@@ -87,7 +87,8 @@ class CudaStitchPanoN {
       const ControlMasksN& control_masks,
       bool minimize_blend,
       bool quiet,
-      int max_output_width = 0);
+      int max_output_width = 0,
+      bool compact_workspace = false);
   int canvas_width() const {
     return canvas_manager_->canvas_width();
   }
@@ -111,6 +112,9 @@ class CudaStitchPanoN {
   }
 
   // Inputs are pointers to N CudaMat<T_pipeline> with same batch.
+  // A null canvas requests managed output. With compact_workspace, equal pipeline/compute pixel types,
+  // and full-canvas soft blending, this is a non-owning view of internal scratch. It remains valid only
+  // until the next process call or stitcher destruction. Consume it on the same stream before reuse.
   // Rgb10A2 inputs fuse unpacking into remapping and require half4 pipeline/compute types.
   // All inputs must remain alive until work on stream completes; calls sharing a stitcher are serialized.
   template <typename T_input = T_pipeline>
@@ -151,6 +155,7 @@ class CudaStitchPanoN {
  private:
   std::unique_ptr<StitchingContextN<T_pipeline, T_compute>> stitch_context_;
   std::unique_ptr<CanvasManagerN> canvas_manager_;
+  bool compact_workspace_{false};
   bool minimize_blend_{false};
   cv::Rect blend_roi_canvas_{};
   cv::Rect write_roi_canvas_{};
