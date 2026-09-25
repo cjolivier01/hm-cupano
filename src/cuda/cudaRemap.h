@@ -114,7 +114,7 @@ cudaError_t batched_remap_kernel_ex_offset_with_dest_map(
  * All pointer arrays (`d_inputs`, `d_mapX_ptrs`, `d_mapY_ptrs`, `d_offsets`, `d_sizes`) must live in
  * device memory and have length `n_images`.
  */
-template <typename T>
+template <typename T, typename T_out = T>
 cudaError_t batched_remap_hard_seam_kernel_n(
     const CudaSurface<T>* d_inputs,
     const unsigned short* const* d_mapX_ptrs,
@@ -123,6 +123,6 @@ cudaError_t batched_remap_hard_seam_kernel_n(
     const int2* d_sizes,
     int n_images,
     const unsigned char* dest_image_map,
-    CudaSurface<T> dest,
+    CudaSurface<T_out> dest,
     int batchSize,
     cudaStream_t stream);

@@ -33,6 +33,13 @@ struct half4 {
 };
 #endif
 
+// Packed NVIDIA RGB10A2: R occupies bits 0..9, G 10..19, B 20..29.
+// Source alpha is ignored: panorama alpha represents mapping validity.
+struct Rgb10A2 {
+  uint32_t value;
+};
+static_assert(sizeof(Rgb10A2) == 4, "RGB10A2 must remain packed");
+
 // USHORT types are typically provided by CUDA as "ushort3", "ushort4" etc.
 // If not available, you could define your own similar to half3/half4.
 #if GPU_HAS_BF16
@@ -69,6 +76,11 @@ struct bfloat16_4 {
  */
 template <typename T>
 struct BaseScalar; // no definition for the primary template
+
+template <>
+struct BaseScalar<Rgb10A2> {
+  using type = uint32_t;
+};
 
 // --- 1-channel types ---
 template <>

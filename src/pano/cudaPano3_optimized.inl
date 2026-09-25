@@ -17,10 +17,11 @@ namespace cuda {
  * This implementation significantly reduces kernel launches and memory bandwidth
  */
 template <typename T_pipeline, typename T_compute>
+template <typename T_input>
 CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T_compute>::process_impl_optimized(
-    const CudaMat<T_pipeline>& inputImage0,
-    const CudaMat<T_pipeline>& inputImage1,
-    const CudaMat<T_pipeline>& inputImage2,
+    const CudaMat<T_input>& inputImage0,
+    const CudaMat<T_input>& inputImage1,
+    const CudaMat<T_input>& inputImage2,
     StitchingContext3<T_pipeline, T_compute>& stitch_context,
     const CanvasManager3& canvas_manager,
     cudaStream_t stream,
@@ -121,11 +122,12 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
 }
 
 template <typename T_pipeline, typename T_compute>
+template <typename T_input>
 CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T_compute>::
     process_impl_optimized_current(
-        const CudaMat<T_pipeline>& inputImage0,
-        const CudaMat<T_pipeline>& inputImage1,
-        const CudaMat<T_pipeline>& inputImage2,
+        const CudaMat<T_input>& inputImage0,
+        const CudaMat<T_input>& inputImage1,
+        const CudaMat<T_input>& inputImage2,
         cudaStream_t stream,
         std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
   return process_impl_optimized(
@@ -136,10 +138,11 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
  * Updated process method to use optimized implementation
  */
 template <typename T_pipeline, typename T_compute>
+template <typename T_input>
 CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T_compute>::process_optimized(
-    const CudaMat<T_pipeline>& inputImage0,
-    const CudaMat<T_pipeline>& inputImage1,
-    const CudaMat<T_pipeline>& inputImage2,
+    const CudaMat<T_input>& inputImage0,
+    const CudaMat<T_input>& inputImage1,
+    const CudaMat<T_input>& inputImage2,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
   CUDA_RETURN_IF_ERROR(status_);

@@ -72,12 +72,13 @@ enum CudaPixelType {
   CUDA_PIXEL_HALF1, ///< 16-bit float (half), 1 channel (__half).
   CUDA_PIXEL_HALF3, ///< 16-bit float (half), 3 channels (half3).
   CUDA_PIXEL_HALF4, ///< 16-bit float (half), 4 channels (custom half4).
-  // BF16 pixel types are only available when the backend supports BF16.
+// BF16 pixel types are only available when the backend supports BF16.
 #if GPU_HAS_BF16
   CUDA_PIXEL_BF16_1, ///< 16-bit bfloat, 1 channel (gpu_bfloat16).
   CUDA_PIXEL_BF16_3, ///< 16-bit bfloat, 3 channels (bfloat16_3).
-  CUDA_PIXEL_BF16_4  ///< 16-bit bfloat, 4 channels (bfloat16_4).
+  CUDA_PIXEL_BF16_4, ///< 16-bit bfloat, 4 channels (bfloat16_4).
 #endif
+  CUDA_PIXEL_RGB10A2, ///< Packed 10-bit RGB; alpha is ignored by remapping.
 };
 
 /**
@@ -128,6 +129,10 @@ template <CudaPixelType T>
 struct CudaPixelTypeToCudaType; // Primary template declaration (no definition).
 
 // Specializations:
+template <>
+struct CudaPixelTypeToCudaType<CUDA_PIXEL_RGB10A2> {
+  using type = Rgb10A2;
+};
 
 template <>
 struct CudaPixelTypeToCudaType<CUDA_PIXEL_UCHAR1> {
@@ -226,6 +231,10 @@ struct CudaPixelTypeToCudaType<CUDA_PIXEL_BF16_4> {
 //
 template <typename T>
 struct CudaTypeToPixelType;
+template <>
+struct CudaTypeToPixelType<Rgb10A2> {
+  static constexpr CudaPixelType value = CUDA_PIXEL_RGB10A2;
+};
 
 // --- 1-channel types ---
 template <>

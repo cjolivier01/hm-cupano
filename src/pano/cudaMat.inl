@@ -27,6 +27,7 @@ inline int cudaPixelTypeChannels(CudaPixelType fmt) {
     case CUDA_PIXEL_USHORT4:
       return 4;
     // Integer pixel types.
+    case CUDA_PIXEL_RGB10A2:
     case CUDA_PIXEL_INT1:
       return 1;
     case CUDA_PIXEL_INT3:

@@ -289,3 +289,9 @@ filegroup(
     ]),
     visibility = ["//visibility:public"],
 )
+
+cc_test(
+    name = "rgb10Remap_test",
+    srcs = ["rgb10Remap_test.cpp"],
+    deps = [":cuda_pano", ":cuda_pano_n", "@googletest//:gtest_main"],
+)

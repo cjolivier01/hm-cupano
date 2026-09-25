@@ -207,9 +207,10 @@ CudaStatus write_mask_pyramid_level(
 } // namespace
 
 template <typename T_pipeline, typename T_compute>
+template <typename T_input>
 CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_compute>::process_impl(
-    const CudaMat<T_pipeline>& inputImage1,
-    const CudaMat<T_pipeline>& inputImage2,
+    const CudaMat<T_input>& inputImage1,
+    const CudaMat<T_input>& inputImage2,
     StitchingContext<T_pipeline, T_compute>& stitch_context,
     const CanvasManager& canvas_manager,
     cudaStream_t stream,
@@ -219,8 +220,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
   assert(inputImage2.batch_size() == stitch_context.batch_size());
   assert(canvas->batch_size() == stitch_context.batch_size());
 
-  const T_pipeline default_pixel{};
-  const std::array<const CudaMat<T_pipeline>*, 2> inputs = {&inputImage1, &inputImage2};
+  const T_input default_pixel{};
+  const std::array<const CudaMat<T_input>*, 2> inputs = {&inputImage1, &inputImage2};
   const std::array<const CudaMat<uint16_t>*, 2> remap_x = {
       stitch_context.remap_1_x.get(), stitch_context.remap_2_x.get()};
   const std::array<const CudaMat<uint16_t>*, 2> remap_y = {
@@ -332,9 +333,10 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
 }
 
 template <typename T_pipeline, typename T_compute>
+template <typename T_input>
 CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_compute>::process_impl_current(
-    const CudaMat<T_pipeline>& inputImage1,
-    const CudaMat<T_pipeline>& inputImage2,
+    const CudaMat<T_input>& inputImage1,
+    const CudaMat<T_input>& inputImage2,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
   return process_impl(inputImage1, inputImage2, *stitch_context_, *canvas_manager_, stream, std::move(canvas));
@@ -381,11 +383,16 @@ CudaStatus CudaStitchPano<T_pipeline, T_compute>::dump_soft_blend_pyramid(
 }
 
 template <typename T_pipeline, typename T_compute>
+template <typename T_input>
 CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_compute>::process(
-    const CudaMat<T_pipeline>& inputImage1,
-    const CudaMat<T_pipeline>& inputImage2,
+    const CudaMat<T_input>& inputImage1,
+    const CudaMat<T_input>& inputImage2,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
+  static_assert(
+      std::is_same_v<T_input, T_pipeline> ||
+          (std::is_same_v<T_input, Rgb10A2> && std::is_same_v<T_pipeline, half4> && std::is_same_v<T_compute, half4>),
+      "Packed RGB10A2 inputs require half4 pipeline and compute types");
   CUDA_RETURN_IF_ERROR(status_);
   auto result = process_impl_current(inputImage1, inputImage2, stream, std::move(canvas));
   if (!result.ok()) {

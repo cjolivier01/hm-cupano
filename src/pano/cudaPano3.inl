@@ -164,8 +164,9 @@ inline constexpr size_t num_channels() {
 } // namespace tmp3
 
 template <typename T_pipeline, typename T_compute>
+template <typename T_input>
 CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_blending(
-    const CudaMat<T_pipeline>& inputImage,
+    const CudaMat<T_input>& inputImage,
     const CudaMat<uint16_t>& map_x,
     const CudaMat<uint16_t>& map_y,
     CudaMat<T_compute>& dest_canvas,
@@ -174,7 +175,7 @@ CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_blending
     int batch_size,
     cudaStream_t stream) {
   CudaStatus cuerr;
-  const T_pipeline default_pixel = T_pipeline{};
+  const T_input default_pixel = T_input{};
   assert(map_x.width() == map_y.width() && map_x.height() == map_y.height());
   // SOFT-SEAM: remap image0 onto canvas
   cuerr = batched_remap_kernel_ex_offset(
@@ -194,8 +195,9 @@ CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_blending
 }
 
 template <typename T_pipeline, typename T_compute>
+template <typename T_input>
 CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_hard_seam(
-    const CudaMat<T_pipeline>& inputImage,
+    const CudaMat<T_input>& inputImage,
     const CudaMat<uint16_t>& map_x,
     const CudaMat<uint16_t>& map_y,
     uint8_t canvas_position_image_index,
@@ -206,7 +208,7 @@ CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_hard_sea
     int batch_size,
     cudaStream_t stream) {
   CudaStatus cuerr;
-  const T_pipeline default_pixel = T_pipeline{};
+  const T_input default_pixel = T_input{};
   assert(map_x.width() == map_y.width() && map_x.height() == map_y.height());
 
   cuerr = batched_remap_kernel_ex_offset_with_dest_map(
@@ -228,10 +230,11 @@ CudaStatus CudaStitchPano3<T_pipeline, T_compute>::remap_to_surface_for_hard_sea
 }
 
 template <typename T_pipeline, typename T_compute>
+template <typename T_input>
 CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T_compute>::process_impl(
-    const CudaMat<T_pipeline>& inputImage0,
-    const CudaMat<T_pipeline>& inputImage1,
-    const CudaMat<T_pipeline>& inputImage2,
+    const CudaMat<T_input>& inputImage0,
+    const CudaMat<T_input>& inputImage1,
+    const CudaMat<T_input>& inputImage2,
     StitchingContext3<T_pipeline, T_compute>& stitch_context,
     const CanvasManager3& canvas_manager,
     cudaStream_t stream,
@@ -242,7 +245,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
   assert(inputImage2.batch_size() == stitch_context.batch_size());
   assert(canvas->batch_size() == stitch_context.batch_size());
 
-  const std::array<const CudaMat<T_pipeline>*, 3> inputs = {&inputImage0, &inputImage1, &inputImage2};
+  const std::array<const CudaMat<T_input>*, 3> inputs = {&inputImage0, &inputImage1, &inputImage2};
   const std::array<const CudaMat<uint16_t>*, 3> remap_x = {
       stitch_context.remap_0_x.get(), stitch_context.remap_1_x.get(), stitch_context.remap_2_x.get()};
   const std::array<const CudaMat<uint16_t>*, 3> remap_y = {
@@ -283,7 +286,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
   }
   if (stitch_context.minimizes_blend) {
     CUDA_RETURN_IF_ERROR(render_hard_seam());
-    const T_pipeline default_pixel{};
+    const T_input default_pixel{};
     for (size_t i = 0; i < inputs.size(); ++i) {
       const blend_roi::RemapRoi& remap_roi = stitch_context.remap_rois[i];
       CUDA_RETURN_IF_ERROR(batched_remap_kernel_ex_offset_roi(
@@ -349,10 +352,11 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
 }
 
 template <typename T_pipeline, typename T_compute>
+template <typename T_input>
 CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T_compute>::process_impl_current(
-    const CudaMat<T_pipeline>& inputImage0,
-    const CudaMat<T_pipeline>& inputImage1,
-    const CudaMat<T_pipeline>& inputImage2,
+    const CudaMat<T_input>& inputImage0,
+    const CudaMat<T_input>& inputImage1,
+    const CudaMat<T_input>& inputImage2,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
   return process_impl(
@@ -365,16 +369,21 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
  *  - Sync stream, update status if needed.
  */
 template <typename T_pipeline, typename T_compute>
+template <typename T_input>
 CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T_compute>::process(
-    const CudaMat<T_pipeline>& inputImage0,
-    const CudaMat<T_pipeline>& inputImage1,
-    const CudaMat<T_pipeline>& inputImage2,
+    const CudaMat<T_input>& inputImage0,
+    const CudaMat<T_input>& inputImage1,
+    const CudaMat<T_input>& inputImage2,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas,
     bool fused) {
-  if (fused) {
+  static_assert(
+      std::is_same_v<T_input, T_pipeline> ||
+          (std::is_same_v<T_input, Rgb10A2> && std::is_same_v<T_pipeline, half4> && std::is_same_v<T_compute, half4>),
+      "Packed RGB10A2 inputs require half4 pipeline and compute types");
+  CUDA_RETURN_IF_ERROR(status_);
+  if (fused)
     return process_optimized(inputImage0, inputImage1, inputImage2, stream, std::move(canvas));
-  }
 
   CUDA_RETURN_IF_ERROR(status_);
   auto result = process_impl_current(inputImage0, inputImage1, inputImage2, stream, std::move(canvas));

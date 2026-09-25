@@ -74,7 +74,7 @@ inline CudaStatus launchFusedRemapToFullKernel3(
  * Launch fused kernel for hard seam mode
  * Processes all three images in a single pass based on mask
  */
-template <typename T_pipeline>
+template <typename T_pipeline, typename T_output = T_pipeline>
 CudaStatus launchFusedRemapHardSeam3(
     const CudaMat<T_pipeline>& inputImage0,
     const CudaMat<T_pipeline>& inputImage1,
@@ -86,7 +86,7 @@ CudaStatus launchFusedRemapHardSeam3(
     const CudaMat<uint16_t>& remap_2_x,
     const CudaMat<uint16_t>& remap_2_y,
     const CudaMat<unsigned char>& hardSeamMask,
-    CudaMat<T_pipeline>& canvas,
+    CudaMat<T_output>& canvas,
     const CanvasManager3& canvas_manager,
     cudaStream_t stream);
 
