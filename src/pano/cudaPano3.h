@@ -82,7 +82,8 @@ class CudaStitchPano3 {
       const ControlMasks3& control_masks,
       bool quiet = false,
       int max_output_width = 0,
-      bool minimize_blend = true);
+      bool minimize_blend = true,
+      bool compact_workspace = false);
 
   int canvas_width() const {
     return canvas_manager_->canvas_width();
@@ -122,6 +123,9 @@ class CudaStitchPano3 {
    * three “full” images + 3‐channel mask.  If hard‐seam, it instead calls
    * a conditional “dest_map” remap.  Finally returns the updated canvas.
    */
+  // A null canvas requests managed output. With compact_workspace, equal pipeline/compute pixel types,
+  // and full-canvas soft blending, this is a non-owning view of internal scratch. It remains valid only
+  // until the next process call or stitcher destruction. Consume it on the same stream before reuse.
   // Rgb10A2 inputs fuse unpacking into remapping and require half4 pipeline/compute types.
   // All inputs must remain alive until work on stream completes; calls sharing a stitcher are serialized.
   template <typename T_input = T_pipeline>

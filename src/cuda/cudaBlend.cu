@@ -365,13 +365,13 @@ __global__ void BatchedDownsampleKernelMask(
 #ifdef EXTRA_ALPHA_CHECKS
 template <typename T, typename F_T>
 __global__ void BatchedComputeLaplacianKernel(
-    const T* __restrict__ gaussHigh,
+    const T* gaussHigh,
     int highWidth,
     int highHeight,
     const T* __restrict__ gaussLow,
     int lowWidth,
     int lowHeight,
-    T* __restrict__ laplacian,
+    T* laplacian,
     int batchSize,
     int channels) {
   int b = blockIdx.z;
@@ -485,13 +485,13 @@ __global__ void BatchedComputeLaplacianKernel(
 #else
 template <typename T, typename F_T>
 __global__ void BatchedComputeLaplacianKernel(
-    const T* __restrict__ gaussHigh,
+    const T* gaussHigh,
     int highWidth,
     int highHeight,
     const T* __restrict__ gaussLow,
     int lowWidth,
     int lowHeight,
-    T* __restrict__ laplacian,
+    T* laplacian,
     int batchSize,
     int channels) {
   int b = blockIdx.z;
@@ -547,10 +547,10 @@ __global__ void BatchedComputeLaplacianKernel(
 // (For alpha in RGBA, a simple weighted blend is performed.)
 template <typename T, typename F_T>
 __global__ void BatchedBlendKernel(
-    const T* __restrict__ lap1,
-    const T* __restrict__ lap2,
+    const T* lap1,
+    const T* lap2,
     const T* __restrict__ mask,
-    T* __restrict__ blended,
+    T* blended,
     int width,
     int height,
     int batchSize,
@@ -611,14 +611,14 @@ __global__ void BatchedReconstructKernel(
     const T* __restrict__ lowerRes,
     int lowWidth,
     int lowHeight,
-    const T* __restrict__ lap,
+    const T* lap,
     int highWidth,
     int highHeight,
-    T* __restrict__ reconstruction,
+    T* reconstruction,
     int batchSize,
     int channels) {
   assert(lowerRes != reconstruction);
-  assert(lap != reconstruction);
+  // lap may equal reconstruction in destructive scratch mode.
 
   int b = blockIdx.z;
   if (b >= batchSize)
@@ -928,12 +928,14 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
       size_t sizeRGB = context.widths[level] * context.heights[level] * channels * context.batchSize * sizeof(T);
       size_t sizeMask = context.widths[level] * context.heights[level] * sizeof(T);
       assert(sizeRGB && sizeMask);
-      CUDA_CHECK(cudaMalloc((void**)&context.d_lap1[level], sizeRGB));
-      context.allocation_size += sizeRGB;
-      CUDA_CHECK(cudaMalloc((void**)&context.d_lap2[level], sizeRGB));
-      context.allocation_size += sizeRGB;
-      CUDA_CHECK(cudaMalloc((void**)&context.d_blend[level], sizeRGB));
-      context.allocation_size += sizeRGB;
+      if (!context.reuseInputs) {
+        CUDA_CHECK(cudaMalloc((void**)&context.d_lap1[level], sizeRGB));
+        context.allocation_size += sizeRGB;
+        CUDA_CHECK(cudaMalloc((void**)&context.d_lap2[level], sizeRGB));
+        context.allocation_size += sizeRGB;
+        CUDA_CHECK(cudaMalloc((void**)&context.d_blend[level], sizeRGB));
+        context.allocation_size += sizeRGB;
+      }
       if (level > 0) {
         CUDA_CHECK(cudaMalloc((void**)&context.d_maskPyr[level], sizeMask));
         context.allocation_size += sizeMask;
@@ -945,6 +947,11 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
         context.d_maskPyr[0] = const_cast<T*>(d_mask);
         context.d_gauss1[0] = const_cast<T*>(d_image1);
         context.d_gauss2[0] = const_cast<T*>(d_image2);
+      }
+      if (context.reuseInputs) {
+        context.d_lap1[level] = context.d_gauss1[level];
+        context.d_lap2[level] = context.d_gauss2[level];
+        context.d_blend[level] = context.d_gauss1[level];
       }
     }
   }
@@ -1047,18 +1054,20 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     CUDA_CHECK(cudaGetLastError());
   }
   int last = context.numLevels - 1;
-  CUDA_CHECK(cudaMemcpyAsync(
-      context.d_lap1[last],
-      context.d_gauss1[last],
-      context.widths[last] * context.heights[last] * channels * sizeof(T) * context.batchSize,
-      cudaMemcpyDeviceToDevice,
-      stream));
-  CUDA_CHECK(cudaMemcpyAsync(
-      context.d_lap2[last],
-      context.d_gauss2[last],
-      context.widths[last] * context.heights[last] * channels * sizeof(T) * context.batchSize,
-      cudaMemcpyDeviceToDevice,
-      stream));
+  if (!context.reuseInputs) {
+    CUDA_CHECK(cudaMemcpyAsync(
+        context.d_lap1[last],
+        context.d_gauss1[last],
+        context.widths[last] * context.heights[last] * channels * sizeof(T) * context.batchSize,
+        cudaMemcpyDeviceToDevice,
+        stream));
+    CUDA_CHECK(cudaMemcpyAsync(
+        context.d_lap2[last],
+        context.d_gauss2[last],
+        context.widths[last] * context.heights[last] * channels * sizeof(T) * context.batchSize,
+        cudaMemcpyDeviceToDevice,
+        stream));
+  }
 
   // 3. Blend the Laplacian pyramids.
   for (int level = 0; level < context.numLevels; level++) {
@@ -1083,8 +1092,12 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
   if (!context.initialized) {
     if (context.numLevels > 1) {
       size_t sz = context.widths[last] * context.heights[last] * channels * sizeof(T) * context.batchSize;
-      CUDA_CHECK(cudaMalloc((void**)&d_reconstruct, sz));
-      context.allocation_size += sz;
+      if (context.reuseInputs) {
+        d_reconstruct = context.d_blend[last];
+      } else {
+        CUDA_CHECK(cudaMalloc((void**)&d_reconstruct, sz));
+        context.allocation_size += sz;
+      }
       assert(last);
       assert(!context.d_resonstruct[last]);
       context.d_resonstruct[last] = d_reconstruct;
@@ -1095,22 +1108,28 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     }
   } else {
     assert(last >= 0);
-    d_reconstruct = context.d_resonstruct[last];
+    d_reconstruct = last == 0 ? d_output : context.d_resonstruct[last];
     assert(d_reconstruct);
   }
-  CUDA_CHECK(cudaMemcpyAsync(
-      d_reconstruct,
-      context.d_blend[last],
-      context.widths[last] * context.heights[last] * channels * sizeof(T) * context.batchSize,
-      cudaMemcpyDeviceToDevice,
-      stream));
+  if (d_reconstruct != context.d_blend[last]) {
+    CUDA_CHECK(cudaMemcpyAsync(
+        d_reconstruct,
+        context.d_blend[last],
+        context.widths[last] * context.heights[last] * channels * sizeof(T) * context.batchSize,
+        cudaMemcpyDeviceToDevice,
+        stream));
+  }
   for (int level = context.numLevels - 2; level >= 0; level--) {
     T* d_temp = nullptr;
     size_t highSize = context.widths[level] * context.heights[level] * channels * sizeof(T) * context.batchSize;
     if (!context.initialized) {
       if (level > 0) {
-        CUDA_CHECK(cudaMalloc((void**)&d_temp, highSize));
-        context.allocation_size += highSize;
+        if (context.reuseInputs) {
+          d_temp = context.d_blend[level];
+        } else {
+          CUDA_CHECK(cudaMalloc((void**)&d_temp, highSize));
+          context.allocation_size += highSize;
+        }
         assert(!context.d_resonstruct[level]);
         context.d_resonstruct[level] = d_temp;
       } else {

@@ -29,8 +29,9 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
     const ControlMasksN& control_masks,
     bool minimize_blend,
     bool quiet,
-    int max_output_width)
-    : minimize_blend_(minimize_blend && num_levels > 0) {
+    int max_output_width,
+    bool compact_workspace)
+    : compact_workspace_(compact_workspace), minimize_blend_(minimize_blend && num_levels > 0) {
   if (!control_masks.is_valid()) {
     status_ = CudaStatus(cudaErrorFileNotFound, "Stitching masks (N-image) could not be loaded");
     return;
@@ -140,44 +141,49 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
       stitch_context_->cudaFull[i] = std::make_unique<CudaMat<T_compute>>(batch_size, blend_w, blend_h);
       stitch_context_->cudaFull_raw[i] = stitch_context_->cudaFull[i]->data_raw();
     }
-    stitch_context_->cudaBlendOut = std::make_unique<CudaMat<T_compute>>(batch_size, blend_w, blend_h);
+    if (compact_workspace) {
+      stitch_context_->cudaBlendOut =
+          std::make_unique<CudaMat<T_compute>>(stitch_context_->cudaFull[0]->data(), batch_size, blend_w, blend_h);
+    } else {
+      stitch_context_->cudaBlendOut = std::make_unique<CudaMat<T_compute>>(batch_size, blend_w, blend_h);
+    }
 
     // Create the blending context for this N once; buffers are allocated lazily on first blend.
     switch (n) {
       case 2:
         stitch_context_->laplacian_blend_context
             .template emplace<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, 2>>(
-                blend_w, blend_h, num_levels, batch_size);
+                blend_w, blend_h, num_levels, batch_size, compact_workspace);
         break;
       case 3:
         stitch_context_->laplacian_blend_context
             .template emplace<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, 3>>(
-                blend_w, blend_h, num_levels, batch_size);
+                blend_w, blend_h, num_levels, batch_size, compact_workspace);
         break;
       case 4:
         stitch_context_->laplacian_blend_context
             .template emplace<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, 4>>(
-                blend_w, blend_h, num_levels, batch_size);
+                blend_w, blend_h, num_levels, batch_size, compact_workspace);
         break;
       case 5:
         stitch_context_->laplacian_blend_context
             .template emplace<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, 5>>(
-                blend_w, blend_h, num_levels, batch_size);
+                blend_w, blend_h, num_levels, batch_size, compact_workspace);
         break;
       case 6:
         stitch_context_->laplacian_blend_context
             .template emplace<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, 6>>(
-                blend_w, blend_h, num_levels, batch_size);
+                blend_w, blend_h, num_levels, batch_size, compact_workspace);
         break;
       case 7:
         stitch_context_->laplacian_blend_context
             .template emplace<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, 7>>(
-                blend_w, blend_h, num_levels, batch_size);
+                blend_w, blend_h, num_levels, batch_size, compact_workspace);
         break;
       case 8:
         stitch_context_->laplacian_blend_context
             .template emplace<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, 8>>(
-                blend_w, blend_h, num_levels, batch_size);
+                blend_w, blend_h, num_levels, batch_size, compact_workspace);
         break;
       default:
         status_ = CudaStatus(cudaErrorInvalidValue, "Unsupported N for blend (supported 2..8)");
@@ -416,8 +422,18 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T
           (std::is_same_v<T_input, Rgb10A2> && std::is_same_v<T_pipeline, half4> && std::is_same_v<T_compute, half4>),
       "Packed RGB10A2 inputs require half4 pipeline and compute types");
   CUDA_RETURN_IF_ERROR(status_);
-  if (!canvas)
-    return CudaStatus(cudaErrorInvalidDevicePointer, "Canvas must be provided");
+  if (!canvas) {
+    if constexpr (std::is_same_v<T_pipeline, T_compute>) {
+      if (compact_workspace_ && !stitch_context_->is_hard_seam() && !minimizes_blend()) {
+        canvas = std::make_unique<CudaMat<T_pipeline>>(
+            stitch_context_->cudaBlendOut->data(), batch_size(), canvas_width(), canvas_height());
+      }
+    }
+    if (!canvas)
+      canvas = std::make_unique<CudaMat<T_pipeline>>(batch_size(), canvas_width(), canvas_height());
+    if (!canvas->is_valid())
+      return CudaStatus(cudaErrorMemoryAllocation, "Could not allocate panorama output");
+  }
   if ((int)inputs.size() != stitch_context_->n_images)
     return CudaStatus(cudaErrorInvalidValue, "inputs size != N");
   for (auto* in : inputs) {
@@ -589,6 +605,10 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T
       return s;
   }
 
+  if constexpr (std::is_same_v<T_pipeline, T_compute>) {
+    if (canvas->data_raw() == stitch_context_->cudaBlendOut->data_raw())
+      return std::move(canvas);
+  }
   {
     auto cuerr = copy_roi_batched<T_compute, T_pipeline>(
         stitch_context_->cudaBlendOut->surface(),

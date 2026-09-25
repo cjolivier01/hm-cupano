@@ -20,6 +20,8 @@ struct CudaBatchLaplacianBlendContextN {
   const int imageWidth;
   const int imageHeight;
   const int batchSize;
+  // Destructive scratch mode: writable inputs must be refilled before every call.
+  const bool reuseInputs;
   size_t allocation_size{0};
 
   // Pyramid dimensions per level
@@ -49,11 +51,12 @@ struct CudaBatchLaplacianBlendContextN {
   const T** d_ptrsB{nullptr}; // laplacian LOW
   T** d_ptrsC{nullptr}; // downsample OUT / laplacian OUT / recon LAP
 
-  CudaBatchLaplacianBlendContextN(int w, int h, int levels, int batch)
+  CudaBatchLaplacianBlendContextN(int w, int h, int levels, int batch, bool reuse_inputs = false)
       : numLevels(levels),
         imageWidth(w),
         imageHeight(h),
         batchSize(batch),
+        reuseInputs(reuse_inputs),
         widths(levels),
         heights(levels),
         d_gauss(),
@@ -80,15 +83,18 @@ struct CudaBatchLaplacianBlendContextN {
     // free pyramids & masks as before...
     for (int lvl = 0; lvl < numLevels; ++lvl) {
       for (int i = 0; i < N_IMAGES; ++i) {
-        maybeCudaFree(d_lap[i][lvl]);
+        if (!reuseInputs)
+          maybeCudaFree(d_lap[i][lvl]);
       }
-      maybeCudaFree(d_blend[lvl]);
+      if (!reuseInputs)
+        maybeCudaFree(d_blend[lvl]);
       if (lvl > 0) {
         for (int i = 0; i < N_IMAGES; ++i) {
           maybeCudaFree(d_gauss[i][lvl]);
         }
         maybeCudaFree(d_maskPyr[lvl]);
-        maybeCudaFree(d_reconstruct[lvl]);
+        if (!reuseInputs)
+          maybeCudaFree(d_reconstruct[lvl]);
       }
     }
     // free our pointer‐lists

@@ -25,7 +25,8 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
     const ControlMasks& control_masks,
     bool quiet,
     bool minimize_blend,
-    int max_output_width)
+    int max_output_width,
+    bool compact_workspace)
     : minimize_blend_(minimize_blend && num_levels > 0) {
   if (!control_masks.is_valid()) {
     status_ = CudaStatus(cudaErrorFileNotFound, "Stitching masks were not able to be loaded");
@@ -128,7 +129,8 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
             stitch_context_->cudaBlendSoftSeam->width(),
             stitch_context_->cudaBlendSoftSeam->height(),
             num_levels,
-            /*batch_size=*/stitch_context_->batch_size());
+            /*batch_size=*/stitch_context_->batch_size(),
+            /*reuse_inputs=*/compact_workspace);
   } else {
     assert(full_seam.type() == CV_8U);
     stitch_context_->cudaBlendHardSeam = std::make_unique<CudaMat<unsigned char>>(full_seam);
@@ -317,6 +319,12 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
       : cv::Rect(0, 0, stitch_context.cudaFull1->width(), stitch_context.cudaFull1->height());
   const int src_x = stitch_context.minimizes_blend ? write_roi.x - stitch_context.blend_roi_canvas.x : 0;
   const int src_y = stitch_context.minimizes_blend ? write_roi.y - stitch_context.blend_roi_canvas.y : 0;
+  if constexpr (std::is_same_v<T_pipeline, T_compute>) {
+    if (canvas->data_raw() == blended.data_raw()) {
+      assert(!stitch_context.minimizes_blend);
+      return std::move(canvas);
+    }
+  }
   const CudaStatus copy_status = copy_roi_batched<T_compute, T_pipeline>(
       blended.surface(),
       write_roi.width,
@@ -350,6 +358,8 @@ CudaStatus CudaStitchPano<T_pipeline, T_compute>::dump_soft_blend_pyramid(
   if (!stitch_context_ || stitch_context_->is_hard_seam() || !stitch_context_->laplacian_blend_context) {
     return CudaStatus(cudaErrorInvalidValue, "Soft-blend pyramid is only available when num_levels > 0");
   }
+  if (stitch_context_->laplacian_blend_context && stitch_context_->laplacian_blend_context->reuseInputs)
+    return CudaStatus(cudaErrorInvalidValue, "Intermediate pyramid dumps require non-reused scratch storage");
   CUDA_RETURN_IF_ERROR(cudaStreamSynchronize(stream));
 
   std::error_code ec;
@@ -394,6 +404,20 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano<T_pipeline, T_
           (std::is_same_v<T_input, Rgb10A2> && std::is_same_v<T_pipeline, half4> && std::is_same_v<T_compute, half4>),
       "Packed RGB10A2 inputs require half4 pipeline and compute types");
   CUDA_RETURN_IF_ERROR(status_);
+  if (!canvas) {
+    if constexpr (std::is_same_v<T_pipeline, T_compute>) {
+      if (!stitch_context_->is_hard_seam() && !stitch_context_->minimizes_blend &&
+          stitch_context_->laplacian_blend_context->reuseInputs) {
+        // Borrowed output remains valid until the next process call or destruction of this stitcher.
+        auto& scratch = *stitch_context_->cudaFull1;
+        canvas = std::make_unique<CudaMat<T_pipeline>>(scratch.data(), batch_size(), canvas_width(), canvas_height());
+      }
+    }
+    if (!canvas)
+      canvas = std::make_unique<CudaMat<T_pipeline>>(batch_size(), canvas_width(), canvas_height());
+    if (!canvas->is_valid())
+      return CudaStatus(cudaErrorMemoryAllocation, "Could not allocate panorama output");
+  }
   auto result = process_impl_current(inputImage1, inputImage2, stream, std::move(canvas));
   if (!result.ok()) {
     status_.Update(result.status());

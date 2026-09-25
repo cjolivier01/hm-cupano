@@ -2,10 +2,12 @@
 #include <opencv2/core.hpp>
 
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "cupano/gpu/gpu_runtime.h"
 #include "cupano/pano/controlMasks.h"
@@ -328,4 +330,59 @@ TEST(CudaPanoMinimizeBlendTest, NoOverlapFallsBackToFullCanvasBlend) {
     std::error_code ec;
     std::filesystem::remove_all(fallback_dir, ec);
   }
+}
+
+namespace {
+template <typename Pixel>
+void check_compact_borrowed_2() {
+  constexpr int w = 97, h = 35, n = 2;
+  constexpr int canvas_width = w + 24 * (n - 1);
+  cv::Mat seam(h, canvas_width, CV_8U, cv::Scalar(0));
+  for (int x = 0; x < canvas_width; ++x)
+    seam.col(x).setTo(x < canvas_width / 2 ? 1 : 0);
+  auto masks = make_masks(w, h, 24, seam);
+  for (int levels : {1, 4}) {
+    hm::pano::cuda::CudaStitchPano<Pixel, Pixel> reference(1, levels, masks, true, false, 0, false);
+    hm::pano::cuda::CudaStitchPano<Pixel, Pixel> compact(1, levels, masks, true, false, 0, true);
+    ASSERT_TRUE(reference.status().ok()) << reference.status().message();
+    ASSERT_TRUE(compact.status().ok()) << compact.status().message();
+    for (int frame = 0; frame < 3; ++frame) {
+      std::vector<std::unique_ptr<hm::CudaMat<Pixel>>> inputs;
+      std::vector<const hm::CudaMat<Pixel>*> ptrs;
+      for (int i = 0; i < n; ++i) {
+        cv::Mat host = make_pattern_image_f4(w, h, frame + i);
+        if (sizeof(Pixel) == 8)
+          host.convertTo(host, CV_16FC4);
+        inputs.push_back(std::make_unique<hm::CudaMat<Pixel>>(host));
+        ptrs.push_back(inputs.back().get());
+      }
+      auto expected = reference.process(*inputs[0], *inputs[1], 0, nullptr);
+      ASSERT_TRUE(expected.ok()) << expected.status().message();
+      auto actual = compact.process(*inputs[0], *inputs[1], 0, nullptr);
+      ASSERT_TRUE(actual.ok()) << actual.status().message();
+      CUDA_CHECK(cudaDeviceSynchronize());
+      auto owned = expected.ConsumeValueOrDie();
+      auto borrowed = actual.ConsumeValueOrDie();
+      EXPECT_EQ(borrowed->width(), canvas_width);
+      EXPECT_EQ(borrowed->height(), h);
+      cv::Mat a = owned->download(), b = borrowed->download();
+      // Compare raw bytes, including alpha and half precision rounding.
+      ASSERT_EQ(a.total() * a.elemSize(), b.total() * b.elemSize());
+      EXPECT_EQ(std::memcmp(a.data, b.data, a.total() * a.elemSize()), 0) << "frame=" << frame << " levels=" << levels;
+      // Destroy the non-owning wrapper before the next frame reuses scratch.
+    }
+  }
+}
+} // namespace
+TEST(CudaPanoCompactTest, BorrowedOutputMatchesOwnedFloat4) {
+  check_compact_borrowed_2<float4>();
+}
+TEST(CudaPanoCompactTest, BorrowedOutputMatchesOwnedHalf4) {
+  check_compact_borrowed_2<half4>();
+}
+
+TEST(CudaPanoCompactTest, InvalidContextDumpReturnsError) {
+  hm::pano::cuda::CudaStitchPano<half4, half4> pano(1, 4, ControlMasks{}, true, false, 0, true);
+  EXPECT_FALSE(pano.status().ok());
+  EXPECT_FALSE(pano.dump_soft_blend_pyramid("/unused-invalid-context", nullptr).ok());
 }
