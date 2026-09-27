@@ -60,18 +60,25 @@ class CanvasManager:
                 0, 0, blend_width - self.overlap_pad, remapped_size_2[1]
             )
 
-    def convertMaskMat(self, mask: np.ndarray) -> np.ndarray:
-        padded = mask
+    def padMaskMat(self, mask: np.ndarray) -> np.ndarray:
+        """The canvas-sized mask, before any blend-ROI crop."""
         padw = max(0, self.canvas_info.width - mask.shape[1])
         padh = max(0, self.canvas_info.height - mask.shape[0])
         if padw or padh:
-            padded = np.pad(mask, ((0, padh), (0, padw)), mode="edge")
+            return np.pad(mask, ((0, padh), (0, padw)), mode="edge")
+        return mask
 
-        if self.minimize_blend:
-            x_start = self.canvas_info.positions[1][0] - self.overlap_pad
-            x_end = self._remapper_1.width + self.overlap_pad
-            return padded[:, x_start:x_end]
-        return padded
+    def cropToBlendRoi(self, canvas_array: np.ndarray) -> np.ndarray:
+        """Crops a canvas-sized array to the blend ROI. Leading axes are canvas rows and columns,
+        so this works on a weight field as well as on a mask."""
+        if not self.minimize_blend:
+            return canvas_array
+        x_start = self.canvas_info.positions[1][0] - self.overlap_pad
+        x_end = self._remapper_1.width + self.overlap_pad
+        return canvas_array[:, x_start:x_end]
+
+    def convertMaskMat(self, mask: np.ndarray) -> np.ndarray:
+        return self.cropToBlendRoi(self.padMaskMat(mask))
 
     def overlap_padding(self) -> int:
         return self.overlap_pad

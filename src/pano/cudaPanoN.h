@@ -8,6 +8,7 @@
 #include "cupano/cuda/cudaBlendN.h"
 #include "cupano/cuda/cudaRemap.h"
 #include "cupano/cuda/cudaStatus.h"
+#include "cupano/pano/blendMode.h"
 #include "cupano/pano/blendRoi.h"
 #include "cupano/pano/canvasManagerN.h"
 #include "cupano/pano/controlMasksN.h"
@@ -53,6 +54,10 @@ struct StitchingContextN {
       CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, 8>>;
   BlendContextVariant laplacian_blend_context;
 
+  // Alpha mode: device array of the N cudaFull pointers. Filled once at construction, since the
+  // remap destinations do not move, so the per-frame blend uploads nothing.
+  std::unique_ptr<const BaseScalar_t<T_compute>*, CudaFreeDeleter<const BaseScalar_t<T_compute>*>> d_blend_inputs;
+
   // Hard seam: single-channel index map for writing
   std::unique_ptr<CudaMat<unsigned char>> cudaBlendHardSeam; // indices [0..N-1]
 
@@ -81,9 +86,11 @@ struct StitchingContextN {
 template <typename T_pipeline, typename T_compute>
 class CudaStitchPanoN {
  public:
+  // `blend` accepts a bare pyramid level count, preserving the historical convention in which 0
+  // means a hard seam. Use BlendSettings::Alpha(fraction) to select the feathered crossfade.
   CudaStitchPanoN(
       int batch_size,
-      int num_levels,
+      BlendSettings blend,
       const ControlMasksN& control_masks,
       bool minimize_blend,
       bool quiet,
@@ -109,6 +116,15 @@ class CudaStitchPanoN {
   }
   const cv::Rect& write_roi_canvas() const {
     return write_roi_canvas_;
+  }
+  BlendMode blend_mode() const {
+    return blend_.mode;
+  }
+  // Widest crossfade any seam pixel got, in canvas pixels. Not the width used everywhere and
+  // not an upper bound on the field: away from a pinched seam the local radius can exceed it,
+  // which is why the blend ROI pads from the requested width instead. Zero unless alpha mode.
+  float feather_radius_px() const {
+    return feather_radius_px_;
   }
 
   // Inputs are pointers to N CudaMat<T_pipeline> with same batch.
@@ -155,6 +171,8 @@ class CudaStitchPanoN {
  private:
   std::unique_ptr<StitchingContextN<T_pipeline, T_compute>> stitch_context_;
   std::unique_ptr<CanvasManagerN> canvas_manager_;
+  BlendSettings blend_{0};
+  float feather_radius_px_{0.0f};
   bool compact_workspace_{false};
   bool minimize_blend_{false};
   cv::Rect blend_roi_canvas_{};

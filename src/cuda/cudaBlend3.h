@@ -300,3 +300,24 @@ cudaError_t cudaBatchedLaplacianBlendOptimized3(
     CudaBatchLaplacianBlendContext3<T>& context,
     int channels,
     cudaStream_t stream);
+
+/**
+ * @brief Single-pass weighted alpha composite of three images.
+ *
+ * Level 0 of the Laplacian blend run once at full resolution: same kernel, same [H x W x 3] mask
+ * layout, no pyramid, no context, no device allocation.
+ *
+ * @param d_output May alias any input: each thread reads channel c of all three before writing it.
+ */
+template <typename T, typename F_T = float>
+cudaError_t cudaBatchedAlphaBlend3(
+    const T* d_image1,
+    const T* d_image2,
+    const T* d_image3,
+    const T* d_mask,
+    T* d_output,
+    int imageWidth,
+    int imageHeight,
+    int channels,
+    int batchSize,
+    cudaStream_t stream = 0);

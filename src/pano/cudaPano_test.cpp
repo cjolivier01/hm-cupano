@@ -466,3 +466,300 @@ TEST(CudaPanoCompactTest, InvalidContextDumpReturnsError) {
   EXPECT_FALSE(pano.status().ok());
   EXPECT_FALSE(pano.dump_soft_blend_pyramid("/unused-invalid-context", nullptr).ok());
 }
+
+namespace {
+
+using hm::pano::BlendSettings;
+
+// Two overlapping cameras with the seam inside the overlap, so the crossfade has data on both
+// sides. Label 1 owns image 1, label 0 owns image 2.
+ControlMasks make_overlap_masks(int w, int h, int stride, int seam_x) {
+  const int canvas_width = w + stride;
+  cv::Mat seam(h, canvas_width, CV_8U, cv::Scalar(0));
+  seam.colRange(0, seam_x).setTo(1);
+  return make_masks(w, h, stride, seam);
+}
+
+template <typename Pixel>
+std::unique_ptr<hm::CudaMat<Pixel>> upload(const cv::Mat& host_f4) {
+  cv::Mat host = host_f4.clone();
+  if (sizeof(Pixel) == 8)
+    host.convertTo(host, CV_16FC4);
+  return std::make_unique<hm::CudaMat<Pixel>>(host);
+}
+
+cv::Mat run_two(const ControlMasks& masks, BlendSettings blend, bool minimize_blend, const std::vector<cv::Mat>& imgs) {
+  hm::pano::cuda::CudaStitchPano<float4, float4> pano(1, blend, masks, true, minimize_blend, 0, false);
+  EXPECT_TRUE(pano.status().ok()) << pano.status().message();
+  if (!pano.status().ok())
+    return {};
+  auto a = upload<float4>(imgs[0]);
+  auto b = upload<float4>(imgs[1]);
+  auto out =
+      pano.process(*a, *b, 0, std::make_unique<hm::CudaMat<float4>>(1, pano.canvas_width(), pano.canvas_height()));
+  EXPECT_TRUE(out.ok()) << out.status().message();
+  if (!out.ok())
+    return {};
+  EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  return out.ConsumeValueOrDie()->download();
+}
+
+} // namespace
+
+// A zero-width feather must reproduce the hard seam exactly.
+TEST(CudaPanoAlphaTest, ZeroFeatherMatchesHardSeam) {
+  constexpr int w = 97, h = 35, stride = 24;
+  const ControlMasks masks = make_overlap_masks(w, h, stride, 60);
+  const std::vector<cv::Mat> imgs = {make_pattern_image_f4(w, h, 0), make_pattern_image_f4(w, h, 1)};
+
+  const cv::Mat hard = run_two(masks, BlendSettings::HardSeam(), false, imgs);
+  const cv::Mat alpha = run_two(masks, BlendSettings::Alpha(0.0f), false, imgs);
+  ASSERT_FALSE(hard.empty());
+  ASSERT_FALSE(alpha.empty());
+  ASSERT_EQ(hard.total() * hard.elemSize(), alpha.total() * alpha.elemSize());
+  EXPECT_EQ(std::memcmp(hard.data, alpha.data, hard.total() * hard.elemSize()), 0);
+}
+
+// A convex combination of identical inputs must return that input untouched.
+TEST(CudaPanoAlphaTest, ConstantInputIsPreservedExactly) {
+  constexpr int w = 97, h = 35, stride = 24;
+  const ControlMasks masks = make_overlap_masks(w, h, stride, 60);
+  const cv::Vec4f colour(30.0f, 120.0f, 200.0f, 255.0f);
+  const std::vector<cv::Mat> imgs = {cv::Mat(h, w, CV_32FC4, colour), cv::Mat(h, w, CV_32FC4, colour)};
+
+  const cv::Mat out = run_two(masks, BlendSettings::Alpha(0.2f), false, imgs);
+  ASSERT_FALSE(out.empty());
+  for (int y = 0; y < out.rows; ++y) {
+    const cv::Vec4f* row = out.ptr<cv::Vec4f>(y);
+    for (int x = 0; x < out.cols; ++x) {
+      if (row[x][3] == 0.0f)
+        continue;
+      for (int c = 0; c < 3; ++c) {
+        EXPECT_NEAR(row[x][c], colour[c], 1e-3f) << "(" << x << "," << y << ") ch " << c;
+      }
+    }
+  }
+}
+
+// The crossfade must exist, and must stay near the seam.
+TEST(CudaPanoAlphaTest, FeatherChangesOnlyTheSeamBand) {
+  constexpr int w = 97, h = 35, stride = 24;
+  const ControlMasks masks = make_overlap_masks(w, h, stride, 60);
+  const std::vector<cv::Mat> imgs = {make_pattern_image_f4(w, h, 1), make_pattern_image_f4(w, h, 2)};
+
+  const cv::Mat hard = run_two(masks, BlendSettings::HardSeam(), false, imgs);
+  const cv::Mat alpha = run_two(masks, BlendSettings::Alpha(0.15f), false, imgs);
+  ASSERT_FALSE(hard.empty());
+  ASSERT_FALSE(alpha.empty());
+
+  size_t differing = 0;
+  for (int y = 0; y < hard.rows; ++y) {
+    const cv::Vec4f* a = hard.ptr<cv::Vec4f>(y);
+    const cv::Vec4f* b = alpha.ptr<cv::Vec4f>(y);
+    for (int x = 0; x < hard.cols; ++x) {
+      if (std::abs(a[x][0] - b[x][0]) > 1e-3f)
+        ++differing;
+    }
+  }
+  EXPECT_GT(differing, 0u) << "alpha mode produced no crossfade at all";
+  EXPECT_LT(differing, hard.total() / 2) << "the crossfade should be confined to the seam band";
+}
+
+TEST(CudaPanoAlphaTest, MinimizeBlendMatchesFullCanvas) {
+  // Wide enough that select_regions does not reject the ROI for covering most of the canvas.
+  constexpr int w = 2000, h = 200, stride = 900;
+  const ControlMasks masks = make_overlap_masks(w, h, stride, 1400);
+  const std::vector<cv::Mat> imgs = {make_pattern_image_f4(w, h, 0), make_pattern_image_f4(w, h, 1)};
+
+  {
+    hm::pano::cuda::CudaStitchPano<float4, float4> probe(1, BlendSettings::Alpha(0.1f), masks, true, true);
+    ASSERT_TRUE(probe.status().ok()) << probe.status().message();
+    ASSERT_TRUE(probe.minimizes_blend()) << "fixture too small for the blend ROI to engage";
+  }
+  const cv::Mat full = run_two(masks, BlendSettings::Alpha(0.1f), false, imgs);
+  const cv::Mat mini = run_two(masks, BlendSettings::Alpha(0.1f), true, imgs);
+  ASSERT_FALSE(full.empty());
+  ASSERT_FALSE(mini.empty());
+  expect_mats_near(full, mini, kTol);
+}
+
+// The guard and the ROI padding are written out per stitcher rather than shared, so the N-camera
+// coverage does not protect this path.
+
+// Correcting a coverage hole moves a seam to its edge. The guard only inspects pixels outside the
+// write ROI, so a hole that lands inside it passes, and the crossfade from the moved seam then
+// runs outside a ROI derived from the labels handed in.
+TEST(CudaPanoAlphaTest, MinimizeBlendCoversASeamTheCorrectionMovedInsideTheWriteRoi) {
+  constexpr int w = 3400, h = 400, seam_x = 1700;
+  // Both cameras blanket, so the corrected labels differ from the originals exactly over the hole.
+  cv::Mat seam(h, w, CV_8U, cv::Scalar(0));
+  seam.colRange(0, seam_x).setTo(1);
+  ControlMasks masks = make_masks(w, h, 0, seam);
+  // Alpha(0.05) asks for 170 px, so the pad is 128 and the write ROI starts at 1572. Label 1 owns
+  // x < 1700, so the hole goes in image 1, starting on the ROI's first column.
+  masks.img1_col(cv::Rect(1572, 0, 60, h)).setTo(65535);
+  masks.img1_row(cv::Rect(1572, 0, 60, h)).setTo(65535);
+  const std::vector<cv::Mat> imgs = {make_pattern_image_f4(w, h, 0), make_pattern_image_f4(w, h, 1)};
+
+  const BlendSettings blend = BlendSettings::Alpha(0.05f);
+  {
+    hm::pano::cuda::CudaStitchPano<float4, float4> probe(1, blend, masks, true, true);
+    ASSERT_TRUE(probe.status().ok()) << probe.status().message();
+    ASSERT_TRUE(probe.minimizes_blend()) << "the hole must stay inside the write ROI, not trip the guard";
+  }
+  const cv::Mat full = run_two(masks, blend, false, imgs);
+  const cv::Mat mini = run_two(masks, blend, true, imgs);
+  ASSERT_FALSE(full.empty());
+  ASSERT_FALSE(mini.empty());
+  expect_mats_near(full, mini, kTol);
+}
+
+// Outside the write ROI the minimized path keeps the hard baseline, which is remapped from the
+// labels handed in. Where the labelled camera has no data there, minimizing has to be abandoned.
+TEST(CudaPanoAlphaTest, MinimizeBlendBailsWhenTheHardBaselineHasNoDataOutsideTheWriteRoi) {
+  constexpr int w = 2000, h = 200, stride = 900, seam_x = 1700;
+  ControlMasks masks = make_overlap_masks(w, h, stride, seam_x);
+  // Label 0 owns x >= 1700 and is image 2, which starts at 900. The hole begins at the seam so
+  // the corrected seam moves to its far edge and most of the hole stays outside the ROI.
+  masks.img2_col(cv::Rect(seam_x - stride, 0, 700, h)).setTo(65535);
+  masks.img2_row(cv::Rect(seam_x - stride, 0, 700, h)).setTo(65535);
+  const std::vector<cv::Mat> imgs = {make_pattern_image_f4(w, h, 0), make_pattern_image_f4(w, h, 1)};
+
+  const BlendSettings blend = BlendSettings::Alpha(0.05f);
+  const cv::Mat full = run_two(masks, blend, false, imgs);
+  const cv::Mat mini = run_two(masks, blend, true, imgs);
+  ASSERT_FALSE(full.empty());
+  ASSERT_FALSE(mini.empty());
+  expect_mats_near(full, mini, kTol);
+}
+
+// The seam maximum is not an upper bound on where the band reaches, so the ROI pads from the
+// request. A port of the N fixture: canvas height matters, because at 200 rows the coverage
+// distance saturates and the cap pins the radius below overlap_padding whatever the fraction is.
+TEST(CudaPanoAlphaTest, MinimizeBlendMatchesFullCanvasWhenTheSeamIsPinchedButTheBandIsNot) {
+  constexpr int canvas_w = 1200, h = 900, seam_x = 600, seam_w = 5;
+  // Image 1 blankets; image 2 is a narrower window whose left edge sits just left of the seam.
+  cv::Mat seam(h, canvas_w, CV_8U, cv::Scalar(1));
+  seam.colRange(seam_x, seam_x + seam_w).setTo(0);
+  ControlMasks masks;
+  masks.img1_col = make_identity_map_x(canvas_w, h);
+  masks.img1_row = make_identity_map_y(canvas_w, h);
+  masks.img2_col = make_identity_map_x(605, h);
+  masks.img2_row = make_identity_map_y(605, h);
+  masks.whole_seam_mask_image = seam;
+  masks.positions = {SpatialTiff{0.0f, 0.0f}, SpatialTiff{595.0f, 0.0f}};
+  ASSERT_TRUE(masks.is_valid());
+  const std::vector<cv::Mat> imgs = {make_pattern_image_f4(canvas_w, h, 0), make_pattern_image_f4(605, h, 1)};
+
+  // narrowest = 605, so 0.9 asks for 544.5 and max_px clamps it to 512 against a 22 px seam.
+  const BlendSettings blend = BlendSettings::Alpha(0.9f);
+  {
+    hm::pano::cuda::CudaStitchPano<float4, float4> probe(1, blend, masks, true, true);
+    ASSERT_TRUE(probe.status().ok()) << probe.status().message();
+    ASSERT_TRUE(probe.minimizes_blend()) << "fixture too small for the blend ROI to engage";
+  }
+  const cv::Mat full = run_two(masks, blend, false, imgs);
+  const cv::Mat mini = run_two(masks, blend, true, imgs);
+  ASSERT_FALSE(full.empty());
+  ASSERT_FALSE(mini.empty());
+  expect_mats_near(full, mini, kTol);
+}
+
+// The guard has to read the labels handed in, not the corrected ones. A hole flush to the canvas
+// edge leaves part of itself outside even the corrected-label ROI, so a guard reading corrected
+// labels passes there (the correction found a covering owner) while the hard baseline it protects
+// still has no data.
+TEST(CudaPanoAlphaTest, MinimizeBlendGuardReadsTheLabelsTheHardBaselineWasBuiltFrom) {
+  constexpr int w = 3400, h = 400, seam_x = 1700;
+  cv::Mat seam(h, w, CV_8U, cv::Scalar(0));
+  seam.colRange(0, seam_x).setTo(1);
+  ControlMasks masks = make_masks(w, h, 0, seam);
+  // Label 0 owns x >= 1700 and is image 2. The hole runs to the right canvas edge.
+  masks.img2_col(cv::Rect(w - 400, 0, 400, h)).setTo(65535);
+  masks.img2_row(cv::Rect(w - 400, 0, 400, h)).setTo(65535);
+  const std::vector<cv::Mat> imgs = {make_pattern_image_f4(w, h, 0), make_pattern_image_f4(w, h, 1)};
+
+  const BlendSettings blend = BlendSettings::Alpha(0.05f);
+  const cv::Mat full = run_two(masks, blend, false, imgs);
+  const cv::Mat mini = run_two(masks, blend, true, imgs);
+  ASSERT_FALSE(full.empty());
+  ASSERT_FALSE(mini.empty());
+  expect_mats_near(full, mini, kTol);
+}
+
+// Alpha mode builds no Laplacian context, so the managed-output path must not reach for one.
+TEST(CudaPanoAlphaTest, CompactManagedOutputWorks) {
+  constexpr int w = 97, h = 35, stride = 24;
+  const ControlMasks masks = make_overlap_masks(w, h, stride, 60);
+  hm::pano::cuda::CudaStitchPano<float4, float4> reference(
+      1, BlendSettings::Alpha(0.12f), masks, true, false, 0, false);
+  hm::pano::cuda::CudaStitchPano<float4, float4> compact(1, BlendSettings::Alpha(0.12f), masks, true, false, 0, true);
+  ASSERT_TRUE(reference.status().ok()) << reference.status().message();
+  ASSERT_TRUE(compact.status().ok()) << compact.status().message();
+  EXPECT_GT(reference.feather_radius_px(), 0.0f);
+
+  auto a = upload<float4>(make_pattern_image_f4(w, h, 0));
+  auto b = upload<float4>(make_pattern_image_f4(w, h, 1));
+  auto expected = reference.process(*a, *b, 0, nullptr);
+  ASSERT_TRUE(expected.ok()) << expected.status().message();
+  auto actual = compact.process(*a, *b, 0, nullptr);
+  ASSERT_TRUE(actual.ok()) << actual.status().message();
+  CUDA_CHECK(cudaDeviceSynchronize());
+  cv::Mat owned = expected.ConsumeValueOrDie()->download();
+  cv::Mat borrowed = actual.ConsumeValueOrDie()->download();
+  ASSERT_EQ(owned.total() * owned.elemSize(), borrowed.total() * borrowed.elemSize());
+  EXPECT_EQ(std::memcmp(owned.data, borrowed.data, owned.total() * owned.elemSize()), 0);
+}
+
+// The pyramid dump is Laplacian-only and must refuse rather than dereference a missing context.
+TEST(CudaPanoAlphaTest, PyramidDumpRejectsAlphaMode) {
+  constexpr int w = 64, h = 24, stride = 16;
+  const ControlMasks masks = make_overlap_masks(w, h, stride, 40);
+  hm::pano::cuda::CudaStitchPano<float4, float4> pano(1, BlendSettings::Alpha(0.1f), masks, true, false, 0, false);
+  ASSERT_TRUE(pano.status().ok()) << pano.status().message();
+  EXPECT_FALSE(pano.dump_soft_blend_pyramid("/unused-alpha-mode", /*stream=*/0).ok());
+}
+
+// hstream's fp16 path is CudaStitchPano<uchar4, half3>: three-channel compute, where the blend
+// kernel does not drop zero-alpha contributors, so nothing but the weights stops a camera
+// contributing outside its own footprint. It does not catch a field that fails to sum to one -
+// the two-image kernel takes a single-channel mask and synthesizes 1-m, so the output is a convex
+// combination whatever the host field summed to; normalization is pinned in featherMask_test
+// instead. Nor does it catch black leakage: the seam ramp saturates well inside both footprints
+// here, so nothing reaches an edge. What it pins is that the fp16 path runs at all and returns
+// the constant it was given.
+TEST(CudaPanoAlphaTest, ThreeChannelComputePreservesConstantInput) {
+  constexpr int w = 97, h = 35, stride = 24;
+  const ControlMasks masks = make_overlap_masks(w, h, stride, 60);
+  const cv::Vec4b colour(60, 120, 200, 255);
+  cv::Mat host(h, w, CV_8UC4, colour);
+
+  hm::pano::cuda::CudaStitchPano<uchar4, half3> pano(
+      1, BlendSettings::Alpha(0.2f), masks, /*quiet=*/true, /*minimize_blend=*/false);
+  ASSERT_TRUE(pano.status().ok()) << pano.status().message();
+
+  hm::CudaMat<uchar4> a(host), b(host);
+  auto out = pano.process(a, b, 0, std::make_unique<hm::CudaMat<uchar4>>(1, pano.canvas_width(), pano.canvas_height()));
+  ASSERT_TRUE(out.ok()) << out.status().message();
+  CUDA_CHECK(cudaDeviceSynchronize());
+  const cv::Mat result = out.ConsumeValueOrDie()->download();
+  ASSERT_EQ(result.type(), CV_8UC4);
+
+  // Every pixel either carries the constant or is outside both footprints.
+  const cv::Rect covered(0, 0, w + stride, h);
+  for (int y = 0; y < result.rows; ++y) {
+    const cv::Vec4b* row = result.ptr<cv::Vec4b>(y);
+    for (int x = covered.x; x < covered.x + covered.width; ++x) {
+      for (int c = 0; c < 3; ++c) {
+        EXPECT_NEAR(row[x][c], colour[c], 2) << "(" << x << "," << y << ") ch " << c;
+      }
+    }
+  }
+}
+
+TEST(CudaPanoAlphaTest, RejectsOutOfRangeFeather) {
+  constexpr int w = 64, h = 16, stride = 16;
+  const ControlMasks masks = make_overlap_masks(w, h, stride, 40);
+  hm::pano::cuda::CudaStitchPano<float4, float4> pano(1, BlendSettings::Alpha(-0.5f), masks, true, false, 0, false);
+  EXPECT_FALSE(pano.status().ok());
+}

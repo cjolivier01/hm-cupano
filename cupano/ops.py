@@ -22,6 +22,7 @@ from .triton_ops import (
 )
 
 Backend = Literal["auto", "triton"]
+BlendMode = Literal["hard", "laplacian", "alpha"]
 ResolvedBackend = Literal["torch_impl", "triton"]
 
 

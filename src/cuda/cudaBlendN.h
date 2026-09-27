@@ -196,3 +196,32 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
     CudaBatchLaplacianBlendContextN<T, N_IMAGES>& context,
     cudaStream_t stream = 0,
     bool cacheMaskPyramid = false);
+
+/**
+ * @brief Single-pass weighted alpha composite of N_IMAGES inputs.
+ *
+ * This is the level-0 blend of the Laplacian path run once at full resolution: the same kernel, the
+ * same mask layout, and the same alpha-validity semantics, with no pyramid, no context and no
+ * device allocation. With a feathered mask it produces a crossfade confined to the seam; with a
+ * one-hot mask it reproduces the hard seam.
+ *
+ * @param d_imagePtrs Device array of N_IMAGES device pointers, each to batch*H*W*CHANNELS elements.
+ *                    Owned by the caller, who must keep it populated; nothing is copied per call.
+ * @param d_mask      Device pointer to per-camera weights, [H x W x N_IMAGES], not batched. Weights
+ *                    need not be normalized for this kernel, which normalizes per pixel. The
+ *                    Vulkan backend behind the same declaration normalizes only at
+ *                    `CHANNELS == 4`, so a caller that may run on it with three channels should
+ *                    normalize on the host, as the alpha feather does.
+ * @param d_output    Device pointer to batch*H*W*CHANNELS elements. May alias one of the inputs:
+ *                    each thread reads channel c of every input before writing channel c.
+ * @param stream      CUDA stream to use.
+ */
+template <typename T, typename F_T = float, int N_IMAGES, int CHANNELS>
+cudaError_t cudaBatchedAlphaBlendN(
+    const T* const* d_imagePtrs,
+    const T* d_mask,
+    T* d_output,
+    int imageWidth,
+    int imageHeight,
+    int batchSize,
+    cudaStream_t stream = 0);

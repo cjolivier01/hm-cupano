@@ -934,6 +934,52 @@ INSTANTIATE_HALF_BLEND_N(8, 4)
 
 #undef INSTANTIATE_HALF_BLEND_N
 
+// -----------------------------------------------------------------------------
+// Single-pass alpha composite: level 0 of the Laplacian blend, without the pyramid.
+// -----------------------------------------------------------------------------
+template <typename T, typename F_T, int N_IMAGES, int CHANNELS>
+cudaError_t cudaBatchedAlphaBlendN(
+    const T* const* d_imagePtrs,
+    const T* d_mask,
+    T* d_output,
+    int imageWidth,
+    int imageHeight,
+    int batchSize,
+    cudaStream_t stream) {
+  if (!d_imagePtrs || !d_mask || !d_output)
+    return cudaErrorInvalidValue;
+  if (imageWidth <= 0 || imageHeight <= 0 || batchSize <= 0)
+    return cudaErrorInvalidValue;
+
+  dim3 block(16, 16);
+  dim3 grid((imageWidth + 15) / 16, (imageHeight + 15) / 16, batchSize);
+  BatchedBlendKernelN<T, F_T, N_IMAGES, CHANNELS>
+      <<<grid, block, 0, stream>>>(d_imagePtrs, d_mask, d_output, imageWidth, imageHeight, batchSize);
+  CUDA_CHECK(cudaGetLastError());
+  return cudaSuccess;
+}
+
+#define INSTANTIATE_ALPHA_BLEND_N(SCALAR, N_IMAGES, CHANNELS)                     \
+  template cudaError_t cudaBatchedAlphaBlendN<SCALAR, float, N_IMAGES, CHANNELS>( \
+      const SCALAR* const*, const SCALAR*, SCALAR*, int, int, int, cudaStream_t);
+
+#define INSTANTIATE_ALPHA_BLEND_N_ALL(N_IMAGES)  \
+  INSTANTIATE_ALPHA_BLEND_N(float, N_IMAGES, 3)  \
+  INSTANTIATE_ALPHA_BLEND_N(float, N_IMAGES, 4)  \
+  INSTANTIATE_ALPHA_BLEND_N(__half, N_IMAGES, 3) \
+  INSTANTIATE_ALPHA_BLEND_N(__half, N_IMAGES, 4)
+
+INSTANTIATE_ALPHA_BLEND_N_ALL(2)
+INSTANTIATE_ALPHA_BLEND_N_ALL(3)
+INSTANTIATE_ALPHA_BLEND_N_ALL(4)
+INSTANTIATE_ALPHA_BLEND_N_ALL(5)
+INSTANTIATE_ALPHA_BLEND_N_ALL(6)
+INSTANTIATE_ALPHA_BLEND_N_ALL(7)
+INSTANTIATE_ALPHA_BLEND_N_ALL(8)
+
+#undef INSTANTIATE_ALPHA_BLEND_N_ALL
+#undef INSTANTIATE_ALPHA_BLEND_N
+
 // Explicit instantiations for common pixel types and N in [2..8]
 // float3 (3 channels)
 // Base scalar float (mask and image buffers are passed as scalar arrays)
