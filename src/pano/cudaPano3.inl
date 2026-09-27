@@ -122,6 +122,13 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
     }
 
     cv::Mat seam_color = ControlMasks3::split_to_channels(seam_index_for_blend);
+#if GPU_HAS_BF16
+    // Every other scalar has its own OpenCV depth, but cudaPixelTypeToCvType maps bf16 onto the
+    // CV_16F codes (cudaMat.cpp), so a bf16 mask would be written as IEEE half and read as bf16.
+    static_assert(
+        !std::is_same_v<BaseScalar_t<T_compute>, gpu_bfloat16>,
+        "bfloat16 has no distinct OpenCV depth; the soft-seam mask would be written as IEEE half");
+#endif
     // Convert to T_compute type (float, etc.) but keep 3 channels
     seam_color.convertTo(seam_color, cudaPixelTypeToCvType(CudaTypeToPixelType<T_compute>::value));
     // Allocate cudaFull0/1/2 at the effective blend dimensions.

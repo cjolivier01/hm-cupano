@@ -117,6 +117,13 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
   stitch_context_->remap_2_y = std::make_unique<CudaMat<uint16_t>>(masks.img2_row);
 
   if (!stitch_context_->is_hard_seam()) {
+#if GPU_HAS_BF16
+    // Every other scalar has its own OpenCV depth, but cudaPixelTypeToCvType maps bf16 onto the
+    // CV_16F codes (cudaMat.cpp), so a bf16 mask would be written as IEEE half and read as bf16.
+    static_assert(
+        !std::is_same_v<BaseScalar_t<T_compute>, gpu_bfloat16>,
+        "bfloat16 has no distinct OpenCV depth; the soft-seam mask would be written as IEEE half");
+#endif
     blend_seam.convertTo(blend_seam, cudaPixelTypeToCvType(CudaTypeToPixelType<T_compute>::value));
     stitch_context_->cudaFull1 =
         std::make_unique<CudaMat<T_compute>>(stitch_context_->batch_size(), blend_seam.cols, blend_seam.rows);

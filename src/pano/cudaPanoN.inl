@@ -116,10 +116,45 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
 
     cv::Mat seam_color_u8 = ControlMasksN::split_to_channels(seam_index_for_blend, n);
     cv::Mat seam_color_f;
-    seam_color_u8.convertTo(seam_color_f, CV_MAKETYPE(CV_32F, n));
+#if GPU_HAS_BF16
+    // Unconditional despite sitting in the soft-seam branch: a static_assert fires whenever the
+    // constructor is instantiated, so this also rejects bf16 hard-seam stitchers, which would
+    // otherwise be fine. Nothing instantiates bf16 today.
+    // Every other scalar has its own OpenCV depth, but cudaPixelTypeToCvType maps bf16 onto the
+    // CV_16F codes (cudaMat.cpp), so a bf16 mask would be written as IEEE half and read as bf16.
+    static_assert(
+        !std::is_same_v<BaseScalar_t<T_compute>, gpu_bfloat16>,
+        "bfloat16 has no distinct OpenCV depth; the soft-seam mask would be written as IEEE half");
+#endif
+    // The blend kernels read this buffer as BaseScalar_t<T_compute>, so the mask must carry that
+    // scalar depth. Converting to a fixed CV_32F made half pipelines reinterpret float bit patterns
+    // as pairs of __half. Mirrors cudaPano.inl and cudaPano3.inl; convertTo takes only the depth
+    // from rtype and keeps the source's channel count.
+    seam_color_u8.convertTo(seam_color_f, cudaPixelTypeToCvType(CudaTypeToPixelType<BaseScalar_t<T_compute>>::value));
+
+    const int blend_w = (minimize_blend_ && blend_roi_canvas_.width > 0) ? blend_roi_canvas_.width : canvas_w;
+    const int blend_h = (minimize_blend_ && blend_roi_canvas_.height > 0) ? blend_roi_canvas_.height : canvas_h;
 
     BaseScalar_t<T_compute>* d_mask = nullptr;
     const size_t mask_bytes = seam_color_f.total() * seam_color_f.elemSize();
+    // Checked rather than asserted, because asserts are compiled out of optimized builds and each
+    // of these mismatches corrupts the blend silently rather than faulting.
+    //
+    // The dimensions matter most. BatchedBlendKernelN indexes the mask with the blend buffers'
+    // stride, so a seam mask larger than the canvas - which ControlMasksN never validates and
+    // CanvasManagerN::convertMaskMat only pads, never crops - reads the right number of bytes at
+    // the wrong stride and silently picks the wrong contributor.
+    if (seam_color_f.cols != blend_w || seam_color_f.rows != blend_h || seam_color_f.channels() != n ||
+        seam_color_f.elemSize1() != sizeof(BaseScalar_t<T_compute>)) {
+      status_ = CudaStatus(
+          cudaErrorInvalidValue,
+          "Soft-seam mask shape or scalar type does not match the blend buffers (expected " + std::to_string(blend_w) +
+              "x" + std::to_string(blend_h) + "x" + std::to_string(n) + " of " +
+              std::to_string(sizeof(BaseScalar_t<T_compute>)) + "-byte scalars, got " +
+              std::to_string(seam_color_f.cols) + "x" + std::to_string(seam_color_f.rows) + "x" +
+              std::to_string(seam_color_f.channels()) + " of " + std::to_string(seam_color_f.elemSize1()) + ")");
+      return;
+    }
     auto cuerr = cudaMalloc(reinterpret_cast<void**>(&d_mask), mask_bytes);
     if (cuerr != cudaSuccess) {
       status_ = CudaStatus(cuerr);
@@ -131,9 +166,6 @@ CudaStitchPanoN<T_pipeline, T_compute>::CudaStitchPanoN(
       status_ = CudaStatus(cuerr);
       return;
     }
-
-    const int blend_w = (minimize_blend_ && blend_roi_canvas_.width > 0) ? blend_roi_canvas_.width : canvas_w;
-    const int blend_h = (minimize_blend_ && blend_roi_canvas_.height > 0) ? blend_roi_canvas_.height : canvas_h;
 
     stitch_context_->cudaFull.resize(n);
     stitch_context_->cudaFull_raw.resize(n);

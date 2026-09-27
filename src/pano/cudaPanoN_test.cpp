@@ -112,6 +112,27 @@ void expect_mats_near(const cv::Mat& a, const cv::Mat& b, float tol) {
   EXPECT_LE(d, tol) << "Max abs diff " << d << " at (" << loc.x << "," << loc.y << ") ch " << ch;
 }
 
+// memcmp alone reports a meaningless difference value; locate the first differing pixel instead.
+// Also pins the shapes so an empty download cannot pass vacuously.
+void expect_bytes_equal(const cv::Mat& a, const cv::Mat& b, int width, int height, const char* what) {
+  ASSERT_EQ(a.cols, width);
+  ASSERT_EQ(a.rows, height);
+  ASSERT_EQ(a.size(), b.size());
+  ASSERT_EQ(a.type(), b.type());
+  const size_t bytes = a.total() * a.elemSize();
+  ASSERT_EQ(bytes, b.total() * b.elemSize());
+  if (std::memcmp(a.data, b.data, bytes) == 0) {
+    return;
+  }
+  size_t first = 0;
+  while (first < bytes && a.data[first] == b.data[first])
+    ++first;
+  const size_t pixel = first / a.elemSize();
+  ADD_FAILURE() << what << ": hard and one-hot single-level output differ at byte " << first << " (pixel "
+                << pixel % a.cols << "," << pixel / a.cols << "), hard=" << int(a.data[first])
+                << " soft=" << int(b.data[first]);
+}
+
 ControlMasksN make_masks(
     const std::vector<cv::Size>& sizes,
     const std::vector<cv::Point>& positions,
@@ -386,10 +407,119 @@ void check_compact_borrowed_4() {
     }
   }
 }
+
+// A one-hot seam mask blended at a single level selects exactly one contributor per pixel, so it
+// must reproduce the hard-seam kernel byte for byte. The fixture below keeps every label region
+// inside its owner's remap footprint, which is the precondition for that equality: where an owner
+// is unmapped the hard-seam kernel leaves the memset while the blend kernel falls back to the
+// highest-alpha contributor. The assertion below pins that precondition so a fixture edit fails
+// with a clear message instead of a bare memcmp mismatch.
+//
+// This is the regression test for the soft-seam mask being uploaded with a fixed CV_32F depth while
+// the blend kernels read it as BaseScalar_t<T_compute>. Half pipelines then read float bit patterns
+// as pairs of __half and pick the wrong contributor across roughly half the canvas.
+template <typename Pixel>
+void check_single_level_matches_hard_seam_4(bool minimize_blend, int w, int h, int stride) {
+  constexpr int n = 4;
+  const int canvas_width = w + stride * (n - 1);
+  cv::Mat seam(h, canvas_width, CV_8U, cv::Scalar(0));
+  for (int x = 0; x < canvas_width; ++x)
+    seam.col(x).setTo(std::min(n - 1, x * n / canvas_width));
+
+  // Precondition: every labelled column lies within its owner's footprint, and the identity remaps
+  // below mark no pixel unmapped, so every owner actually has data wherever it owns.
+  for (int x = 0; x < canvas_width; ++x) {
+    const int owner = seam.at<uint8_t>(0, x);
+    ASSERT_GE(x, stride * owner) << "label " << owner << " starts before its footprint at x=" << x;
+    ASSERT_LT(x, stride * owner + w) << "label " << owner << " extends past its footprint at x=" << x;
+  }
+
+  std::vector<cv::Size> sizes(n, cv::Size(w, h));
+  std::vector<cv::Point> positions;
+  for (int i = 0; i < n; ++i)
+    positions.emplace_back(stride * i, 0);
+  auto masks = make_masks(sizes, positions, seam);
+
+  hm::pano::cuda::CudaStitchPanoN<Pixel, Pixel> hard(1, /*num_levels=*/0, masks, minimize_blend, true, 0, false);
+  hm::pano::cuda::CudaStitchPanoN<Pixel, Pixel> soft(1, /*num_levels=*/1, masks, minimize_blend, true, 0, false);
+  ASSERT_TRUE(hard.status().ok()) << hard.status().message();
+  ASSERT_TRUE(soft.status().ok()) << soft.status().message();
+  if (minimize_blend) {
+    // Otherwise select_regions rejects the ROI and this degenerates into the full-canvas case,
+    // leaving the cropped-seam constructor path untested.
+    ASSERT_TRUE(soft.minimizes_blend()) << "fixture too small for the blend ROI to engage";
+  }
+
+  std::vector<std::unique_ptr<hm::CudaMat<Pixel>>> inputs;
+  std::vector<const hm::CudaMat<Pixel>*> ptrs;
+  for (int i = 0; i < n; ++i) {
+    cv::Mat host = make_pattern_image_f4(w, h, i);
+    if (sizeof(Pixel) == 8)
+      host.convertTo(host, CV_16FC4);
+    inputs.push_back(std::make_unique<hm::CudaMat<Pixel>>(host));
+    ptrs.push_back(inputs.back().get());
+  }
+
+  auto hard_out =
+      hard.process(ptrs, 0, std::make_unique<hm::CudaMat<Pixel>>(1, hard.canvas_width(), hard.canvas_height()));
+  ASSERT_TRUE(hard_out.ok()) << hard_out.status().message();
+  auto soft_out =
+      soft.process(ptrs, 0, std::make_unique<hm::CudaMat<Pixel>>(1, soft.canvas_width(), soft.canvas_height()));
+  ASSERT_TRUE(soft_out.ok()) << soft_out.status().message();
+  CUDA_CHECK(cudaDeviceSynchronize());
+
+  cv::Mat a = hard_out.ConsumeValueOrDie()->download();
+  cv::Mat b = soft_out.ConsumeValueOrDie()->download();
+  expect_bytes_equal(a, b, canvas_width, h, minimize_blend ? "minimized" : "full canvas");
+}
 } // namespace
 TEST(CudaPanoNCompactTest, BorrowedOutputMatchesOwnedFloat4) {
   check_compact_borrowed_4<float4>();
 }
 TEST(CudaPanoNCompactTest, BorrowedOutputMatchesOwnedHalf4) {
   check_compact_borrowed_4<half4>();
+}
+// ControlMasksN derives the canvas from the remaps and positions, never from the seam mask, and
+// CanvasManagerN::convertMaskMat only pads. An oversized seam therefore reaches the blend kernel,
+// which indexes it with the blend buffers' stride, and silently selects the wrong contributor.
+//
+// Optimized builds only: convertMaskMat asserts on this first in debug builds, and that assert is
+// compiled out under NDEBUG, which is precisely when the status check has to catch it.
+#ifdef NDEBUG
+TEST(CudaPanoNSeamMaskTest, OversizedSeamMaskIsRejected) {
+  constexpr int w = 97, h = 35, n = 4, stride = 24;
+  constexpr int canvas_width = w + stride * (n - 1);
+  cv::Mat oversized(h + 5, canvas_width + 31, CV_8U, cv::Scalar(0));
+  for (int x = 0; x < oversized.cols; ++x)
+    oversized.col(x).setTo(std::min(n - 1, x * n / oversized.cols));
+
+  std::vector<cv::Size> sizes(n, cv::Size(w, h));
+  std::vector<cv::Point> positions;
+  for (int i = 0; i < n; ++i)
+    positions.emplace_back(stride * i, 0);
+  auto masks = make_masks(sizes, positions, oversized);
+
+  hm::pano::cuda::CudaStitchPanoN<half4, half4> soft(
+      1,
+      /*num_levels=*/1,
+      masks,
+      /*minimize_blend=*/false,
+      /*quiet=*/true,
+      /*max_output_width=*/0,
+      /*compact_workspace=*/false);
+  EXPECT_FALSE(soft.status().ok()) << "an oversized seam mask must not construct silently";
+}
+#endif
+
+TEST(CudaPanoNSeamMaskTest, SingleLevelMatchesHardSeamFloat4) {
+  check_single_level_matches_hard_seam_4<float4>(/*minimize_blend=*/false, /*w=*/97, /*h=*/35, /*stride=*/24);
+}
+TEST(CudaPanoNSeamMaskTest, SingleLevelMatchesHardSeamHalf4) {
+  check_single_level_matches_hard_seam_4<half4>(/*minimize_blend=*/false, /*w=*/97, /*h=*/35, /*stride=*/24);
+}
+// The minimize path crops the seam before one-hotting it, so it builds the mask from a ROI view.
+// This needs a canvas wide enough that select_regions does not reject the ROI for covering most of
+// it; the small fixture above would silently fall back to a full-canvas blend.
+TEST(CudaPanoNSeamMaskTest, SingleLevelMatchesHardSeamHalf4Minimized) {
+  check_single_level_matches_hard_seam_4<half4>(/*minimize_blend=*/true, /*w=*/2000, /*h=*/200, /*stride=*/700);
 }
