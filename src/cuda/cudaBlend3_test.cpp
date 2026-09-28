@@ -15,7 +15,6 @@
 #include <gtest/gtest.h>
 #include "cudaBlend3.h"
 
-#include <cuda_fp16.h>
 #include <cassert>
 #include <cmath>
 #include <vector>

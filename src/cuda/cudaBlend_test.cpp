@@ -4,8 +4,6 @@
 
 #include "cudaBlend.h"
 
-#include <cuda_fp16.h>
-
 #include <algorithm>
 #include <array>
 #include <vector>
