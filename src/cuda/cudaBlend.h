@@ -290,3 +290,27 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     int channels,
     cudaStream_t stream,
     bool cacheMaskPyramid = true);
+
+/**
+ * @brief Single-pass weighted alpha composite of two images.
+ *
+ * Level 0 of the Laplacian blend run once at full resolution: same kernel, same mask convention
+ * (`out = m*image1 + (1-m)*image2`) and the same alpha-validity semantics, no pyramid, no context,
+ * no device allocation. At `CHANNELS == 4` a zero-alpha contributor is substituted wholesale
+ * rather than blended, so that identity holds only where both alphas are non-zero. A feathered mask
+ * produces a crossfade confined to the seam; a binary mask reproduces the hard seam.
+ *
+ * @param d_mask   Single-channel weight of image 1, [H x W], not batched.
+ * @param d_output May alias either input: each thread reads channel c of both before writing it.
+ */
+template <typename T, typename F_T = float>
+cudaError_t cudaBatchedAlphaBlend(
+    const T* d_image1,
+    const T* d_image2,
+    const T* d_mask,
+    T* d_output,
+    int imageWidth,
+    int imageHeight,
+    int channels,
+    int batchSize,
+    cudaStream_t stream = 0);

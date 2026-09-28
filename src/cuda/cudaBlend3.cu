@@ -1335,3 +1335,50 @@ template cudaError_t cudaBatchedLaplacianBlendWithContext3<unsigned char, float>
     int channels,
     cudaStream_t stream,
     bool cacheMaskPyramid);
+
+// -----------------------------------------------------------------------------
+// Single-pass alpha composite: level 0 of the Laplacian blend, without the pyramid.
+// -----------------------------------------------------------------------------
+template <typename T, typename F_T>
+cudaError_t cudaBatchedAlphaBlend3(
+    const T* d_image1,
+    const T* d_image2,
+    const T* d_image3,
+    const T* d_mask,
+    T* d_output,
+    int imageWidth,
+    int imageHeight,
+    int channels,
+    int batchSize,
+    cudaStream_t stream) {
+  if (!d_image1 || !d_image2 || !d_image3 || !d_mask || !d_output)
+    return cudaErrorInvalidValue;
+  if (imageWidth <= 0 || imageHeight <= 0 || batchSize <= 0 || channels < 1 || channels > 4)
+    return cudaErrorInvalidValue;
+
+  dim3 block(16, 16);
+  dim3 grid((imageWidth + 15) / 16, (imageHeight + 15) / 16, batchSize);
+  BatchedBlendKernel3<T, F_T><<<grid, block, 0, stream>>>(
+      d_image1, d_image2, d_image3, d_mask, d_output, imageWidth, imageHeight, batchSize, channels);
+  CUDA_CHECK(cudaGetLastError());
+  return cudaSuccess;
+}
+
+#define INSTANTIATE_CUDA_BATCHED_ALPHA_BLEND3(T)         \
+  template cudaError_t cudaBatchedAlphaBlend3<T, float>( \
+      const T* d_image1,                                 \
+      const T* d_image2,                                 \
+      const T* d_image3,                                 \
+      const T* d_mask,                                   \
+      T* d_output,                                       \
+      int imageWidth,                                    \
+      int imageHeight,                                   \
+      int channels,                                      \
+      int batchSize,                                     \
+      cudaStream_t stream);
+
+INSTANTIATE_CUDA_BATCHED_ALPHA_BLEND3(float)
+INSTANTIATE_CUDA_BATCHED_ALPHA_BLEND3(__half)
+INSTANTIATE_CUDA_BATCHED_ALPHA_BLEND3(unsigned char)
+
+#undef INSTANTIATE_CUDA_BATCHED_ALPHA_BLEND3

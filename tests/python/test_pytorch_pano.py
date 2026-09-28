@@ -14,6 +14,8 @@ from cupano import (
     SpatialTiff,
 )
 from cupano.canvas import CanvasManager
+from cupano.geometry import Rect
+from cupano.pano import hard_baseline_covers_soft_owners_outside_write
 from cupano.ops import compute_laplacian
 from cupano.masks import _read_tiff_shape, _tag_to_float
 
@@ -529,3 +531,392 @@ def test_cuda_pano_n_max_output_width_rejects_collapsed_seam_class(device: torch
     pano = CudaStitchPanoN(1, 0, masks, quiet=True, max_output_width=2)
 
     assert not pano.status.ok()
+
+
+def test_cuda_pano_alpha_zero_feather_matches_hard_seam(device: torch.device) -> None:
+    """A zero-width feather must reproduce the hard seam exactly."""
+    width, height, x2 = 256, 32, 128
+    canvas_width = width + x2
+    seam = np.zeros((height, canvas_width), dtype=np.uint8)
+    seam[:, :192] = 1
+    masks = make_two_masks(width, height, seam, x2)
+
+    image1 = constant_image(width, height, (10.0, 20.0, 30.0, 255.0), device)
+    image2 = constant_image(width, height, (100.0, 110.0, 120.0, 255.0), device)
+
+    hard = CudaStitchPano(1, 0, masks, quiet=True).process(image1, image2)
+    alpha = CudaStitchPano(
+        1, 0, masks, quiet=True, blend_mode="alpha", feather_fraction=0.0
+    ).process(image1, image2)
+    assert_tensor_equal(alpha, hard, tol=0.0)
+
+
+def test_cuda_pano_alpha_preserves_constant_input(device: torch.device) -> None:
+    """A convex combination of identical inputs must return that input untouched."""
+    width, height, x2 = 256, 32, 128
+    canvas_width = width + x2
+    seam = np.zeros((height, canvas_width), dtype=np.uint8)
+    seam[:, :192] = 1
+    masks = make_two_masks(width, height, seam, x2)
+
+    colour = (40.0, 90.0, 170.0, 255.0)
+    image1 = constant_image(width, height, colour, device)
+    image2 = constant_image(width, height, colour, device)
+
+    pano = CudaStitchPano(1, 0, masks, quiet=True, blend_mode="alpha", feather_fraction=0.1)
+    out = pano.process(image1, image2)
+    covered = out[..., 3] > 0
+    for channel in range(3):
+        values = out[..., channel][covered]
+        assert torch.allclose(values, torch.full_like(values, colour[channel]), atol=1e-3)
+
+
+def test_cuda_pano_alpha_crossfades_only_near_the_seam(device: torch.device) -> None:
+    width, height, x2 = 256, 32, 128
+    canvas_width = width + x2
+    seam = np.zeros((height, canvas_width), dtype=np.uint8)
+    seam[:, :192] = 1
+    masks = make_two_masks(width, height, seam, x2)
+
+    image1 = constant_image(width, height, (10.0, 20.0, 30.0, 255.0), device)
+    image2 = constant_image(width, height, (100.0, 110.0, 120.0, 255.0), device)
+
+    hard = CudaStitchPano(1, 0, masks, quiet=True).process(image1, image2)
+    pano = CudaStitchPano(1, 0, masks, quiet=True, blend_mode="alpha", feather_fraction=0.1)
+    alpha = pano.process(image1, image2)
+
+    differing = (alpha[..., 0] - hard[..., 0]).abs() > 1e-3
+    assert differing.any(), "alpha mode produced no crossfade at all"
+    assert int(differing.sum()) < differing.numel() // 2
+    assert pano.feather_radius_px > 0.0
+    assert pano.blend_mode == "alpha"
+
+
+def _alpha_strip_masks_n(width: int, height: int, n: int, stride: int) -> ControlMasksN:
+    canvas_width = width + stride * (n - 1)
+    seam = np.minimum(n - 1, np.arange(canvas_width) * n // canvas_width).astype(np.uint8)
+    seam = np.repeat(seam[None], height, axis=0)
+    return make_n_masks(
+        [(width, height)] * n, [(stride * i, 0) for i in range(n)], seam
+    )
+
+
+def test_cuda_pano_n_alpha_zero_feather_matches_hard_seam(device: torch.device) -> None:
+    """A zero-width feather must reproduce the hard seam exactly on the N-camera path too."""
+    width, height, n, stride = 97, 35, 3, 32
+    masks = _alpha_strip_masks_n(width, height, n, stride)
+    images = [
+        constant_image(width, height, (10.0 * i, 20.0 + i, 30.0, 255.0), device) for i in range(n)
+    ]
+
+    hard = CudaStitchPanoN(1, 0, masks, quiet=True).process(images)
+    alpha = CudaStitchPanoN(
+        1, 0, masks, quiet=True, blend_mode="alpha", feather_fraction=0.0
+    ).process(images)
+    assert_tensor_equal(alpha, hard, tol=0.0)
+
+
+def test_cuda_pano_n_alpha_preserves_constant_input(device: torch.device) -> None:
+    """A convex combination of identical inputs must return that input. On float4 the kernel
+    normalizes unconditionally and drops zero-alpha contributors, so this cannot fail on the
+    weights not summing to one or on black leaking in; both are pinned in test_feather.py. What
+    it pins is that the mask reaches the kernel with the right layout."""
+    width, height, n, stride = 97, 35, 3, 32
+    masks = _alpha_strip_masks_n(width, height, n, stride)
+    colour = (40.0, 90.0, 170.0, 255.0)
+    images = [constant_image(width, height, colour, device) for _ in range(n)]
+
+    pano = CudaStitchPanoN(1, 0, masks, quiet=True, blend_mode="alpha", feather_fraction=0.15)
+    out = pano.process(images)
+    covered = out[..., 3] > 0
+    for channel in range(3):
+        values = out[..., channel][covered]
+        assert torch.allclose(values, torch.full_like(values, colour[channel]), atol=1e-3)
+    assert pano.blend_mode == "alpha"
+    assert pano.feather_radius_px > 0.0
+
+
+def test_cuda_pano_n_alpha_minimize_blend_matches_full_blend(device: torch.device) -> None:
+    """The N-camera minimize path pads the ROI for the feather; both routes must agree."""
+    width, height, n, stride = 2000, 200, 3, 700
+    masks = _alpha_strip_masks_n(width, height, n, stride)
+    images = [
+        constant_image(width, height, (12.0 * i, 34.0, 56.0 + i, 255.0), device) for i in range(n)
+    ]
+
+    full = CudaStitchPanoN(
+        1, 0, masks, quiet=True, minimize_blend=False, blend_mode="alpha", feather_fraction=0.1
+    ).process(images)
+    mini = CudaStitchPanoN(
+        1, 0, masks, quiet=True, minimize_blend=True, blend_mode="alpha", feather_fraction=0.1
+    ).process(images)
+    assert_tensor_equal(mini, full, tol=1e-4)
+
+
+def test_cuda_pano_n_alpha_minimize_blend_matches_full_blend_when_capped(device: torch.device) -> None:
+    """The uncapped fixture above cannot tell the ROI pad apart from the seam maximum, because
+    there the two are equal. With a 100 px overlap the cap bites and they differ by 3x."""
+    width, height, n, stride = 2000, 200, 3, 1900
+    masks = _alpha_strip_masks_n(width, height, n, stride)
+    images = [
+        constant_image(width, height, (12.0 * i, 34.0, 56.0 + i, 255.0), device) for i in range(n)
+    ]
+
+    full = CudaStitchPanoN(
+        1, 0, masks, quiet=True, minimize_blend=False, blend_mode="alpha", feather_fraction=0.1
+    ).process(images)
+    mini = CudaStitchPanoN(
+        1, 0, masks, quiet=True, minimize_blend=True, blend_mode="alpha", feather_fraction=0.1
+    ).process(images)
+    assert_tensor_equal(mini, full, tol=1e-4)
+
+
+def test_cuda_pano_n_alpha_minimize_blend_when_the_seam_is_pinched_but_the_band_is_not(
+    device: torch.device,
+) -> None:
+    """The seam maximum is not an upper bound on where the band reaches. Where the cap pinches
+    every seam pixel but coverage deepens away from it, the local radius grows too, so the ROI has
+    to be padded from the request. Canvas height matters: at 200 rows the coverage distance
+    saturates near 100 px and the cap pins the radius below overlap_padding whatever the fraction
+    is, so the pad never decides anything."""
+    height, canvas_width, seam_x, seam_w = 900, 1200, 600, 5
+    seam = np.zeros((height, canvas_width), np.uint8)
+    seam[:, seam_x : seam_x + seam_w] = 1
+    masks = make_n_masks([(canvas_width, height), (605, height)], [(0, 0), (595, 0)], seam)
+    images = [
+        constant_image(canvas_width, height, (20.0, 40.0, 60.0, 255.0), device),
+        constant_image(605, height, (200.0, 160.0, 120.0, 255.0), device),
+    ]
+
+    # narrowest = 605, so 0.9 asks for 544.5 and max_px clamps it to 512 against a 22 px seam.
+    full = CudaStitchPanoN(
+        1, 0, masks, quiet=True, minimize_blend=False, blend_mode="alpha", feather_fraction=0.9
+    ).process(images)
+    mini = CudaStitchPanoN(
+        1, 0, masks, quiet=True, minimize_blend=True, blend_mode="alpha", feather_fraction=0.9
+    ).process(images)
+    assert_tensor_equal(mini, full, tol=1e-4)
+
+
+def test_negative_level_count_is_a_status_not_a_raise(device: torch.device) -> None:
+    """BlendSettings::Validate rejects a negative count; the Python side used to build a soft
+    stitcher that then ran max(1, num_levels) levels. Reported the way its two sibling
+    validations are, so a caller checking status.ok() sees it."""
+    width, height = 64, 32
+    seam = np.repeat((np.arange(width) >= 32).astype(np.uint8)[None], height, axis=0)
+    two = CudaStitchPano(1, -3, make_two_masks(width, height, seam, 0), quiet=True)
+    assert not two.status.ok()
+    assert "negative" in two.status.message
+
+    masks_n = _alpha_strip_masks_n(64, 32, 2, 32)
+    n_camera = CudaStitchPanoN(1, -3, masks_n, quiet=True)
+    assert not n_camera.status.ok()
+    assert "negative" in n_camera.status.message
+
+    # Zero and positive counts keep their meaning.
+    assert CudaStitchPanoN(1, 0, masks_n, quiet=True).blend_mode == "hard"
+    assert CudaStitchPanoN(1, 4, masks_n, quiet=True).blend_mode == "laplacian"
+
+    # Naming laplacian explicitly with no levels is what BlendSettings::Laplacian(0) rejects.
+    zero_levels = CudaStitchPanoN(1, 0, masks_n, quiet=True, blend_mode="laplacian")
+    assert not zero_levels.status.ok()
+    assert "at least one pyramid level" in zero_levels.status.message
+
+    # Alpha carries no level count, so the check must not fire there.
+    assert CudaStitchPanoN(1, 0, masks_n, quiet=True, blend_mode="alpha").status.ok()
+
+    # ControlMasks (two-image) does not range-check the seam, so a stray label reaches
+    # build_weights. It must come back as a status, not as an exception out of the constructor.
+    stray = make_two_masks(width, height, np.full((height, width), 2, np.uint8), 0)
+    broken = CudaStitchPano(1, 0, stray, quiet=True, blend_mode="alpha", feather_fraction=0.1)
+    assert not broken.status.ok()
+    assert "label" in broken.status.message
+
+
+def test_guard_rejects_a_write_roi_that_does_not_cover_a_hole() -> None:
+    """Directly, because the guard is module level and the stitchers only ever hand it a clamped
+    rect. A negative right/bottom must not become a negative numpy stop index."""
+    seam = np.zeros((1, 3), np.uint8)
+    remap = [np.array([[65535, 65535, 0]], np.uint16)]
+    positions = [(0, 0)]
+    # Columns 0 and 1 have no data and no ROI covers them.
+    assert not hard_baseline_covers_soft_owners_outside_write(
+        seam, positions, remap, [remap[0].copy()], Rect(-1, 0, 0, 1)
+    )
+    assert not hard_baseline_covers_soft_owners_outside_write(
+        seam, positions, remap, [remap[0].copy()], Rect(0, 0, 0, 0)
+    )
+    # A ROI over the holes answers for them.
+    assert hard_baseline_covers_soft_owners_outside_write(
+        seam, positions, remap, [remap[0].copy()], Rect(0, 0, 2, 1)
+    )
+
+
+def test_cuda_pano_n_alpha_minimize_blend_covers_a_seam_the_correction_moved(
+    device: torch.device,
+) -> None:
+    """The guard only inspects pixels outside the write ROI, so a coverage hole landing inside it
+    passes. Correcting that hole moves a seam to its edge, and the crossfade from the moved seam
+    runs outside a ROI derived from the labels handed in."""
+    width, height, seam_x = 3400, 400, 1700
+    # Both cameras blanket, so the corrected labels differ from the originals exactly over the hole.
+    seam = np.zeros((height, width), np.uint8)
+    seam[:, seam_x:] = 1
+    masks = make_n_masks([(width, height), (width, height)], [(0, 0), (0, 0)], seam)
+    # Alpha(0.05) asks for 170 px, so the pad is 128 and the write ROI starts at 1571. The hole
+    # begins on that exact column, which is what keeps it out of the guard's reach.
+    masks.img_col[0][:, 1571:1631] = 65535
+    masks.img_row[0][:, 1571:1631] = 65535
+    images = [
+        constant_image(width, height, (20.0, 40.0, 60.0, 255.0), device),
+        constant_image(width, height, (200.0, 160.0, 120.0, 255.0), device),
+    ]
+
+    full = CudaStitchPanoN(
+        1, 0, masks, quiet=True, minimize_blend=False, blend_mode="alpha", feather_fraction=0.05
+    ).process(images)
+    mini = CudaStitchPanoN(
+        1, 0, masks, quiet=True, minimize_blend=True, blend_mode="alpha", feather_fraction=0.05
+    ).process(images)
+    assert_tensor_equal(mini, full, tol=1e-4)
+
+
+def test_cuda_pano_n_alpha_minimize_blend_bails_when_the_hard_baseline_has_no_data(
+    device: torch.device,
+) -> None:
+    """Outside the write ROI the minimized path keeps whatever the hard baseline produced, and
+    that baseline is remapped from the labels handed in. Where the labelled camera has no data
+    there, the baseline is transparent while the full-canvas run is not, so minimizing has to be
+    abandoned. The corrected-label ROI does not rescue this: the hole is outside the ROI, not
+    inside it."""
+    width, height, n, stride = 2000, 200, 3, 700
+    canvas_width = width + stride * (n - 1)
+    masks = _alpha_strip_masks_n(width, height, n, stride)
+    # Camera 1 blankets, so every pixel has an owner and the correction always succeeds. Camera 0
+    # loses its left edge, which the hard baseline still labels 0.
+    masks.img_col[1] = np.zeros((height, canvas_width), np.uint16)
+    masks.img_row[1] = np.zeros((height, canvas_width), np.uint16)
+    masks.positions[1] = SpatialTiff(0.0, 0.0)
+    masks.img_col[0][:, 0:300] = 65535
+    masks.img_row[0][:, 0:300] = 65535
+    images = [
+        constant_image(width, height, (12.0 * i, 34.0, 56.0 + i, 255.0), device) for i in range(n)
+    ]
+    images[1] = constant_image(canvas_width, height, (200.0, 160.0, 120.0, 255.0), device)
+
+    full = CudaStitchPanoN(
+        1, 0, masks, quiet=True, minimize_blend=False, blend_mode="alpha", feather_fraction=0.05
+    ).process(images)
+    mini = CudaStitchPanoN(
+        1, 0, masks, quiet=True, minimize_blend=True, blend_mode="alpha", feather_fraction=0.05
+    ).process(images)
+    assert_tensor_equal(mini, full, tol=1e-4)
+
+
+def test_cuda_pano_n_alpha_minimize_blend_survives_a_coverage_hole(device: torch.device) -> None:
+    """A coverage hole inside an overlap must not corrupt the minimized result. As shipped the
+    corrected-label ROI grows to cover the hole and minimizing stays on. This fixture does not
+    discriminate the ROI change, though: reverting it puts the hole outside the ROI, the guard
+    bails, and the comparison passes trivially. The next test is the one that does."""
+    width, height, n, stride = 2000, 300, 3, 1200
+    masks = _alpha_strip_masks_n(width, height, n, stride)
+    # Camera 0 owns x < 1466 and overlaps camera 1 from x = 1200. A hole in camera 0 at x = 1210
+    # is inside that overlap but outside the padded seam bbox, so only the label correction puts
+    # a boundary there and only the corrected labels can tell the ROI about it.
+    masks.img_col[0][100:200, 1210:1320] = 65535
+    masks.img_row[0][100:200, 1210:1320] = 65535
+    images = [
+        constant_image(width, height, (12.0 * i, 34.0, 56.0 + i, 255.0), device) for i in range(n)
+    ]
+
+    full_stitcher = CudaStitchPanoN(
+        1, 0, masks, quiet=True, minimize_blend=False, blend_mode="alpha", feather_fraction=0.1
+    )
+    mini_stitcher = CudaStitchPanoN(
+        1, 0, masks, quiet=True, minimize_blend=True, blend_mode="alpha", feather_fraction=0.1
+    )
+    # Enforced, not narrated: the C++ sibling asserts the same thing with a probe.
+    assert not mini_stitcher._write_roi_canvas.empty, (
+        "the corrected-label ROI should cover the hole, not bail on it"
+    )
+    assert_tensor_equal(mini_stitcher.process(images), full_stitcher.process(images), tol=1e-4)
+
+
+def test_cuda_pano_alpha_feather_input_order_matches_the_label_convention(
+    device: torch.device,
+) -> None:
+    """The two-image seam labels double as blend weights: label 1 owns image 1, label 0 owns
+    image 2, so the feather inputs are handed over swapped. The zero-feather test catches the
+    output-channel swap, but every two-image alpha fixture uses full-coverage maps, under which
+    the remap and position swaps are invisible: the tapers they select are identical. This one
+    gives the cameras different footprints so those two swaps change the mix."""
+    width, height, x2 = 300, 120, 150
+    canvas_width = width + x2
+    seam_x = 225
+    seam = np.repeat((np.arange(canvas_width) < seam_x).astype(np.uint8)[None], height, axis=0)
+    masks = make_two_masks(width, height, seam, x2)
+    # Image 1 covers canvas [0, 260), image 2 covers [190, 450): they overlap on [190, 260) and
+    # each has a region the other cannot see.
+    masks.img1_col = masks.img1_col.copy()
+    masks.img1_row = masks.img1_row.copy()
+    masks.img1_col[:, 260:] = 65535
+    masks.img1_row[:, 260:] = 65535
+    masks.img2_col = masks.img2_col.copy()
+    masks.img2_row = masks.img2_row.copy()
+    masks.img2_col[:, :40] = 65535
+    masks.img2_row[:, :40] = 65535
+
+    colour_1 = (250.0, 30.0, 30.0, 255.0)
+    colour_2 = (30.0, 30.0, 250.0, 255.0)
+    pano = CudaStitchPano(
+        1, 0, masks, quiet=True, minimize_blend=False, blend_mode="alpha", feather_fraction=0.3
+    )
+    assert pano.status.ok(), pano.status.message
+    out = pano.process(
+        constant_image(width, height, colour_1, device),
+        constant_image(width, height, colour_2, device),
+    ).cpu().numpy()[0]
+
+    row = height // 2
+    # Checked on the mask rather than only the render: where one camera has no data the blend's
+    # zero-alpha substitution produces the right pixel from the wrong weights, so reverting the
+    # remap and position swaps together is invisible in the output. Channel 0 of blend_mask is
+    # image 1's weight, and image 1 is the only camera reaching x = 100.
+    mask = pano._context.blend_mask
+    assert mask[row, 100, 0] == pytest.approx(1.0), mask[row, 100]
+    assert mask[row, 350, 0] == pytest.approx(0.0), mask[row, 350]
+    assert np.allclose(out[row, 100, :3], colour_1[:3], atol=1e-3), out[row, 100]
+    assert np.allclose(out[row, 350, :3], colour_2[:3], atol=1e-3), out[row, 350]
+    middle = out[row, 225, :3]
+    assert abs(middle[0] - middle[2]) < 20, f"the seam itself should be an even mix: {middle}"
+    # x = 210 and x = 240 are inside the overlap and close enough to a footprint edge that the
+    # coverage taper is below one, so which camera it is applied to changes the mix. Away from
+    # those edges normalization cancels the difference, which is why the whole-canvas checks
+    # above cannot see a swap. The fraction matters: at 0.15 and below the baseline and the
+    # swapped variant land close enough together that these bounds stop discriminating.
+    assert out[row, 210, 0] > 228, f"image 1 is tapered by the wrong footprint: {out[row, 210]}"
+    assert out[row, 240, 0] < 50, f"image 2 is tapered by the wrong footprint: {out[row, 240]}"
+
+
+def test_cuda_pano_alpha_minimize_blend_matches_full_blend(device: torch.device) -> None:
+    """The two-image minimize path crops the seam to the blend ROI. The feather must still be
+    built on the whole canvas: distance transforms are non-local, and the camera positions handed
+    to it are canvas coordinates a cropped mask no longer shares."""
+    width, height, x2 = 512, 200, 400
+    canvas_width = width + x2
+    seam = np.repeat(
+        (np.arange(canvas_width) >= (x2 + width) // 2).astype(np.uint8)[None], height, axis=0
+    )
+    masks = make_two_masks(width, height, seam, x2)
+    images = [
+        constant_image(width, height, (20.0, 40.0, 60.0, 255.0), device),
+        constant_image(width, height, (200.0, 160.0, 120.0, 255.0), device),
+    ]
+
+    full = CudaStitchPano(
+        1, 0, masks, quiet=True, minimize_blend=False, blend_mode="alpha", feather_fraction=0.1
+    ).process(images[0], images[1])
+    mini = CudaStitchPano(
+        1, 0, masks, quiet=True, minimize_blend=True, blend_mode="alpha", feather_fraction=0.1
+    ).process(images[0], images[1])
+    assert_tensor_equal(mini, full, tol=1e-4)

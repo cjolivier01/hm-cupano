@@ -6,33 +6,80 @@
 #include "cupano/cuda/cudaRemap.h"
 #include "cupano/cuda/cudaTypes.h"
 #include "cupano/pano/cudaPano3.h"
+#include "cupano/pano/featherMask.h"
 #include "cupano/utils/cudaBlendShow.h"
 #include "cupano/utils/showImage.h" /*NOLINT*/
 
 #include <csignal>
 #include <optional>
+#include <type_traits>
 
 namespace hm {
 namespace pano {
 namespace cuda {
 
+namespace detail3 {
+
+// Single blend dispatch shared by the reference and fused three-image paths, so the two cannot
+// drift apart on blend mode. Alpha runs the same kernel as level 0 of the pyramid, with no context.
+template <typename T_pipeline, typename T_compute>
+CudaStatus blend_soft(
+    StitchingContext3<T_pipeline, T_compute>& stitch_context,
+    CudaMat<T_compute>& blended,
+    cudaStream_t stream) {
+  if (stitch_context.blend().mode == BlendMode::kAlpha) {
+    return CudaStatus(
+        cudaBatchedAlphaBlend3<BaseScalar_t<T_compute>>(
+            stitch_context.cudaFull0->data_raw(),
+            stitch_context.cudaFull1->data_raw(),
+            stitch_context.cudaFull2->data_raw(),
+            stitch_context.cudaBlendSoftSeam->data_raw(),
+            blended.data_raw(),
+            stitch_context.cudaFull0->width(),
+            stitch_context.cudaFull0->height(),
+            stitch_context.cudaFull0->channels(),
+            stitch_context.batch_size(),
+            stream));
+  }
+  return CudaStatus(cudaBatchedLaplacianBlendWithContext3(
+      stitch_context.cudaFull0->data_raw(),
+      stitch_context.cudaFull1->data_raw(),
+      stitch_context.cudaFull2->data_raw(),
+      stitch_context.cudaBlendSoftSeam->data_raw(),
+      blended.data_raw(),
+      *stitch_context.laplacian_blend_context,
+      stitch_context.cudaFull0->channels(),
+      stream));
+}
+
+} // namespace detail3
+
 /**
- * Constructor (same pattern as the 2‐image version, but now for THREE images).
- * - Loads three remap‐x/y TIFFs from control_masks, and a 3‐channel “soft seam” mask
- *   (or a single‐channel “hard seam” if num_levels==0).
+ * Constructor (same pattern as the two-image version, but for three images).
+ * - Loads three remap-x/y TIFFs from control_masks, plus a three-channel soft-seam mask, or a
+ *   single-channel hard seam when `blend` is a hard seam.
  * - Builds a CanvasManager3 from three positions.
- * - Allocates cudaFull0, cudaFull1, cudaFull2 if soft‐seam.
+ * - Allocates cudaFull0, cudaFull1, cudaFull2 for a soft seam.
  */
 template <typename T_pipeline, typename T_compute>
 CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
     int batch_size,
-    int num_levels,
+    BlendSettings blend,
     const ControlMasks3& control_masks,
     bool quiet,
     int max_output_width,
     bool minimize_blend,
     bool compact_workspace)
-    : minimize_blend_(minimize_blend && num_levels > 0) {
+    : blend_(blend), minimize_blend_(minimize_blend && blend.is_soft()) {
+  if (const std::string invalid = blend.Validate(); !invalid.empty()) {
+    status_ = CudaStatus(cudaErrorInvalidValue, invalid);
+    return;
+  }
+  if (blend.mode == BlendMode::kAlpha && std::is_integral_v<BaseScalar_t<T_compute>>) {
+    status_ =
+        CudaStatus(cudaErrorNotSupported, "Alpha blending requires floating-point compute to preserve feather weights");
+    return;
+  }
   if (!control_masks.is_valid()) {
     status_ = CudaStatus(cudaErrorFileNotFound, "Stitching masks (3‐image) were not able to be loaded");
     return;
@@ -50,7 +97,8 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
   // 1) Create stitch_context:
   stitch_context_ = std::make_unique<StitchingContext3<T_pipeline, T_compute>>(
       /*batch_size=*/batch_size,
-      /*is_hard_seam=*/(num_levels == 0));
+      /*blend=*/blend,
+      /*compact_workspace=*/compact_workspace);
 
   // 2) CanvasManager3:
   assert(masks.positions.size() == 3);
@@ -90,15 +138,57 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
 
   if (!stitch_context_->is_hard_seam()) {
     cv::Mat seam_index_for_blend = seam_indexed;
+
+    // Alpha mode resolves its weights on the full canvas before any ROI cropping: distance
+    // transforms are non-local, so building them from a cropped seam would invent a boundary at the
+    // crop edge. Resolving first also yields the radius the ROI padding below has to cover.
+    cv::Mat feather_weights_full;
+    float feather_roi_radius_px = 0.0f;
+    cv::Mat seam_index_for_roi = seam_indexed;
+    if (blend.mode == BlendMode::kAlpha) {
+      const std::vector<cv::Point> all_positions(
+          canvas_manager_->canvas_positions().begin(), canvas_manager_->canvas_positions().end());
+      const std::vector<cv::Mat> all_remap_x = {masks.img0_col, masks.img1_col, masks.img2_col};
+      const std::vector<cv::Mat> all_remap_y = {masks.img0_row, masks.img1_row, masks.img2_row};
+      feather::Params feather_params;
+      feather_params.fraction = blend.feather_fraction;
+      feather::Result feathered =
+          feather::build_weights(seam_indexed, all_remap_x, all_remap_y, all_positions, 3, feather_params);
+      if (!feathered.error.empty()) {
+        status_ = CudaStatus(cudaErrorInvalidValue, feathered.error);
+        return;
+      }
+      feather_weights_full = std::move(feathered.weights);
+      feather_radius_px_ = feathered.radius_px;
+      feather_roi_radius_px = feathered.requested_radius_px;
+      // A coverage hole inside an overlap moves a seam, so the ROI has to be derived from the
+      // labels the field was actually built from, not from the ones handed in.
+      if (!feathered.corrected_labels.empty())
+        seam_index_for_roi = feathered.corrected_labels;
+      if (!quiet && feathered.overlap_capped) {
+        std::cout << "Alpha blend feather capped on " << (100.0f * feathered.capped_seam_fraction)
+                  << "% of the seam (tightest " << feathered.min_seam_radius_px << " px, widest " << feather_radius_px_
+                  << " px, requested " << feathered.requested_radius_px
+                  << " px) to stay inside the contributing cameras' coverage" << std::endl;
+      }
+    }
+
     if (minimize_blend_) {
-      const blend_roi::Regions regions =
-          blend_roi::select_regions(seam_indexed, num_levels, canvas_manager_->overlap_padding());
+      // The crossfade spans radius/2 either side of the seam, so the write ROI must cover it.
+      const int feather_pad =
+          blend.mode == BlendMode::kAlpha ? static_cast<int>(std::ceil(feather_roi_radius_px / 2.0f)) + 1 : 0;
+      const blend_roi::Regions regions = blend_roi::select_regions(
+          seam_index_for_roi, blend.roi_levels(), std::max(canvas_manager_->overlap_padding(), feather_pad));
       write_roi_canvas_ = regions.write;
       blend_roi_canvas_ = regions.blend;
       const std::vector<cv::Point> positions(
           canvas_manager_->canvas_positions().begin(), canvas_manager_->canvas_positions().end());
       const std::vector<cv::Mat> remap_x = {masks.img0_col, masks.img1_col, masks.img2_col};
       const std::vector<cv::Mat> remap_y = {masks.img0_row, masks.img1_row, masks.img2_row};
+      // Deliberately the original labels, not the corrected ones the field was built from: this
+      // guards the hard baseline in cudaBlendHardSeam, which is built from the originals. A
+      // corrected owner covers by construction, so checking those would only ever fail where no
+      // camera covers at all, which disables the guard.
       if (minimizes_blend() &&
           !blend_roi::hard_baseline_covers_soft_owners_outside_write(
               seam_indexed, positions, remap_x, remap_y, write_roi_canvas_)) {
@@ -108,6 +198,9 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
       if (minimizes_blend()) {
         stitch_context_->cudaBlendHardSeam = std::make_unique<CudaMat<unsigned char>>(seam_indexed);
         seam_index_for_blend = seam_indexed(blend_roi_canvas_);
+        if (!feather_weights_full.empty()) {
+          feather_weights_full = feather_weights_full(blend_roi_canvas_).clone();
+        }
         const std::array<cv::Size, 3> remap_sizes = {
             masks.img0_col.size(), masks.img1_col.size(), masks.img2_col.size()};
         for (size_t i = 0; i < remap_rois_.size(); ++i) {
@@ -121,7 +214,6 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
       }
     }
 
-    cv::Mat seam_color = ControlMasks3::split_to_channels(seam_index_for_blend);
 #if GPU_HAS_BF16
     // Every other scalar has its own OpenCV depth, but cudaPixelTypeToCvType maps bf16 onto the
     // CV_16F codes (cudaMat.cpp), so a bf16 mask would be written as IEEE half and read as bf16.
@@ -129,6 +221,9 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
         !std::is_same_v<BaseScalar_t<T_compute>, gpu_bfloat16>,
         "bfloat16 has no distinct OpenCV depth; the soft-seam mask would be written as IEEE half");
 #endif
+    // Either a one-hot CV_8U partition or the CV_32F feathered field; both convert below.
+    cv::Mat seam_color =
+        feather_weights_full.empty() ? ControlMasks3::split_to_channels(seam_index_for_blend) : feather_weights_full;
     // Convert to T_compute type (float, etc.) but keep 3 channels
     seam_color.convertTo(seam_color, cudaPixelTypeToCvType(CudaTypeToPixelType<T_compute>::value));
     // Allocate cudaFull0/1/2 at the effective blend dimensions.
@@ -137,13 +232,16 @@ CudaStitchPano3<T_pipeline, T_compute>::CudaStitchPano3(
     stitch_context_->cudaFull2 = std::make_unique<CudaMat<T_compute>>(batch_size, seam_color.cols, seam_color.rows);
 
     stitch_context_->cudaBlendSoftSeam = std::make_unique<CudaMat<T_compute>>(seam_color);
-    stitch_context_->laplacian_blend_context =
-        std::make_unique<CudaBatchLaplacianBlendContext3<BaseScalar_t<T_compute>>>(
-            seam_color.cols,
-            seam_color.rows,
-            num_levels,
-            /*batch_size=*/batch_size,
-            /*reuse_inputs=*/compact_workspace);
+    // Alpha mode is a single pass over level 0 and needs no pyramid context.
+    if (blend.mode == BlendMode::kLaplacian) {
+      stitch_context_->laplacian_blend_context =
+          std::make_unique<CudaBatchLaplacianBlendContext3<BaseScalar_t<T_compute>>>(
+              seam_color.cols,
+              seam_color.rows,
+              blend.num_levels,
+              /*batch_size=*/batch_size,
+              /*reuse_inputs=*/compact_workspace);
+    }
   } else {
     // Hard-seam: single channel
     stitch_context_->cudaBlendHardSeam = std::make_unique<CudaMat<unsigned char>>(seam_indexed);
@@ -331,15 +429,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
   }
 
   CudaMat<T_compute>& blended = *stitch_context.cudaFull0;
-  CUDA_RETURN_IF_ERROR(cudaBatchedLaplacianBlendWithContext3(
-      stitch_context.cudaFull0->data_raw(),
-      stitch_context.cudaFull1->data_raw(),
-      stitch_context.cudaFull2->data_raw(),
-      stitch_context.cudaBlendSoftSeam->data_raw(),
-      blended.data_raw(),
-      *stitch_context.laplacian_blend_context,
-      stitch_context.cudaFull0->channels(),
-      stream));
+  CUDA_RETURN_IF_ERROR(detail3::blend_soft(stitch_context, blended, stream));
   const cv::Rect write_roi = stitch_context.minimizes_blend
       ? stitch_context.write_roi_canvas
       : cv::Rect(0, 0, stitch_context.cudaFull0->width(), stitch_context.cudaFull0->height());
@@ -399,8 +489,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
   CUDA_RETURN_IF_ERROR(status_);
   if (!canvas) {
     if constexpr (std::is_same_v<T_pipeline, T_compute>) {
-      if (!stitch_context_->is_hard_seam() && !stitch_context_->minimizes_blend &&
-          stitch_context_->laplacian_blend_context->reuseInputs) {
+      if (!stitch_context_->is_hard_seam() && !stitch_context_->minimizes_blend && stitch_context_->compact_workspace) {
         auto& scratch = *stitch_context_->cudaFull0;
         canvas = std::make_unique<CudaMat<T_pipeline>>(scratch.data(), batch_size(), canvas_width(), canvas_height());
       }

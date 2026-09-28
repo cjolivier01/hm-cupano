@@ -124,6 +124,59 @@ cc_library(
 )
 
 cc_library(
+    name = "blend_mode",
+    srcs = ["blendMode.cpp"],
+    hdrs = ["blendMode.h"],
+    copts = [
+      "--std=c++17",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "feather_mask",
+    srcs = ["featherMask.cpp"],
+    hdrs = ["featherMask.h"],
+    copts = [
+      "--std=c++17",
+    ],
+    include_prefix = INCLUDE_PREFIX,
+    visibility = ["//visibility:public"],
+    deps = [
+        "@opencv_linux//:opencv",
+    ],
+)
+
+cc_test(
+  name = "blendMode_test",
+  srcs = ["blendMode_test.cpp"],
+  deps = [
+    ":blend_mode",
+    "@googletest//:gtest",
+    "@googletest//:gtest_main",
+  ],
+)
+
+# Dumps the feather field so scripts/compare_feather_parity.py can check it against the Python
+# mirror. Not a test: the comparison needs both languages, so it lives in the script.
+cc_binary(
+  name = "featherMaskDump",
+  srcs = ["featherMaskDump.cpp"],
+  deps = [":feather_mask"],
+)
+
+cc_test(
+  name = "featherMask_test",
+  srcs = ["featherMask_test.cpp"],
+  deps = [
+    ":feather_mask",
+    "@googletest//:gtest",
+    "@googletest//:gtest_main",
+  ],
+)
+
+cc_library(
     name = "cuda_pano",
     hdrs = [
         "blendRoi.h",
@@ -141,9 +194,11 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/gpu:gpu_runtime",
+        ":blend_mode",
         ":cv_types",
         ":canvas",
         ":cuda_matrix",
+        ":feather_mask",
         "//src/utils",
         "@opencv_linux//:opencv",
     ],
@@ -241,10 +296,12 @@ cc_library(
     include_prefix = INCLUDE_PREFIX,
     visibility = ["//visibility:public"],
     deps = [
+        ":blend_mode",
         ":cv_types",
         ":canvas_manager",
         ":canvas",
         ":cuda_matrix",
+        ":feather_mask",
         "//src/cuda:cuda_blend_cuda_lib_headers",
         "@opencv_linux//:opencv",
     ],
@@ -267,9 +324,11 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = (
         [
+            ":blend_mode",
             ":cv_types",
             ":canvas",
             ":control_masks_n",
+            ":feather_mask",
             "@opencv_linux//:opencv",
         ]
         + select({

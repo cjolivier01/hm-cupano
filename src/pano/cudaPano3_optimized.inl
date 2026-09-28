@@ -93,15 +93,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
       stream));
 
   CudaMat<T_compute>& blended = *stitch_context.cudaFull0;
-  CUDA_RETURN_IF_ERROR(cudaBatchedLaplacianBlendWithContext3(
-      stitch_context.cudaFull0->data_raw(),
-      stitch_context.cudaFull1->data_raw(),
-      stitch_context.cudaFull2->data_raw(),
-      stitch_context.cudaBlendSoftSeam->data_raw(),
-      blended.data_raw(),
-      *stitch_context.laplacian_blend_context,
-      stitch_context.cudaFull0->channels(),
-      stream));
+  CUDA_RETURN_IF_ERROR(detail3::blend_soft(stitch_context, blended, stream));
   const cv::Rect write_roi = stitch_context.minimizes_blend ? stitch_context.write_roi_canvas
                                                             : cv::Rect(0, 0, blended.width(), blended.height());
   const int src_x = stitch_context.minimizes_blend ? write_roi.x - stitch_context.blend_roi_canvas.x : 0;

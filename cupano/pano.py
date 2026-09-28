@@ -11,14 +11,16 @@ import numpy as np
 import torch
 
 from .canvas import CanvasManager, CanvasManagerN
+from .feather import DEFAULT_FEATHER_FRACTION, FeatherParams, build_weights as build_feather_weights
 from .geometry import CanvasInfo, Rect
-from .masks import ControlMasks, ControlMasksN
+from .masks import UNMAPPED_POSITION_VALUE, ControlMasks, ControlMasksN
 from .ops import (
     Backend,
     LaplacianBlendWorkspace,
     cast_like,
     copy_roi,
     ensure_batched,
+    BlendMode,
     laplacian_blend_n,
     remap_to_canvas,
     remap_to_canvas_with_dest_map,
@@ -143,10 +145,37 @@ class CudaStitchPano:
         max_output_width: int = 0,
         backend: Backend = "auto",
         enable_cuda_graphs: bool = True,
+        blend_mode: BlendMode | None = None,
+        feather_fraction: float = DEFAULT_FEATHER_FRACTION,
     ) -> None:
         self._status = CudaStatus()
+        # `blend_mode=None` reproduces the historical convention where num_levels == 0 means a hard
+        # seam. Mirrors BlendSettings' implicit int constructor in blendMode.h.
+        self._blend_mode: BlendMode = blend_mode or ("hard" if num_levels == 0 else "laplacian")
+        feather_fraction = float(feather_fraction)
+        self._feather_radius_px = 0.0
+        if self._blend_mode == "alpha":
+            num_levels = 1
         self._num_levels = num_levels
-        self._minimize_blend = bool(minimize_blend and num_levels > 0)
+        self._minimize_blend = bool(minimize_blend and self._blend_mode != "hard")
+        # A status rather than a raise, matching the two checks below and BlendSettings::Validate.
+        # A negative count used to build a soft stitcher that then ran max(1, num_levels) levels.
+        if num_levels < 0:
+            self._status = CudaStatus(1, "Blend level count must not be negative")
+            return
+        if self._blend_mode == "laplacian" and num_levels < 1:
+            # Matches BlendSettings::Laplacian(0).Validate(). Reachable only by naming the mode
+            # explicitly; a bare 0 still means a hard seam.
+            self._status = CudaStatus(1, "Laplacian blending requires at least one pyramid level")
+            return
+        if self._blend_mode not in ("hard", "laplacian", "alpha"):
+            self._status = CudaStatus(1, "blend_mode must be hard, laplacian or alpha")
+            return
+        if self._blend_mode == "alpha" and (
+            not math.isfinite(feather_fraction) or not 0.0 <= feather_fraction <= 1.0
+        ):
+            self._status = CudaStatus(1, "Alpha blend feather fraction must be in [0, 1]")
+            return
         self._backend = backend
         self._enable_cuda_graphs = enable_cuda_graphs
         self._cache = _DeviceCache()
@@ -164,7 +193,7 @@ class CudaStitchPano:
                 return
 
         self._context = StitchingContext(
-            batch_size=batch_size, is_hard_seam=(num_levels == 0)
+            batch_size=batch_size, is_hard_seam=(self._blend_mode == "hard")
         )
         canvas_w = control_masks.canvas_width()
         canvas_h = control_masks.canvas_height()
@@ -203,9 +232,11 @@ class CudaStitchPano:
             (control_masks.img2_col.shape[1], control_masks.img2_col.shape[0]),
         )
 
-        blend_seam = self._canvas_manager.convertMaskMat(
-            control_masks.whole_seam_mask_image
-        )
+        # The feather needs the whole canvas: distance transforms are non-local, so building one
+        # from a blend-ROI crop invents a boundary at the crop edge, and the camera positions
+        # below are canvas coordinates that a cropped mask no longer shares.
+        full_seam = self._canvas_manager.padMaskMat(control_masks.whole_seam_mask_image)
+        blend_seam = self._canvas_manager.cropToBlendRoi(full_seam)
         self._context.remap_1_x = control_masks.img1_col
         self._context.remap_1_y = control_masks.img1_row
         self._context.remap_2_x = control_masks.img2_col
@@ -213,16 +244,60 @@ class CudaStitchPano:
         self._context.hard_seam = blend_seam.astype(np.uint8, copy=False)
         self._context.blend_seam = blend_seam.astype(np.float32, copy=False)
         if not self._context.is_hard_seam:
-            blend_mask = np.empty(
-                self._context.blend_seam.shape + (2,), dtype=np.float32
-            )
-            blend_mask[..., 0] = self._context.blend_seam
-            blend_mask[..., 1] = 1.0 - self._context.blend_seam
+            if self._blend_mode == "alpha":
+                # Two-image seam labels double as blend weights: label 1 owns image 1, label 0 owns
+                # image 2. Order the feather inputs to match so channel 1 is image 1's weight.
+                try:
+                    feathered = build_feather_weights(
+                        full_seam.astype(np.uint8, copy=False),
+                        [control_masks.img2_col, control_masks.img1_col],
+                        [control_masks.img2_row, control_masks.img1_row],
+                        [
+                            (
+                                int(control_masks.positions[1].xpos),
+                                int(control_masks.positions[1].ypos),
+                            ),
+                            (
+                                int(control_masks.positions[0].xpos),
+                                int(control_masks.positions[0].ypos),
+                            ),
+                        ],
+                        2,
+                        FeatherParams(fraction=feather_fraction),
+                    )
+                except ValueError as error:
+                    # A status, not a raise: the C++ reports this through Result::error, and
+                    # the validations above set _status too.
+                    self._status = CudaStatus(1, str(error))
+                    return
+                self._feather_radius_px = feathered.radius_px
+                # This path crops to the geometric overlap band; it has no seam-derived ROI.
+                # The per-pixel cap keeps R(p) <= 2*coverage, so
+                # the band cannot leave the cameras' shared coverage, which is inside that band.
+                weights = self._canvas_manager.cropToBlendRoi(feathered.weights)
+                blend_mask = np.empty(self._context.blend_seam.shape + (2,), dtype=np.float32)
+                blend_mask[..., 0] = weights[..., 1]
+                blend_mask[..., 1] = weights[..., 0]
+            else:
+                blend_mask = np.empty(
+                    self._context.blend_seam.shape + (2,), dtype=np.float32
+                )
+                blend_mask[..., 0] = self._context.blend_seam
+                blend_mask[..., 1] = 1.0 - self._context.blend_seam
             self._context.blend_mask = blend_mask
 
     @property
     def status(self) -> CudaStatus:
         return self._status
+
+    @property
+    def blend_mode(self) -> BlendMode:
+        return self._blend_mode
+
+    @property
+    def feather_radius_px(self) -> float:
+        """Widest crossfade any seam pixel got, in canvas pixels. Zero unless alpha mode."""
+        return self._feather_radius_px
 
     def canvas_width(self) -> int:
         return self._canvas_manager.canvas_width()
@@ -359,7 +434,7 @@ class CudaStitchPano:
         blended = laplacian_blend_n(
             [full1, full2],
             mask,
-            max(1, self._num_levels),
+            self._num_levels,
             backend=self._backend,
             workspace=scratch.blend_workspace,
         )
@@ -580,10 +655,38 @@ class CudaStitchPanoN:
         backend: Backend = "auto",
         enable_cuda_graphs: bool = True,
         max_output_width: int = 0,
+        blend_mode: BlendMode | None = None,
+        feather_fraction: float = DEFAULT_FEATHER_FRACTION,
     ) -> None:
         self._status = CudaStatus()
+        # `blend_mode=None` reproduces the historical convention where num_levels == 0 means a hard
+        # seam. Mirrors BlendSettings' implicit int constructor in blendMode.h.
+        self._blend_mode: BlendMode = blend_mode or ("hard" if num_levels == 0 else "laplacian")
+        feather_fraction = float(feather_fraction)
+        self._feather_radius_px = 0.0
+        feather_roi_radius_px = 0.0
+        if self._blend_mode == "alpha":
+            num_levels = 1
         self._num_levels = num_levels
-        self._minimize_blend = bool(minimize_blend and num_levels > 0)
+        self._minimize_blend = bool(minimize_blend and self._blend_mode != "hard")
+        # A status rather than a raise, matching the two checks below and BlendSettings::Validate.
+        # A negative count used to build a soft stitcher that then ran max(1, num_levels) levels.
+        if num_levels < 0:
+            self._status = CudaStatus(1, "Blend level count must not be negative")
+            return
+        if self._blend_mode == "laplacian" and num_levels < 1:
+            # Matches BlendSettings::Laplacian(0).Validate(). Reachable only by naming the mode
+            # explicitly; a bare 0 still means a hard seam.
+            self._status = CudaStatus(1, "Laplacian blending requires at least one pyramid level")
+            return
+        if self._blend_mode not in ("hard", "laplacian", "alpha"):
+            self._status = CudaStatus(1, "blend_mode must be hard, laplacian or alpha")
+            return
+        if self._blend_mode == "alpha" and (
+            not math.isfinite(feather_fraction) or not 0.0 <= feather_fraction <= 1.0
+        ):
+            self._status = CudaStatus(1, "Alpha blend feather fraction must be in [0, 1]")
+            return
         self._backend = backend
         self._enable_cuda_graphs = enable_cuda_graphs
         self._cache = _DeviceCache()
@@ -632,38 +735,90 @@ class CudaStitchPanoN:
         seam_for_blend = seam_index_padded
         self._context = StitchingContextN(
             batch_size=batch_size,
-            is_hard_seam=(num_levels == 0),
+            is_hard_seam=(self._blend_mode == "hard"),
             n_images=n,
             remap_x=list(control_masks.img_col),
             remap_y=list(control_masks.img_row),
             seam_index=seam_index_padded,
         )
 
+        # Alpha mode resolves its weights on the full canvas before any ROI cropping: distance
+        # transforms are non-local, so building them from a cropped seam would invent a boundary at
+        # the crop edge. Resolving first also yields the radius the ROI padding below must cover.
+        feather_weights_full = None
+        seam_index_for_roi = seam_index_padded
+        if not self._context.is_hard_seam and self._blend_mode == "alpha":
+            try:
+                feathered = build_feather_weights(
+                    seam_index_padded.astype(np.uint8, copy=False),
+                    list(control_masks.img_col),
+                    list(control_masks.img_row),
+                    [
+                        (int(p[0]), int(p[1]))
+                        for p in self._canvas_manager.canvas_positions()
+                    ],
+                    n,
+                    FeatherParams(fraction=feather_fraction),
+                )
+            except ValueError as error:
+                # A status, not a raise: the C++ reports this through Result::error, and
+                # the validations above set _status too.
+                self._status = CudaStatus(1, str(error))
+                return
+            feather_weights_full = feathered.weights
+            self._feather_radius_px = feathered.radius_px
+            feather_roi_radius_px = feathered.requested_radius_px
+            # A coverage hole inside an overlap moves a seam, so the ROI has to be derived from
+            # the labels the field was actually built from, not from the ones handed in.
+            if feathered.corrected_labels is not None:
+                seam_index_for_roi = feathered.corrected_labels
+
         if not self._context.is_hard_seam and self._minimize_blend:
-            boundary_bbox = seam_boundary_bbox(seam_index_padded)
+            boundary_bbox = seam_boundary_bbox(seam_index_for_roi)
+            covered = False
             if boundary_bbox is not None:
+                # The crossfade spans radius/2 either side of the seam, so the write ROI must
+                # cover it.
+                feather_pad = (
+                    int(math.ceil(feather_roi_radius_px / 2.0)) + 1
+                    if self._blend_mode == "alpha"
+                    else 0
+                )
                 self._write_roi_canvas = expand_and_clamp(
                     boundary_bbox,
-                    self._canvas_manager.overlap_padding(),
+                    max(self._canvas_manager.overlap_padding(), feather_pad),
                     canvas_w,
                     canvas_h,
                 )
                 self._blend_roi_canvas = expand_and_clamp(
                     self._write_roi_canvas,
-                    pyramid_margin(num_levels),
+                    pyramid_margin(0 if self._blend_mode == "alpha" else num_levels),
                     canvas_w,
                     canvas_h,
                 )
                 self._blend_roi_canvas = align_and_clamp(
                     self._blend_roi_canvas,
-                    pyramid_alignment(num_levels),
+                    pyramid_alignment(0 if self._blend_mode == "alpha" else num_levels),
                     canvas_w,
                     canvas_h,
                 )
+                covered = hard_baseline_covers_soft_owners_outside_write(
+                    seam_index_padded,
+                    [(int(p[0]), int(p[1])) for p in self._canvas_manager.canvas_positions()],
+                    list(control_masks.img_col),
+                    list(control_masks.img_row),
+                    self._write_roi_canvas,
+                )
+            if boundary_bbox is not None and covered:
                 seam_for_blend = seam_index_padded[
                     self._blend_roi_canvas.y : self._blend_roi_canvas.bottom,
                     self._blend_roi_canvas.x : self._blend_roi_canvas.right,
                 ]
+                if feather_weights_full is not None:
+                    feather_weights_full = feather_weights_full[
+                        self._blend_roi_canvas.y : self._blend_roi_canvas.bottom,
+                        self._blend_roi_canvas.x : self._blend_roi_canvas.right,
+                    ]
                 self._remap_rois = [RemapRoiInfo() for _ in range(n)]
                 for i, pos in enumerate(self._canvas_manager.canvas_positions()):
                     size = (
@@ -682,16 +837,31 @@ class CudaStitchPanoN:
                             inter.height,
                         )
             else:
+                # Either there is no seam at all, or the hard baseline cannot stand in for the
+                # soft one outside the write ROI. Either way, fall back to the full canvas.
+                self._write_roi_canvas = Rect(0, 0, 0, 0)
+                self._blend_roi_canvas = Rect(0, 0, 0, 0)
                 self._remap_rois = [RemapRoiInfo() for _ in range(n)]
 
         if not self._context.is_hard_seam:
-            self._context.blend_mask = ControlMasksN.split_to_channels(
-                seam_for_blend, n
-            ).astype(np.float32, copy=False)
+            self._context.blend_mask = (
+                feather_weights_full
+                if feather_weights_full is not None
+                else ControlMasksN.split_to_channels(seam_for_blend, n).astype(np.float32, copy=False)
+            )
 
     @property
     def status(self) -> CudaStatus:
         return self._status
+
+    @property
+    def blend_mode(self) -> BlendMode:
+        return self._blend_mode
+
+    @property
+    def feather_radius_px(self) -> float:
+        """Widest crossfade any seam pixel got, in canvas pixels. Zero unless alpha mode."""
+        return self._feather_radius_px
 
     def canvas_width(self) -> int:
         return self._canvas_manager.canvas_width()
@@ -799,7 +969,7 @@ class CudaStitchPanoN:
             blended = laplacian_blend_n(
                 scratch.compute_buffers,
                 mask,
-                max(1, self._num_levels),
+                self._num_levels,
                 backend=self._backend,
                 workspace=scratch.blend_workspace,
             )
@@ -832,7 +1002,7 @@ class CudaStitchPanoN:
         blended = laplacian_blend_n(
             scratch.compute_buffers,
             mask,
-            max(1, self._num_levels),
+            self._num_levels,
             backend=self._backend,
             workspace=scratch.blend_workspace,
         )
@@ -950,6 +1120,56 @@ def pyramid_alignment(num_levels: int) -> int:
     if num_levels <= 1:
         return 1
     return 1 << min(num_levels - 1, 30)
+
+
+def hard_baseline_covers_soft_owners_outside_write(
+    seam_index: np.ndarray,
+    positions: list[tuple[int, int]],
+    remap_x: list[np.ndarray],
+    remap_y: list[np.ndarray],
+    write_roi_canvas: Rect,
+) -> bool:
+    """Mirrors blend_roi::hard_baseline_covers_soft_owners_outside_write.
+
+    Outside the write ROI the minimized path keeps whatever the hard baseline produced, and that
+    baseline is remapped from ``seam_index``. If the labelled camera has no data at such a pixel
+    the baseline is transparent there while the full-canvas run is not, so minimizing has to be
+    abandoned. Deliberately the labels handed in, not the corrected ones: correction fires exactly
+    where the original owner has no data and some other camera does, so a corrected owner covers
+    by construction and checking those would only ever fail where no camera covers at all.
+    """
+    if seam_index.dtype != np.uint8:
+        raise ValueError("Expected indexed uint8 seam")
+    height, width = seam_index.shape
+
+    # One canvas bool rather than a gather over every outside pixel: this runs at construction on
+    # every soft N-camera blend, and the gather cost 3.9 s and 2.4 GiB on a 14220x4938 canvas.
+    # A pixel is answered for when its own owner has data there, so anything an out-of-range
+    # owner, a mismatched remap pair, or a footprint that does not reach the pixel leaves unset
+    # stays False and fails the check, matching the C++ early returns.
+    answered = np.zeros((height, width), dtype=bool)
+    for i, (pos_x, pos_y) in enumerate(positions):
+        if remap_x[i].shape != remap_y[i].shape:
+            continue
+        rows_i, cols_i = remap_x[i].shape
+        x0, x1 = max(0, pos_x), min(width, pos_x + cols_i)
+        y0, y1 = max(0, pos_y), min(height, pos_y + rows_i)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        window_x = remap_x[i][y0 - pos_y : y1 - pos_y, x0 - pos_x : x1 - pos_x]
+        window_y = remap_y[i][y0 - pos_y : y1 - pos_y, x0 - pos_x : x1 - pos_x]
+        mapped = (window_x != UNMAPPED_POSITION_VALUE) & (window_y != UNMAPPED_POSITION_VALUE)
+        answered[y0:y1, x0:x1] |= mapped & (seam_index[y0:y1, x0:x1] == i)
+
+    # Inside the write ROI the soft field is written directly, so the baseline does not matter.
+    # Both ends clamped: a negative bottom/right would otherwise be a negative numpy stop index
+    # and mark a large region answered. expand_and_clamp never produces one, but this is a
+    # module-level function.
+    answered[
+        max(0, write_roi_canvas.y) : max(0, min(height, write_roi_canvas.bottom)),
+        max(0, write_roi_canvas.x) : max(0, min(width, write_roi_canvas.right)),
+    ] = True
+    return bool(answered.all())
 
 
 def seam_boundary_bbox(seam_index: np.ndarray) -> Rect | None:

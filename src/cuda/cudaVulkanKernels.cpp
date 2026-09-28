@@ -921,6 +921,81 @@ cudaError_t cudaBatchedLaplacianBlendN(
 }
 
 // -----------------------------------------------------------------------------
+// Single-pass alpha composites. This backend already evaluates the blend at full resolution
+// (blend_*_images below ignore the pyramid entirely), so these are direct forwards.
+// -----------------------------------------------------------------------------
+
+template <typename T, typename F_T>
+cudaError_t cudaBatchedAlphaBlend(
+    const T* d_image1,
+    const T* d_image2,
+    const T* d_mask,
+    T* d_output,
+    int imageWidth,
+    int imageHeight,
+    int channels,
+    int batchSize,
+    cudaStream_t) {
+  if (!d_image1 || !d_image2 || !d_mask || !d_output) {
+    return cudaErrorInvalidValue;
+  }
+  if (imageWidth <= 0 || imageHeight <= 0 || batchSize <= 0 || channels < 1 || channels > 4) {
+    return cudaErrorInvalidValue;
+  }
+  blend_two_images(d_image1, d_image2, d_mask, d_output, imageWidth, imageHeight, channels, batchSize);
+  return cudaSuccess;
+}
+
+template <typename T, typename F_T>
+cudaError_t cudaBatchedAlphaBlend3(
+    const T* d_image1,
+    const T* d_image2,
+    const T* d_image3,
+    const T* d_mask,
+    T* d_output,
+    int imageWidth,
+    int imageHeight,
+    int channels,
+    int batchSize,
+    cudaStream_t) {
+  if (!d_image1 || !d_image2 || !d_image3 || !d_mask || !d_output) {
+    return cudaErrorInvalidValue;
+  }
+  if (imageWidth <= 0 || imageHeight <= 0 || batchSize <= 0 || channels < 1 || channels > 4) {
+    return cudaErrorInvalidValue;
+  }
+  blend_three_images(d_image1, d_image2, d_image3, d_mask, d_output, imageWidth, imageHeight, channels, batchSize);
+  return cudaSuccess;
+}
+
+template <typename T, typename F_T, int N_IMAGES, int CHANNELS>
+cudaError_t cudaBatchedAlphaBlendN(
+    const T* const* d_imagePtrs,
+    const T* d_mask,
+    T* d_output,
+    int imageWidth,
+    int imageHeight,
+    int batchSize,
+    cudaStream_t) {
+  if (!d_imagePtrs || !d_mask || !d_output) {
+    return cudaErrorInvalidValue;
+  }
+  if (imageWidth <= 0 || imageHeight <= 0 || batchSize <= 0) {
+    return cudaErrorInvalidValue;
+  }
+  // This backend's pointers are host-addressable, so the caller's table can be read directly.
+  std::vector<const T*> images(N_IMAGES);
+  for (int i = 0; i < N_IMAGES; ++i) {
+    if (!d_imagePtrs[i]) {
+      return cudaErrorInvalidDevicePointer;
+    }
+    images[i] = d_imagePtrs[i];
+  }
+  blend_n_images<T, N_IMAGES, CHANNELS>(images, d_mask, d_output, imageWidth, imageHeight, batchSize);
+  return cudaSuccess;
+}
+
+// -----------------------------------------------------------------------------
 // 3-image fused helpers
 // -----------------------------------------------------------------------------
 
@@ -1909,6 +1984,38 @@ INSTANTIATE_BLEND_N(7, 4)
 INSTANTIATE_BLEND_N(8, 4)
 
 #undef INSTANTIATE_BLEND_N
+
+#define INSTANTIATE_ALPHA_BLEND_2_3(T)                                     \
+  template cudaError_t cudaBatchedAlphaBlend<T, float>(                    \
+      const T*, const T*, const T*, T*, int, int, int, int, cudaStream_t); \
+  template cudaError_t cudaBatchedAlphaBlend3<T, float>(                   \
+      const T*, const T*, const T*, const T*, T*, int, int, int, int, cudaStream_t);
+
+INSTANTIATE_ALPHA_BLEND_2_3(float)
+INSTANTIATE_ALPHA_BLEND_2_3(unsigned char)
+
+#undef INSTANTIATE_ALPHA_BLEND_2_3
+
+#define INSTANTIATE_ALPHA_BLEND_N(N, C)                            \
+  template cudaError_t cudaBatchedAlphaBlendN<float, float, N, C>( \
+      const float* const*, const float*, float*, int, int, int, cudaStream_t);
+
+INSTANTIATE_ALPHA_BLEND_N(2, 3)
+INSTANTIATE_ALPHA_BLEND_N(3, 3)
+INSTANTIATE_ALPHA_BLEND_N(4, 3)
+INSTANTIATE_ALPHA_BLEND_N(5, 3)
+INSTANTIATE_ALPHA_BLEND_N(6, 3)
+INSTANTIATE_ALPHA_BLEND_N(7, 3)
+INSTANTIATE_ALPHA_BLEND_N(8, 3)
+INSTANTIATE_ALPHA_BLEND_N(2, 4)
+INSTANTIATE_ALPHA_BLEND_N(3, 4)
+INSTANTIATE_ALPHA_BLEND_N(4, 4)
+INSTANTIATE_ALPHA_BLEND_N(5, 4)
+INSTANTIATE_ALPHA_BLEND_N(6, 4)
+INSTANTIATE_ALPHA_BLEND_N(7, 4)
+INSTANTIATE_ALPHA_BLEND_N(8, 4)
+
+#undef INSTANTIATE_ALPHA_BLEND_N
 
 namespace hm {
 namespace pano {

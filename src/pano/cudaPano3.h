@@ -3,6 +3,7 @@
 #include <memory>
 #include "cupano/cuda/cudaBlend3.h"
 #include "cupano/cuda/cudaStatus.h"
+#include "cupano/pano/blendMode.h"
 #include "cupano/pano/blendRoi.h"
 #include "cupano/pano/canvasManager3.h"
 #include "cupano/pano/controlMasks3.h"
@@ -29,7 +30,14 @@ namespace cuda {
 
 template <typename T_pipeline, typename T_compute>
 struct StitchingContext3 {
-  StitchingContext3(int batch_size, bool is_hard_seam) : batch_size_(batch_size), is_hard_seam_(is_hard_seam) {}
+  StitchingContext3(int batch_size, BlendSettings blend, bool compact_workspace)
+      : compact_workspace(compact_workspace), blend_(blend), batch_size_(batch_size) {}
+
+  // Read here rather than from laplacian_blend_context->reuseInputs so the managed output path
+  // stays valid in alpha mode, which builds no Laplacian context at all. On the context rather
+  // than the stitcher only for symmetry with the other blend state; CudaStitchPanoN keeps the
+  // same flag as a plain member.
+  bool compact_workspace{false};
 
   // Static remap buffers for the three inputs:
   std::unique_ptr<CudaMat<uint16_t>> remap_0_x;
@@ -62,12 +70,15 @@ struct StitchingContext3 {
     return batch_size_;
   }
   constexpr bool is_hard_seam() const {
-    return is_hard_seam_;
+    return blend_.is_hard_seam();
+  }
+  constexpr const BlendSettings& blend() const {
+    return blend_;
   }
 
  private:
+  BlendSettings blend_;
   int batch_size_;
-  bool is_hard_seam_;
 };
 
 template <typename T_pipeline, typename T_compute>
@@ -76,9 +87,11 @@ class CudaStitchPano3 {
   using pipeline_type = T_pipeline;
   using compute_type = T_compute;
 
+  // `blend` accepts a bare pyramid level count, preserving the historical convention in which 0
+  // means a hard seam. Use BlendSettings::Alpha(fraction) to select the feathered crossfade.
   CudaStitchPano3(
       int batch_size,
-      int num_levels,
+      BlendSettings blend,
       const ControlMasks3& control_masks,
       bool quiet = false,
       int max_output_width = 0,
@@ -105,6 +118,15 @@ class CudaStitchPano3 {
   }
   const cv::Rect& write_roi_canvas() const {
     return write_roi_canvas_;
+  }
+  BlendMode blend_mode() const {
+    return blend_.mode;
+  }
+  // Widest crossfade any seam pixel got, in canvas pixels. Not the width used everywhere and
+  // not an upper bound on the field: away from a pinched seam the local radius can exceed it,
+  // which is why the blend ROI pads from the requested width instead. Zero unless alpha mode.
+  float feather_radius_px() const {
+    return feather_radius_px_;
   }
 
   /**
@@ -230,6 +252,8 @@ class CudaStitchPano3 {
 
   std::unique_ptr<StitchingContext3<T_pipeline, T_compute>> stitch_context_;
   std::unique_ptr<CanvasManager3> canvas_manager_;
+  BlendSettings blend_{0};
+  float feather_radius_px_{0.0f};
   bool minimize_blend_{false};
   cv::Rect blend_roi_canvas_{};
   cv::Rect write_roi_canvas_{};
