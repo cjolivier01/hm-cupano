@@ -60,6 +60,7 @@ build:cuda --strategy=CppCompile=local
 # ROCm/HIP backend config
 build:rocm --repo_env=GPU_BACKEND=rocm
 build:rocm --define=backend=hip
+build:rocm --define=jetson_use_hip=true
 build:rocm --cxxopt=-DUSE_HIP
 build:rocm --host_cxxopt=-DUSE_HIP
 build:rocm --cxxopt=-D__HIP_PLATFORM_AMD__
