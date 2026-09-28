@@ -934,7 +934,97 @@ void check_compact_borrowed_3() {
     }
   }
 }
+
+// Lock-step guard for the soft-seam mask scalar depth (see cudaPanoN's equivalent). A one-hot mask
+// blended at a single level picks exactly one contributor per pixel, so it must reproduce the
+// hard-seam kernel byte for byte. This fails if the mask is ever uploaded at a depth the blend
+// kernel does not read it at.
+template <typename Pixel>
+void check_single_level_matches_hard_seam_3() {
+  constexpr int w = 97, h = 35, n = 3, stride = 24;
+  constexpr int canvas_width = w + stride * (n - 1);
+  cv::Mat seam(h, canvas_width, CV_8U, cv::Scalar(0));
+  for (int x = 0; x < canvas_width; ++x)
+    seam.col(x).setTo(std::min(n - 1, x * n / canvas_width));
+  for (int x = 0; x < canvas_width; ++x) {
+    const int owner = seam.at<uint8_t>(0, x);
+    ASSERT_GE(x, stride * owner) << "label " << owner << " starts before its footprint at x=" << x;
+    ASSERT_LT(x, stride * owner + w) << "label " << owner << " extends past its footprint at x=" << x;
+  }
+  auto masks = make_masks3(
+      {cv::Size(w, h), cv::Size(w, h), cv::Size(w, h)},
+      {cv::Point(0, 0), cv::Point(stride, 0), cv::Point(2 * stride, 0)},
+      seam);
+
+  hm::pano::cuda::CudaStitchPano3<Pixel, Pixel> hard(
+      1,
+      /*num_levels=*/0,
+      masks,
+      /*quiet=*/true,
+      /*max_output_width=*/0,
+      /*minimize_blend=*/false,
+      /*compact_workspace=*/false);
+  hm::pano::cuda::CudaStitchPano3<Pixel, Pixel> soft(
+      1,
+      /*num_levels=*/1,
+      masks,
+      /*quiet=*/true,
+      /*max_output_width=*/0,
+      /*minimize_blend=*/false,
+      /*compact_workspace=*/false);
+  ASSERT_TRUE(hard.status().ok()) << hard.status().message();
+  ASSERT_TRUE(soft.status().ok()) << soft.status().message();
+
+  std::vector<std::unique_ptr<hm::CudaMat<Pixel>>> inputs;
+  for (int i = 0; i < n; ++i) {
+    cv::Mat host = make_pattern_image(w, h, i);
+    if (sizeof(Pixel) == 8)
+      host.convertTo(host, CV_16FC4);
+    inputs.push_back(std::make_unique<hm::CudaMat<Pixel>>(host));
+  }
+
+  auto hard_out = hard.process(
+      *inputs[0],
+      *inputs[1],
+      *inputs[2],
+      0,
+      std::make_unique<hm::CudaMat<Pixel>>(1, hard.canvas_width(), hard.canvas_height()));
+  ASSERT_TRUE(hard_out.ok()) << hard_out.status().message();
+  auto soft_out = soft.process(
+      *inputs[0],
+      *inputs[1],
+      *inputs[2],
+      0,
+      std::make_unique<hm::CudaMat<Pixel>>(1, soft.canvas_width(), soft.canvas_height()));
+  ASSERT_TRUE(soft_out.ok()) << soft_out.status().message();
+  CUDA_CHECK(cudaDeviceSynchronize());
+
+  cv::Mat a = hard_out.ConsumeValueOrDie()->download();
+  cv::Mat b = soft_out.ConsumeValueOrDie()->download();
+  ASSERT_EQ(a.cols, canvas_width);
+  ASSERT_EQ(a.rows, h);
+  ASSERT_EQ(a.size(), b.size());
+  ASSERT_EQ(a.type(), b.type());
+  const size_t bytes = a.total() * a.elemSize();
+  ASSERT_EQ(bytes, b.total() * b.elemSize());
+  if (std::memcmp(a.data, b.data, bytes) != 0) {
+    size_t first = 0;
+    while (first < bytes && a.data[first] == b.data[first])
+      ++first;
+    const size_t pixel = first / a.elemSize();
+    ADD_FAILURE() << "hard and one-hot single-level output differ at byte " << first << " (pixel " << pixel % a.cols
+                  << "," << pixel / a.cols << "), hard=" << int(a.data[first]) << " soft=" << int(b.data[first]);
+  }
+}
 } // namespace
+
+TEST(CudaPano3SeamMaskTest, SingleLevelMatchesHardSeamFloat4) {
+  check_single_level_matches_hard_seam_3<float4>();
+}
+TEST(CudaPano3SeamMaskTest, SingleLevelMatchesHardSeamHalf4) {
+  check_single_level_matches_hard_seam_3<half4>();
+}
+
 TEST(CudaPano3CompactTest, BorrowedOutputMatchesOwnedFloat4) {
   check_compact_borrowed_3<float4>();
 }
