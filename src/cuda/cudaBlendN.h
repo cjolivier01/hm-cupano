@@ -1,6 +1,8 @@
 // cudaBlendN.h
 #pragma once
 
+#include <cupano/gpu/cudaStreamFence.h>
+
 #include <cupano/gpu/gpu_runtime.h>
 #include <array>
 #include <cassert>
@@ -9,8 +11,8 @@
 /**
  * @brief Context for batched Laplacian blending of N_IMAGES inputs.
  *
- * Adds three pre-allocated device‐pointer arrays so that no
- * per-call malloc/free of pointer-lists is needed.
+ * Retains three device-pointer arrays, allocated on the first processing stream,
+ * so subsequent calls need no malloc/free of pointer lists.
  */
 template <typename T, int N_IMAGES>
 struct CudaBatchLaplacianBlendContextN {
@@ -22,6 +24,7 @@ struct CudaBatchLaplacianBlendContextN {
   const int batchSize;
   // Destructive scratch mode: writable inputs must be refilled before every call.
   const bool reuseInputs;
+  hm::gpu::CudaStreamFence completion;
   size_t allocation_size{0};
 
   // Pyramid dimensions per level
@@ -68,18 +71,15 @@ struct CudaBatchLaplacianBlendContextN {
       d_gauss[i].assign(levels, nullptr);
       d_lap[i].assign(levels, nullptr);
     }
-    // allocate the three pointer‐lists **once** (ignore errors here; will surface later on kernel use)
-    (void)cudaMalloc(reinterpret_cast<void**>(&d_ptrsA), N_IMAGES * sizeof(T*));
-    (void)cudaMalloc(reinterpret_cast<void**>(&d_ptrsB), N_IMAGES * sizeof(T*));
-    (void)cudaMalloc(reinterpret_cast<void**>(&d_ptrsC), N_IMAGES * sizeof(T*));
   }
 
-  static constexpr void maybeCudaFree(void* p) {
+  static void maybeCudaFree(void* p) {
     if (p)
-      cudaFree(p);
+      cudaFreeAsync(p, 0);
   }
 
   ~CudaBatchLaplacianBlendContextN() {
+    completion.order_cleanup();
     // free pyramids & masks as before...
     for (int lvl = 0; lvl < numLevels; ++lvl) {
       for (int i = 0; i < N_IMAGES; ++i) {

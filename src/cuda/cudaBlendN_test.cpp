@@ -9,7 +9,6 @@
 
 #include "cudaBlendN.h"
 
-#include <cuda_fp16.h>
 #include <vector>
 
 #define CUDA_CHECK(call)                                                                                      \

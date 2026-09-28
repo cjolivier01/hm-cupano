@@ -22,6 +22,7 @@ git_repository(
     name = "jetson-utils",
     commit = "49fb10dc2e13990897c1a1e77a212b4d5fead7af",
     remote = "ssh://git@github.com/cjolivier01/jetson-utils",
+    repo_mapping = {"@rocm_sdk_includes": "@local_rocm"},
 )
 
 load("@jetson-utils//bazel:dependencies.bzl", "local_cuda_sdk_repository")

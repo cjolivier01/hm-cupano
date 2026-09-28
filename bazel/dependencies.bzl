@@ -248,15 +248,14 @@ def _local_rocm_repo_impl(ctx):
             'cc_library(',
             '    name = "rocm_sdk_core",',
             '    srcs = [],',
-            '    hdrs = [],',
+            '    hdrs = glob(["include/**"]),',
             '    includes = ["include"],',
             ')',
             'cc_library(',
             '    name = "hip_runtime",',
             '    srcs = [],',
             '    hdrs = [],',
-            '    includes = ["include"],',
-            '    deps = [":amdhip64"],',
+            '    deps = [":rocm_sdk_core", ":amdhip64"],',
             ')',
         ])
     else:

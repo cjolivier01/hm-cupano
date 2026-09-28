@@ -4,9 +4,8 @@
 
 #include "cudaBlend.h"
 
-#include <cuda_fp16.h>
-
 #include <algorithm>
+#include <array>
 #include <vector>
 
 #define CUDA_CHECK(call)                                                                                      \
@@ -314,3 +313,250 @@ TEST(CudaBlendSmallTest, NCompactWorkspaceIsBitExactFloat) {
 TEST(CudaBlendSmallTest, NCompactWorkspaceIsBitExactHalf) {
   check_multi_compact_workspace<__half, 5, false>();
 }
+
+#if GPU_BACKEND_CUDA || GPU_BACKEND_HIP
+TEST(CudaBlendLifetime, ContextCleanupAfterCallerStreamDestruction) {
+  constexpr int W = 65, H = 33;
+  const std::vector<float> input(W * H * 3, 7.0f);
+  const std::vector<float> mask(W * H * 3, 1.0f / 3.0f);
+  float *d_input, *d_mask, *d_output;
+  CUDA_CHECK(cudaMalloc(&d_input, input.size() * sizeof(float)));
+  CUDA_CHECK(cudaMalloc(&d_mask, mask.size() * sizeof(float)));
+  CUDA_CHECK(cudaMalloc(&d_output, input.size() * sizeof(float)));
+  CUDA_CHECK(cudaMemcpy(d_input, input.data(), input.size() * sizeof(float), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_mask, mask.data(), mask.size() * sizeof(float), cudaMemcpyHostToDevice));
+
+  for (int variant = 0; variant < 4; ++variant) {
+    std::vector<float> reference;
+    for (bool wait_before_destroy : {true, false}) {
+      cudaStream_t stream;
+      CUDA_CHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
+      {
+        CudaBatchLaplacianBlendContext<float> two(W, H, 3, 1);
+        CudaBatchLaplacianBlendContext3<float> three(W, H, 3, 1);
+        CudaBatchLaplacianBlendContextN<float, 3> many(W, H, 3, 1);
+        if (variant == 0) {
+          CUDA_CHECK(
+              (cudaBatchedLaplacianBlendWithContext<float, float>(d_input, d_input, d_mask, d_output, two, 3, stream)));
+        } else if (variant == 1) {
+          CUDA_CHECK((cudaBatchedLaplacianBlendWithContext3<float, float>(
+              d_input, d_input, d_input, d_mask, d_output, three, 3, stream)));
+        } else if (variant == 2) {
+          CUDA_CHECK((cudaBatchedLaplacianBlendWithContextN<float, float, 3, 3>(
+              {d_input, d_input, d_input}, d_mask, d_output, many, stream)));
+        } else {
+          CUDA_CHECK((cudaBatchedLaplacianBlendOptimized3<float, float>(
+              d_input, d_input, d_input, d_mask, d_output, three, 3, stream)));
+        }
+        // Destroying a stream does not wait for its kernels. The contexts must
+        // retain a dependency on that work without accessing the destroyed handle.
+        if (wait_before_destroy)
+          CUDA_CHECK(cudaStreamSynchronize(stream));
+        CUDA_CHECK(cudaStreamDestroy(stream));
+      }
+      CUDA_CHECK(cudaDeviceSynchronize());
+      std::vector<float> output(input.size());
+      CUDA_CHECK(cudaMemcpy(output.data(), d_output, output.size() * sizeof(float), cudaMemcpyDeviceToHost));
+      if (wait_before_destroy) {
+        reference = output;
+      } else {
+        EXPECT_EQ(output, reference) << "variant=" << variant;
+      }
+      if (variant < 3) {
+        for (float value : output)
+          ASSERT_NEAR(value, 7.0f, 1e-4f) << "variant=" << variant;
+      }
+    }
+  }
+  CUDA_CHECK(cudaFree(d_input));
+  CUDA_CHECK(cudaFree(d_mask));
+  CUDA_CHECK(cudaFree(d_output));
+}
+#endif
+
+#if GPU_BACKEND_CUDA || GPU_BACKEND_HIP
+TEST(CudaBlendOptimized3, MultiBlockPyramidsMatchCpuReference) {
+  for (int channels : {3, 4}) {
+    for (const auto size : {std::pair<int, int>{64, 32}, {65, 33}, {257, 65}}) {
+      const int width = size.first, height = size.second, batch = 2, levels = 4;
+      const size_t count = static_cast<size_t>(width) * height * channels * batch;
+      cudaStream_t stream;
+      CUDA_CHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
+      {
+        CudaBatchLaplacianBlendContext3<float> context(width, height, levels, batch);
+        float *images[3], *mask, *output;
+        for (auto& image : images)
+          CUDA_CHECK(cudaMallocAsync(&image, count * sizeof(float), stream));
+        CUDA_CHECK(cudaMallocAsync(&mask, static_cast<size_t>(width) * height * 3 * sizeof(float), stream));
+        CUDA_CHECK(cudaMallocAsync(&output, count * sizeof(float), stream));
+        std::vector<float> host_mask(width * height * 3, 1.0f / 3.0f);
+        CUDA_CHECK(
+            cudaMemcpyAsync(mask, host_mask.data(), host_mask.size() * sizeof(float), cudaMemcpyHostToDevice, stream));
+        std::array<std::vector<float>, 3> host;
+        for (int frame = 0; frame < 3; ++frame) {
+          for (int camera = 0; camera < 3; ++camera) {
+            host[camera].resize(count);
+            for (size_t i = 0; i < count; ++i)
+              host[camera][i] = 20.0f + static_cast<float>((i * 13 + camera * 17 + frame * 19) % 101);
+            CUDA_CHECK(cudaMemcpyAsync(
+                images[camera], host[camera].data(), count * sizeof(float), cudaMemcpyHostToDevice, stream));
+          }
+          if (frame) {
+            // Expose reads of a neighboring block's unwritten next-level data,
+            // rather than letting an allocation retain plausible values.
+            for (int level = 1; level < context.numLevels; ++level) {
+              const size_t bytes = static_cast<size_t>(context.widths[level]) * context.heights[level] * channels *
+                  batch * sizeof(float);
+              for (float* ptr : {context.d_gauss1[level], context.d_gauss2[level], context.d_gauss3[level]})
+                CUDA_CHECK(cudaMemsetAsync(ptr, 0xff, bytes, stream));
+            }
+          }
+          CUDA_CHECK((cudaBatchedLaplacianBlendOptimized3<float, float>(
+              images[0], images[1], images[2], mask, output, context, channels, stream)));
+          CUDA_CHECK(cudaStreamSynchronize(stream));
+
+          const std::array<const std::vector<float*>*, 3> gauss = {
+              &context.d_gauss1, &context.d_gauss2, &context.d_gauss3};
+          const std::array<const std::vector<float*>*, 3> lap = {&context.d_lap1, &context.d_lap2, &context.d_lap3};
+          for (int camera = 0; camera < 3; ++camera) {
+            std::vector<float> current = host[camera];
+            for (int level = 0; level < context.numLevels - 1; ++level) {
+              const int w = context.widths[level], h = context.heights[level];
+              const int nw = context.widths[level + 1], nh = context.heights[level + 1];
+              std::vector<float> next(static_cast<size_t>(nw) * nh * channels * batch);
+              for (int b = 0; b < batch; ++b) {
+                for (int y = 0; y < nh; ++y) {
+                  for (int x = 0; x < nw; ++x) {
+                    for (int c = 0; c < channels; ++c) {
+                      float sum = 0;
+                      int samples = 0;
+                      for (int dy = 0; dy < 2; ++dy) {
+                        for (int dx = 0; dx < 2; ++dx) {
+                          if (2 * x + dx < w && 2 * y + dy < h) {
+                            sum += current[((b * h + 2 * y + dy) * w + 2 * x + dx) * channels + c];
+                            ++samples;
+                          }
+                        }
+                      }
+                      next[((b * nh + y) * nw + x) * channels + c] = sum / samples;
+                    }
+                  }
+                }
+              }
+              std::vector<float> actual_next(next.size()), actual_lap(current.size());
+              CUDA_CHECK(cudaMemcpyAsync(
+                  actual_next.data(),
+                  (*gauss[camera])[level + 1],
+                  next.size() * sizeof(float),
+                  cudaMemcpyDeviceToHost,
+                  stream));
+              CUDA_CHECK(cudaStreamSynchronize(stream));
+              CUDA_CHECK(cudaMemcpyAsync(
+                  actual_lap.data(),
+                  (*lap[camera])[level],
+                  current.size() * sizeof(float),
+                  cudaMemcpyDeviceToHost,
+                  stream));
+              CUDA_CHECK(cudaStreamSynchronize(stream));
+              ASSERT_EQ(actual_next, next);
+              for (int b = 0; b < batch; ++b) {
+                for (int y = 0; y < h; ++y) {
+                  for (int x = 0; x < w; ++x) {
+                    const int x0 = x / 2, x1 = std::min(x0 + 1, nw - 1);
+                    const int y0 = y / 2, y1 = std::min(y0 + 1, nh - 1);
+                    const float dx = (x % 2) * 0.5f, dy = (y % 2) * 0.5f;
+                    for (int c = 0; c < channels; ++c) {
+                      auto value = [&](int xx, int yy) { return next[((b * nh + yy) * nw + xx) * channels + c]; };
+                      const float up = (1 - dx) * (1 - dy) * value(x0, y0) + dx * (1 - dy) * value(x1, y0) +
+                          (1 - dx) * dy * value(x0, y1) + dx * dy * value(x1, y1);
+                      const size_t i = ((b * h + y) * w + x) * channels + c;
+                      ASSERT_NEAR(actual_lap[i], current[i] - up, 1e-4f)
+                          << "size=" << width << 'x' << height << " channels=" << channels << " frame=" << frame
+                          << " camera=" << camera << " level=" << level << " batch=" << b << " pixel=" << x << ',' << y;
+                    }
+                  }
+                }
+              }
+              current = std::move(next);
+            }
+          }
+        }
+        for (auto image : images)
+          CUDA_CHECK(cudaFreeAsync(image, stream));
+        CUDA_CHECK(cudaFreeAsync(mask, stream));
+        CUDA_CHECK(cudaFreeAsync(output, stream));
+      }
+      CUDA_CHECK(cudaStreamSynchronize(stream));
+      CUDA_CHECK(cudaStreamDestroy(stream));
+    }
+  }
+}
+#endif
+
+#if GPU_BACKEND_CUDA || GPU_BACKEND_HIP
+TEST(CudaBlendOptimized3, BytePyramidsDoNotReadPoisonedNeighbors) {
+  constexpr int width = 65, height = 33, batch = 2, levels = 4;
+  for (int channels : {3, 4}) {
+    cudaStream_t stream;
+    CUDA_CHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
+    {
+      CudaBatchLaplacianBlendContext3<unsigned char> context(width, height, levels, batch);
+      const size_t count = static_cast<size_t>(width) * height * channels * batch;
+      unsigned char *images[3], *mask, *output;
+      std::array<std::vector<unsigned char>, 3> host;
+      for (int camera = 0; camera < 3; ++camera) {
+        host[camera].resize(count);
+        for (int b = 0; b < batch; ++b)
+          std::fill_n(host[camera].begin() + b * count / batch, count / batch, 20 + camera * 15 + b * 25);
+        CUDA_CHECK(cudaMallocAsync(&images[camera], count, stream));
+        CUDA_CHECK(cudaMemcpyAsync(images[camera], host[camera].data(), count, cudaMemcpyHostToDevice, stream));
+      }
+      std::vector<unsigned char> host_mask(width * height * 3, 0);
+      for (size_t i = 0; i < host_mask.size(); i += 3)
+        host_mask[i] = 1;
+      CUDA_CHECK(cudaMallocAsync(&mask, host_mask.size(), stream));
+      CUDA_CHECK(cudaMemcpyAsync(mask, host_mask.data(), host_mask.size(), cudaMemcpyHostToDevice, stream));
+      CUDA_CHECK(cudaMallocAsync(&output, count, stream));
+      const std::array<const std::vector<unsigned char*>*, 3> gauss = {
+          &context.d_gauss1, &context.d_gauss2, &context.d_gauss3};
+      const std::array<const std::vector<unsigned char*>*, 3> lap = {&context.d_lap1, &context.d_lap2, &context.d_lap3};
+      for (int frame = 0; frame < 2; ++frame) {
+        if (frame) {
+          for (int camera = 0; camera < 3; ++camera) {
+            for (int level = 1; level < levels; ++level) {
+              const size_t bytes =
+                  static_cast<size_t>(context.widths[level]) * context.heights[level] * channels * batch;
+              CUDA_CHECK(cudaMemsetAsync((*gauss[camera])[level], 0xff, bytes, stream));
+            }
+          }
+        }
+        CUDA_CHECK((cudaBatchedLaplacianBlendOptimized3<unsigned char, float>(
+            images[0], images[1], images[2], mask, output, context, channels, stream)));
+        CUDA_CHECK(cudaStreamSynchronize(stream));
+        for (int camera = 0; camera < 3; ++camera) {
+          for (int level = 0; level < levels; ++level) {
+            const size_t bytes = static_cast<size_t>(context.widths[level]) * context.heights[level] * channels * batch;
+            std::vector<unsigned char> actual(bytes), expected(bytes);
+            for (int b = 0; b < batch; ++b)
+              std::fill_n(expected.begin() + b * bytes / batch, bytes / batch, 20 + camera * 15 + b * 25);
+            CUDA_CHECK(cudaMemcpyAsync(actual.data(), (*gauss[camera])[level], bytes, cudaMemcpyDeviceToHost, stream));
+            CUDA_CHECK(cudaStreamSynchronize(stream));
+            ASSERT_EQ(actual, expected) << "camera=" << camera << " level=" << level;
+            if (level < levels - 1) {
+              CUDA_CHECK(cudaMemcpyAsync(actual.data(), (*lap[camera])[level], bytes, cudaMemcpyDeviceToHost, stream));
+              CUDA_CHECK(cudaStreamSynchronize(stream));
+              ASSERT_EQ(actual, std::vector<unsigned char>(bytes, 0)) << "camera=" << camera << " level=" << level;
+            }
+          }
+        }
+      }
+      for (auto image : images)
+        CUDA_CHECK(cudaFreeAsync(image, stream));
+      CUDA_CHECK(cudaFreeAsync(mask, stream));
+      CUDA_CHECK(cudaFreeAsync(output, stream));
+    }
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+    CUDA_CHECK(cudaStreamDestroy(stream));
+  }
+}
+#endif

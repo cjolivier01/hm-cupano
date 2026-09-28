@@ -1,6 +1,8 @@
 // cudaBlend3.h
 #pragma once
 
+#include <cupano/gpu/cudaStreamFence.h>
+
 /**
  * @file cudaBlend3.h
  * @brief CUDA-accelerated batched Laplacian blending for **three** images.
@@ -82,13 +84,13 @@ struct CudaBatchLaplacianBlendContext3 {
   /**
    * @brief Helper function to free a CUDA pointer if it is non-null.
    *
-   * This function wraps cudaFree in a null-check.
+   * This function wraps cudaFreeAsync in a null-check.
    *
    * @param p Device pointer to free.
    */
-  static constexpr void maybeCudaFree(void* p) {
+  static void maybeCudaFree(void* p) {
     if (p) {
-      cudaFree(p);
+      cudaFreeAsync(p, 0);
     }
   }
 
@@ -101,6 +103,7 @@ struct CudaBatchLaplacianBlendContext3 {
    * arrays are also freed.
    */
   ~CudaBatchLaplacianBlendContext3() {
+    completion.order_cleanup();
     for (int level = 0; level < numLevels; level++) {
       if (!reuseInputs) {
         maybeCudaFree(d_lap1[level]);
@@ -126,6 +129,7 @@ struct CudaBatchLaplacianBlendContext3 {
   const int batchSize; ///< Number of images in the batch.
   // Destructive scratch mode: writable inputs must be refilled before every call.
   const bool reuseInputs;
+  hm::gpu::CudaStreamFence completion;
   size_t allocation_size{0}; ///< Total allocated device memory size (in bytes).
 
   std::vector<int> widths; ///< Width of images at each pyramid level.

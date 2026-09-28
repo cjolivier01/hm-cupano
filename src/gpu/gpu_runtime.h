@@ -66,6 +66,8 @@ using gpu_bfloat16 = hip_bfloat16;
 #define cudaGetErrorString hipGetErrorString
 #define cudaDeviceSynchronize hipDeviceSynchronize
 #define cudaStreamCreate hipStreamCreate
+#define cudaStreamCreateWithFlags hipStreamCreateWithFlags
+#define cudaStreamNonBlocking hipStreamNonBlocking
 #define cudaStreamDestroy hipStreamDestroy
 #define cudaStreamSynchronize hipStreamSynchronize
 #define cudaEventCreate hipEventCreate
@@ -77,6 +79,10 @@ using gpu_bfloat16 = hip_bfloat16;
 
 #define cudaMalloc hipMalloc
 #define cudaFree hipFree
+#define cudaMallocAsync hipMallocAsync
+#define cudaFreeAsync hipFreeAsync
+#define cudaStreamWaitEvent hipStreamWaitEvent
+#define cudaEventDisableTiming hipEventDisableTiming
 #define cudaMemset hipMemset
 #define cudaMemsetAsync hipMemsetAsync
 #define cudaMemcpy hipMemcpy

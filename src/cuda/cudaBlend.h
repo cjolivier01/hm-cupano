@@ -13,6 +13,8 @@
 
 #pragma once
 
+#include <cupano/gpu/cudaStreamFence.h>
+
 #include "src/pano/cudaMat.h"
 #include "src/utils/showImage.h"
 
@@ -73,13 +75,13 @@ struct CudaBatchLaplacianBlendContext {
   /**
    * @brief Helper function to free a CUDA pointer if it is non-null.
    *
-   * This function wraps cudaFree in a null-check.
+   * This function wraps cudaFreeAsync in a null-check.
    *
    * @param p Device pointer to free.
    */
-  static constexpr void maybeCudaFree(void* p) {
+  static void maybeCudaFree(void* p) {
     if (p) {
-      cudaFree(p);
+      cudaFreeAsync(p, 0);
     }
   }
 
@@ -92,6 +94,7 @@ struct CudaBatchLaplacianBlendContext {
    * mask pyramid arrays are also freed.
    */
   ~CudaBatchLaplacianBlendContext() {
+    completion.order_cleanup();
     for (int level = 0; level < numLevels; level++) {
       if (!reuseInputs) {
         maybeCudaFree(d_lap1[level]);
@@ -116,6 +119,7 @@ struct CudaBatchLaplacianBlendContext {
   // Opt-in destructive scratch mode: image inputs must be writable and refilled before every call.
   // Gaussian, Laplacian, blend, and reconstruction values are not retained for diagnostics.
   const bool reuseInputs;
+  hm::gpu::CudaStreamFence completion;
   size_t allocation_size{0}; ///< Total allocated device memory size (in bytes).
 
   std::vector<int> widths; ///< Width of images at each pyramid level.

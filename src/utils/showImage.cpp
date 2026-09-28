@@ -1,7 +1,10 @@
-#include "cupano/utils/showImage.h"
+// Load jetson-utils' HIP wrapper declarations before cupano maps CUDA names to
+// HIP names, otherwise the macros rename those wrappers to existing HIP APIs.
+#include "jetson-utils/display/glDisplay.h"
+
 #include "cupano/utils/cudaGLWindow.h"
 #include "cupano/utils/imageUtils.h"
-#include "jetson-utils/display/glDisplay.h"
+#include "cupano/utils/showImage.h"
 
 #include <algorithm>
 #include <cstddef>

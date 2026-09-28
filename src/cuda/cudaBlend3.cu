@@ -703,10 +703,10 @@ cudaError_t cudaBatchedLaplacianBlend3(
   // --------------- Allocate level-0 arrays and copy input data to device ---------------
   size_t sizeImgLevel0 = static_cast<size_t>(widths[0]) * heights[0] * channels * batchSize * sizeof(T);
   size_t sizeMaskLevel0 = static_cast<size_t>(widths[0]) * heights[0] * 3 * sizeof(T);
-  CUDA_CHECK(cudaMalloc((void**)&d_gauss1[0], sizeImgLevel0));
-  CUDA_CHECK(cudaMalloc((void**)&d_gauss2[0], sizeImgLevel0));
-  CUDA_CHECK(cudaMalloc((void**)&d_gauss3[0], sizeImgLevel0));
-  CUDA_CHECK(cudaMalloc((void**)&d_maskPyr[0], sizeMaskLevel0));
+  CUDA_CHECK(cudaMallocAsync((void**)&d_gauss1[0], sizeImgLevel0, stream));
+  CUDA_CHECK(cudaMallocAsync((void**)&d_gauss2[0], sizeImgLevel0, stream));
+  CUDA_CHECK(cudaMallocAsync((void**)&d_gauss3[0], sizeImgLevel0, stream));
+  CUDA_CHECK(cudaMallocAsync((void**)&d_maskPyr[0], sizeMaskLevel0, stream));
 
   CUDA_CHECK(cudaMemcpyAsync(d_gauss1[0], h_image1, imageSize * batchSize, cudaMemcpyHostToDevice, stream));
   CUDA_CHECK(cudaMemcpyAsync(d_gauss2[0], h_image2, imageSize * batchSize, cudaMemcpyHostToDevice, stream));
@@ -717,10 +717,10 @@ cudaError_t cudaBatchedLaplacianBlend3(
   for (int level = 1; level < numLevels; level++) {
     size_t sizeImg = static_cast<size_t>(widths[level]) * heights[level] * channels * batchSize * sizeof(T);
     size_t sizeMask = static_cast<size_t>(widths[level]) * heights[level] * 3 * sizeof(T);
-    CUDA_CHECK(cudaMalloc((void**)&d_gauss1[level], sizeImg));
-    CUDA_CHECK(cudaMalloc((void**)&d_gauss2[level], sizeImg));
-    CUDA_CHECK(cudaMalloc((void**)&d_gauss3[level], sizeImg));
-    CUDA_CHECK(cudaMalloc((void**)&d_maskPyr[level], sizeMask));
+    CUDA_CHECK(cudaMallocAsync((void**)&d_gauss1[level], sizeImg, stream));
+    CUDA_CHECK(cudaMallocAsync((void**)&d_gauss2[level], sizeImg, stream));
+    CUDA_CHECK(cudaMallocAsync((void**)&d_gauss3[level], sizeImg, stream));
+    CUDA_CHECK(cudaMallocAsync((void**)&d_maskPyr[level], sizeMask, stream));
   }
 
   // --------------- Build Gaussian pyramids (downsample) ---------------
@@ -775,9 +775,9 @@ cudaError_t cudaBatchedLaplacianBlend3(
   // --------------- Build Laplacian pyramids ---------------
   for (int level = 0; level < numLevels; level++) {
     size_t sizeImg = static_cast<size_t>(widths[level]) * heights[level] * channels * batchSize * sizeof(T);
-    CUDA_CHECK(cudaMalloc((void**)&d_lap1[level], sizeImg));
-    CUDA_CHECK(cudaMalloc((void**)&d_lap2[level], sizeImg));
-    CUDA_CHECK(cudaMalloc((void**)&d_lap3[level], sizeImg));
+    CUDA_CHECK(cudaMallocAsync((void**)&d_lap1[level], sizeImg, stream));
+    CUDA_CHECK(cudaMallocAsync((void**)&d_lap2[level], sizeImg, stream));
+    CUDA_CHECK(cudaMallocAsync((void**)&d_lap3[level], sizeImg, stream));
   }
 
   // For levels 0..numLevels-2, compute laplacian = gaussHigh – upsample(gaussLow)
@@ -835,7 +835,7 @@ cudaError_t cudaBatchedLaplacianBlend3(
     int w = widths[level];
     int h = heights[level];
     size_t sizeImg = static_cast<size_t>(w) * h * channels * batchSize * sizeof(T);
-    CUDA_CHECK(cudaMalloc((void**)&d_blend[level], sizeImg));
+    CUDA_CHECK(cudaMallocAsync((void**)&d_blend[level], sizeImg, stream));
 
     dim3 gridBlend((w + block.x - 1) / block.x, (h + block.y - 1) / block.y, batchSize);
 
@@ -855,7 +855,7 @@ cudaError_t cudaBatchedLaplacianBlend3(
   // --------------- Reconstruct the final blended image (bottom-up) ---------------
   T* d_reconstruct = nullptr;
   size_t sizeCoarse = static_cast<size_t>(widths[last]) * heights[last] * channels * batchSize * sizeof(T);
-  CUDA_CHECK(cudaMalloc((void**)&d_reconstruct, sizeCoarse));
+  CUDA_CHECK(cudaMallocAsync((void**)&d_reconstruct, sizeCoarse, stream));
   CUDA_CHECK(cudaMemcpyAsync(d_reconstruct, d_blend[last], sizeCoarse, cudaMemcpyDeviceToDevice, stream));
 
   for (int level = numLevels - 2; level >= 0; level--) {
@@ -865,7 +865,7 @@ cudaError_t cudaBatchedLaplacianBlend3(
     int hL = heights[level + 1];
     size_t sizeHigh = static_cast<size_t>(wH) * hH * channels * batchSize * sizeof(T);
     T* d_temp = nullptr;
-    CUDA_CHECK(cudaMalloc((void**)&d_temp, sizeHigh));
+    CUDA_CHECK(cudaMallocAsync((void**)&d_temp, sizeHigh, stream));
 
     dim3 gridRecon((wH + block.x - 1) / block.x, (hH + block.y - 1) / block.y, batchSize);
 
@@ -873,26 +873,27 @@ cudaError_t cudaBatchedLaplacianBlend3(
         <<<gridRecon, block, 0, stream>>>(d_reconstruct, wL, hL, d_blend[level], wH, hH, d_temp, batchSize, channels);
     CUDA_CHECK(cudaGetLastError());
 
-    cudaFree(d_reconstruct);
+    cudaFreeAsync(d_reconstruct, stream);
     d_reconstruct = d_temp;
   }
 
   // Copy final blended image(s) back to host
   CUDA_CHECK(cudaMemcpyAsync(h_output, d_reconstruct, imageSize * batchSize, cudaMemcpyDeviceToHost, stream));
-  cudaFree(d_reconstruct);
+  cudaFreeAsync(d_reconstruct, stream);
 
   // --------------- Cleanup allocated device memory ---------------
   for (int level = 0; level < numLevels; level++) {
-    cudaFree(d_gauss1[level]);
-    cudaFree(d_gauss2[level]);
-    cudaFree(d_gauss3[level]);
-    cudaFree(d_maskPyr[level]);
-    cudaFree(d_lap1[level]);
-    cudaFree(d_lap2[level]);
-    cudaFree(d_lap3[level]);
-    cudaFree(d_blend[level]);
+    cudaFreeAsync(d_gauss1[level], stream);
+    cudaFreeAsync(d_gauss2[level], stream);
+    cudaFreeAsync(d_gauss3[level], stream);
+    cudaFreeAsync(d_maskPyr[level], stream);
+    cudaFreeAsync(d_lap1[level], stream);
+    cudaFreeAsync(d_lap2[level], stream);
+    cudaFreeAsync(d_lap3[level], stream);
+    cudaFreeAsync(d_blend[level], stream);
   }
 
+  CUDA_CHECK(cudaStreamSynchronize(stream));
   return cudaGetLastError();
 }
 
@@ -909,6 +910,9 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
     int channels,
     cudaStream_t stream,
     bool cacheMaskPyramid) {
+  CUDA_CHECK(context.completion.initialize());
+  hm::gpu::CudaStreamFence::RecordOnExit record_completion(context.completion, stream);
+
   // --------------- Initialization: allocate buffers if needed ---------------
   if (!context.initialized) {
     int maxLevels = context.numLevels;
@@ -946,28 +950,28 @@ cudaError_t cudaBatchedLaplacianBlendWithContext3(
 
       // Allocate Laplacian and blend buffers
       if (!context.reuseInputs) {
-        CUDA_CHECK(cudaMalloc((void**)&context.d_lap1[level], sizeImg));
+        CUDA_CHECK(cudaMallocAsync((void**)&context.d_lap1[level], sizeImg, stream));
         context.allocation_size += sizeImg;
-        CUDA_CHECK(cudaMalloc((void**)&context.d_lap2[level], sizeImg));
+        CUDA_CHECK(cudaMallocAsync((void**)&context.d_lap2[level], sizeImg, stream));
         context.allocation_size += sizeImg;
-        CUDA_CHECK(cudaMalloc((void**)&context.d_lap3[level], sizeImg));
+        CUDA_CHECK(cudaMallocAsync((void**)&context.d_lap3[level], sizeImg, stream));
         context.allocation_size += sizeImg;
-        CUDA_CHECK(cudaMalloc((void**)&context.d_blend[level], sizeImg));
+        CUDA_CHECK(cudaMallocAsync((void**)&context.d_blend[level], sizeImg, stream));
         context.allocation_size += sizeImg;
       }
 
       if (level > 0) {
         // For levels > 0, allocate gauss and mask as well
-        CUDA_CHECK(cudaMalloc((void**)&context.d_maskPyr[level], sizeMask));
+        CUDA_CHECK(cudaMallocAsync((void**)&context.d_maskPyr[level], sizeMask, stream));
         context.allocation_size += sizeMask;
-        CUDA_CHECK(cudaMalloc((void**)&context.d_gauss1[level], sizeImg));
+        CUDA_CHECK(cudaMallocAsync((void**)&context.d_gauss1[level], sizeImg, stream));
         context.allocation_size += sizeImg;
-        CUDA_CHECK(cudaMalloc((void**)&context.d_gauss2[level], sizeImg));
+        CUDA_CHECK(cudaMallocAsync((void**)&context.d_gauss2[level], sizeImg, stream));
         context.allocation_size += sizeImg;
-        CUDA_CHECK(cudaMalloc((void**)&context.d_gauss3[level], sizeImg));
+        CUDA_CHECK(cudaMallocAsync((void**)&context.d_gauss3[level], sizeImg, stream));
         context.allocation_size += sizeImg;
         if (!context.reuseInputs) {
-          CUDA_CHECK(cudaMalloc((void**)&context.d_reconstruct[level], sizeImg));
+          CUDA_CHECK(cudaMallocAsync((void**)&context.d_reconstruct[level], sizeImg, stream));
           context.allocation_size += sizeImg;
         }
       } else {
