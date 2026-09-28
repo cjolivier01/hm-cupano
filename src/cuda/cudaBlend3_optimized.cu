@@ -38,11 +38,11 @@ constexpr int TILE_SIZE = 16;
 // =============================================================================
 
 /**
- * Fused kernel that combines downsample, upsample, and Laplacian computation
- * This eliminates multiple passes over the data
+ * Downsample all three images and their shared mask. A subsequent kernel
+ * computes Laplacians after every block has finished writing the next level.
  */
 template <typename T, typename F_T, int CHANNELS>
-__global__ void FusedPyramidConstructionKernel3(
+__global__ void BatchedDownsampleKernelOptimized3(
     // Input Gaussian pyramids at current level
     const T* __restrict__ gauss1_curr,
     const T* __restrict__ gauss2_curr,
@@ -57,10 +57,6 @@ __global__ void FusedPyramidConstructionKernel3(
     T* __restrict__ mask_next,
     int nextWidth,
     int nextHeight,
-    // Output Laplacian pyramids at current level
-    T* __restrict__ lap1_curr,
-    T* __restrict__ lap2_curr,
-    T* __restrict__ lap3_curr,
     int batchSize) {
   // Grid-stride loop for better GPU utilization
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -72,14 +68,7 @@ __global__ void FusedPyramidConstructionKernel3(
 
   const int currImageSize = currWidth * currHeight * CHANNELS;
   const int nextImageSize = nextWidth * nextHeight * CHANNELS;
-  // const int currMaskSize = currWidth * currHeight * 3;
-  // const int nextMaskSize = nextWidth * nextHeight * 3;
-
-  // Shared memory for caching
-  // extern __shared__ char shared_mem[];
-  // F_T* s_cache = reinterpret_cast<F_T*>(shared_mem);
-
-  // Process downsampling and Laplacian in a single pass
+  // Only even source coordinates produce a next-level pixel.
   for (int idx = tid; idx < currWidth * currHeight; idx += stride) {
     int y = idx / currWidth;
     int x = idx % currWidth;
@@ -133,16 +122,46 @@ __global__ void FusedPyramidConstructionKernel3(
             gauss3_next[b * nextImageSize + nextIdx + c] = static_cast<T>(sums3[c] * inv_count);
           }
 
-          mask_next[nextMaskIdx + 0] = static_cast<T>(mask_sums[0] * inv_count);
-          mask_next[nextMaskIdx + 1] = static_cast<T>(mask_sums[1] * inv_count);
-          mask_next[nextMaskIdx + 2] = static_cast<T>(mask_sums[2] * inv_count);
+          // Masks are shared by every batch item. Give each mask pixel one writer.
+          if (b == 0) {
+            mask_next[nextMaskIdx + 0] = static_cast<T>(mask_sums[0] * inv_count);
+            mask_next[nextMaskIdx + 1] = static_cast<T>(mask_sums[1] * inv_count);
+            mask_next[nextMaskIdx + 2] = static_cast<T>(mask_sums[2] * inv_count);
+          }
         }
       }
     }
+  }
+}
 
-    // Synchronize to ensure downsampled values are written
-    __syncthreads();
-
+// Reads only completed Gaussian levels. Block-local barriers cannot order these
+// neighbor reads; the preceding downsample launch on the same stream does.
+template <typename T, typename F_T, int CHANNELS>
+__global__ void BatchedLaplacianKernelOptimized3(
+    const T* __restrict__ gauss1_curr,
+    const T* __restrict__ gauss2_curr,
+    const T* __restrict__ gauss3_curr,
+    int currWidth,
+    int currHeight,
+    const T* __restrict__ gauss1_next,
+    const T* __restrict__ gauss2_next,
+    const T* __restrict__ gauss3_next,
+    int nextWidth,
+    int nextHeight,
+    T* __restrict__ lap1_curr,
+    T* __restrict__ lap2_curr,
+    T* __restrict__ lap3_curr,
+    int batchSize) {
+  const int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  const int stride = blockDim.x * gridDim.x;
+  const int b = blockIdx.z;
+  if (b >= batchSize)
+    return;
+  const int currImageSize = currWidth * currHeight * CHANNELS;
+  const int nextImageSize = nextWidth * nextHeight * CHANNELS;
+  for (int idx = tid; idx < currWidth * currHeight; idx += stride) {
+    const int y = idx / currWidth;
+    const int x = idx % currWidth;
     // Part 2: Compute Laplacian using bilinear upsampling
     F_T gx = static_cast<F_T>(x) * 0.5f;
     F_T gy = static_cast<F_T>(y) * 0.5f;
@@ -361,6 +380,48 @@ __global__ void OptimizedReconstructKernel3(
   }
 }
 
+template <typename T, typename F_T, int CHANNELS>
+cudaError_t buildPyramidLevel3(
+    CudaBatchLaplacianBlendContext3<T>& context,
+    int level,
+    dim3 grid,
+    dim3 block,
+    cudaStream_t stream) {
+  const int wH = context.widths[level], hH = context.heights[level];
+  const int wL = context.widths[level + 1], hL = context.heights[level + 1];
+  BatchedDownsampleKernelOptimized3<T, F_T, CHANNELS><<<grid, block, 0, stream>>>(
+      context.d_gauss1[level],
+      context.d_gauss2[level],
+      context.d_gauss3[level],
+      context.d_maskPyr[level],
+      wH,
+      hH,
+      context.d_gauss1[level + 1],
+      context.d_gauss2[level + 1],
+      context.d_gauss3[level + 1],
+      context.d_maskPyr[level + 1],
+      wL,
+      hL,
+      context.batchSize);
+  CUDA_CHECK(cudaGetLastError());
+  BatchedLaplacianKernelOptimized3<T, F_T, CHANNELS><<<grid, block, 0, stream>>>(
+      context.d_gauss1[level],
+      context.d_gauss2[level],
+      context.d_gauss3[level],
+      wH,
+      hH,
+      context.d_gauss1[level + 1],
+      context.d_gauss2[level + 1],
+      context.d_gauss3[level + 1],
+      wL,
+      hL,
+      context.d_lap1[level],
+      context.d_lap2[level],
+      context.d_lap3[level],
+      context.batchSize);
+  return cudaGetLastError();
+}
+
 } // anonymous namespace
 
 // =============================================================================
@@ -445,57 +506,17 @@ cudaError_t cudaBatchedLaplacianBlendOptimized3(
   dim3 block(256);
   const int maxBlocks = 65535;
 
-  // Build Gaussian pyramids and compute Laplacians using fused kernel
+  // Match the 2/3/N reference paths: finish downsampling across the entire grid
+  // before any Laplacian reads the next level. Stream ordering supplies the barrier.
   for (int level = 0; level < context.numLevels - 1; level++) {
-    int wH = context.widths[level];
-    int hH = context.heights[level];
-    int wL = context.widths[level + 1];
-    int hL = context.heights[level + 1];
-
-    int totalPixels = wH * hH;
-    int numBlocks = min((totalPixels + block.x - 1) / block.x, maxBlocks);
-    dim3 grid(numBlocks, 1, context.batchSize);
-
-    size_t sharedMemSize = sizeof(F_T) * block.x * channels * 4; // Cache for multiple values
-
+    const int totalPixels = context.widths[level] * context.heights[level];
+    const int numBlocks = min((totalPixels + block.x - 1) / block.x, maxBlocks);
+    const dim3 grid(numBlocks, 1, context.batchSize);
     if (channels == 3) {
-      FusedPyramidConstructionKernel3<T, F_T, 3><<<grid, block, sharedMemSize, stream>>>(
-          context.d_gauss1[level],
-          context.d_gauss2[level],
-          context.d_gauss3[level],
-          context.d_maskPyr[level],
-          wH,
-          hH,
-          context.d_gauss1[level + 1],
-          context.d_gauss2[level + 1],
-          context.d_gauss3[level + 1],
-          context.d_maskPyr[level + 1],
-          wL,
-          hL,
-          context.d_lap1[level],
-          context.d_lap2[level],
-          context.d_lap3[level],
-          context.batchSize);
+      CUDA_CHECK((buildPyramidLevel3<T, F_T, 3>(context, level, grid, block, stream)));
     } else {
-      FusedPyramidConstructionKernel3<T, F_T, 4><<<grid, block, sharedMemSize, stream>>>(
-          context.d_gauss1[level],
-          context.d_gauss2[level],
-          context.d_gauss3[level],
-          context.d_maskPyr[level],
-          wH,
-          hH,
-          context.d_gauss1[level + 1],
-          context.d_gauss2[level + 1],
-          context.d_gauss3[level + 1],
-          context.d_maskPyr[level + 1],
-          wL,
-          hL,
-          context.d_lap1[level],
-          context.d_lap2[level],
-          context.d_lap3[level],
-          context.batchSize);
+      CUDA_CHECK((buildPyramidLevel3<T, F_T, 4>(context, level, grid, block, stream)));
     }
-    CUDA_CHECK(cudaGetLastError());
   }
 
   // Copy coarsest level Gaussian to Laplacian
