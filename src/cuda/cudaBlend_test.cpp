@@ -444,13 +444,20 @@ TEST(CudaBlendOptimized3, MultiBlockPyramidsMatchCpuReference) {
                 }
               }
               std::vector<float> actual_next(next.size()), actual_lap(current.size());
-              CUDA_CHECK(cudaMemcpy(
+              CUDA_CHECK(cudaMemcpyAsync(
                   actual_next.data(),
                   (*gauss[camera])[level + 1],
                   next.size() * sizeof(float),
-                  cudaMemcpyDeviceToHost));
-              CUDA_CHECK(cudaMemcpy(
-                  actual_lap.data(), (*lap[camera])[level], current.size() * sizeof(float), cudaMemcpyDeviceToHost));
+                  cudaMemcpyDeviceToHost,
+                  stream));
+              CUDA_CHECK(cudaStreamSynchronize(stream));
+              CUDA_CHECK(cudaMemcpyAsync(
+                  actual_lap.data(),
+                  (*lap[camera])[level],
+                  current.size() * sizeof(float),
+                  cudaMemcpyDeviceToHost,
+                  stream));
+              CUDA_CHECK(cudaStreamSynchronize(stream));
               ASSERT_EQ(actual_next, next);
               for (int b = 0; b < batch; ++b) {
                 for (int y = 0; y < h; ++y) {
@@ -532,10 +539,12 @@ TEST(CudaBlendOptimized3, BytePyramidsDoNotReadPoisonedNeighbors) {
             std::vector<unsigned char> actual(bytes), expected(bytes);
             for (int b = 0; b < batch; ++b)
               std::fill_n(expected.begin() + b * bytes / batch, bytes / batch, 20 + camera * 15 + b * 25);
-            CUDA_CHECK(cudaMemcpy(actual.data(), (*gauss[camera])[level], bytes, cudaMemcpyDeviceToHost));
+            CUDA_CHECK(cudaMemcpyAsync(actual.data(), (*gauss[camera])[level], bytes, cudaMemcpyDeviceToHost, stream));
+            CUDA_CHECK(cudaStreamSynchronize(stream));
             ASSERT_EQ(actual, expected) << "camera=" << camera << " level=" << level;
             if (level < levels - 1) {
-              CUDA_CHECK(cudaMemcpy(actual.data(), (*lap[camera])[level], bytes, cudaMemcpyDeviceToHost));
+              CUDA_CHECK(cudaMemcpyAsync(actual.data(), (*lap[camera])[level], bytes, cudaMemcpyDeviceToHost, stream));
+              CUDA_CHECK(cudaStreamSynchronize(stream));
               ASSERT_EQ(actual, std::vector<unsigned char>(bytes, 0)) << "camera=" << camera << " level=" << level;
             }
           }
