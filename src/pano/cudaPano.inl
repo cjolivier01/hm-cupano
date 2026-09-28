@@ -14,6 +14,7 @@
 #include <fstream>
 #include <optional>
 #include <sstream>
+#include <type_traits>
 
 namespace hm {
 namespace pano {
@@ -31,6 +32,11 @@ CudaStitchPano<T_pipeline, T_compute>::CudaStitchPano(
     : blend_(blend), minimize_blend_(minimize_blend && blend.is_soft()) {
   if (const std::string invalid = blend.Validate(); !invalid.empty()) {
     status_ = CudaStatus(cudaErrorInvalidValue, invalid);
+    return;
+  }
+  if (blend.mode == BlendMode::kAlpha && std::is_integral_v<BaseScalar_t<T_compute>>) {
+    status_ =
+        CudaStatus(cudaErrorNotSupported, "Alpha blending requires floating-point compute to preserve feather weights");
     return;
   }
   if (!control_masks.is_valid()) {

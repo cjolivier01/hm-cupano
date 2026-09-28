@@ -547,6 +547,12 @@ ControlMasksN make_strip_masks(int w, int h, int n, int stride) {
 
 } // namespace
 
+TEST(CudaPanoNAlphaTest, RejectsIntegralCompute) {
+  const ControlMasksN masks = make_strip_masks(97, 35, 4, 24);
+  hm::pano::cuda::CudaStitchPanoN<uchar3, uchar3> pano(1, BlendSettings::Alpha(0.2f), masks, false, true);
+  EXPECT_EQ(pano.status().code(), cudaErrorNotSupported);
+}
+
 // A zero-width feather must reproduce the hard seam exactly, so turning the crossfade off is a
 // no-op rather than an approximation.
 TEST(CudaPanoNAlphaTest, ZeroFeatherMatchesHardSeam) {

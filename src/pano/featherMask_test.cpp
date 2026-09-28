@@ -430,8 +430,10 @@ TEST(FeatherMaskTest, GrazingNeighbourWithZeroWeightDoesNotCollapseTheCap) {
   ASSERT_TRUE(grazed.error.empty()) << grazed.error;
   ASSERT_FALSE(grazed.hard);
 
-  // Camera 2 has no weight at all on the 0/1 seam, so it has no business narrowing it.
-  EXPECT_FLOAT_EQ(weight_at(grazed.weights, seam_x, sliver_y + 2, 2), 0.0f);
+  // Camera 2 has zero weight mathematically at the cutoff. OpenCV's vectorized division can
+  // leave a tiny positive residual before smoothstep on ARM (about 1e-17 after normalization).
+  // Allow float rounding here; the ramp-width assertion below pins the cap's actual behavior.
+  EXPECT_NEAR(weight_at(grazed.weights, seam_x, sliver_y + 2, 2), 0.0f, 1e-7f);
   const int grazed_ramp = ramp_width(grazed.weights, sliver_y + 2, 180, 290, 0);
   EXPECT_GE(grazed_ramp, control_ramp / 2)
       << "a grazing camera with zero weight collapsed the crossfade: " << grazed_ramp << " px against " << control_ramp;

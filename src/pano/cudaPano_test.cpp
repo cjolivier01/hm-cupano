@@ -506,6 +506,12 @@ cv::Mat run_two(const ControlMasks& masks, BlendSettings blend, bool minimize_bl
 
 } // namespace
 
+TEST(CudaPanoAlphaTest, RejectsIntegralCompute) {
+  const ControlMasks masks = make_overlap_masks(97, 35, 24, 60);
+  hm::pano::cuda::CudaStitchPano<uchar3, uchar3> pano(1, BlendSettings::Alpha(0.2f), masks, true, false);
+  EXPECT_EQ(pano.status().code(), cudaErrorNotSupported);
+}
+
 // A zero-width feather must reproduce the hard seam exactly.
 TEST(CudaPanoAlphaTest, ZeroFeatherMatchesHardSeam) {
   constexpr int w = 97, h = 35, stride = 24;

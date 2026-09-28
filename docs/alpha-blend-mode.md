@@ -8,6 +8,11 @@ pyramid level count:
 CudaStitchPano<uchar4, float4> pano(batch, hm::pano::BlendSettings::Alpha(0.05f), masks, ...);
 ```
 
+Alpha mode requires a floating-point compute type such as `float3`, `float4`, `half3` or `half4`.
+Integer input and output pixels remain supported. An integral compute type returns
+`cudaErrorNotSupported` at construction because it would round the fractional feather weights
+to zero or one, losing the crossfade.
+
 `BlendSettings` converts implicitly from `int`, so existing callers that pass a level count keep
 working and keep their meaning, including the convention that `0` means a hard seam.
 

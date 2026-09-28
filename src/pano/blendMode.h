@@ -52,6 +52,7 @@ struct BlendSettings {
     return settings;
   }
 
+  /// Requires a floating-point stitcher compute type; integer pipeline/input pixels remain supported.
   /// @param feather_fraction Crossfade width as a fraction of the narrowest camera footprint width.
   ///        0 degenerates to a hard seam.
   static constexpr BlendSettings Alpha(float feather_fraction = kDefaultFeatherFraction) {

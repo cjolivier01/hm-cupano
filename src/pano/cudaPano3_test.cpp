@@ -1076,6 +1076,12 @@ cv::Mat run_three(
 
 } // namespace
 
+TEST(CudaPano3AlphaTest, RejectsIntegralCompute) {
+  const ControlMasks3 masks = make_strip_masks3(97, 35, 24);
+  hm::pano::cuda::CudaStitchPano3<uchar3, uchar3> pano(1, BlendSettings::Alpha(0.2f), masks, true, 0, false);
+  EXPECT_EQ(pano.status().code(), cudaErrorNotSupported);
+}
+
 TEST(CudaPano3AlphaTest, ZeroFeatherMatchesHardSeam) {
   constexpr int w = 97, h = 35, stride = 24;
   const ControlMasks3 masks = make_strip_masks3(w, h, stride);
