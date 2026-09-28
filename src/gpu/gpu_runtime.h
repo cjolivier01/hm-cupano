@@ -66,6 +66,8 @@ using gpu_bfloat16 = hip_bfloat16;
 #define cudaGetErrorString hipGetErrorString
 #define cudaDeviceSynchronize hipDeviceSynchronize
 #define cudaStreamCreate hipStreamCreate
+#define cudaStreamCreateWithFlags hipStreamCreateWithFlags
+#define cudaStreamNonBlocking hipStreamNonBlocking
 #define cudaStreamDestroy hipStreamDestroy
 #define cudaStreamSynchronize hipStreamSynchronize
 #define cudaEventCreate hipEventCreate

@@ -7,7 +7,8 @@ namespace gpu {
 
 // A context may outlive its caller's stream. Retain a completion event instead
 // of a stream handle, then order destructor frees on the default stream.
-// Calls using the context must still be serialized by the caller.
+// The caller must order GPU work from successive calls: use the same stream,
+// or establish an event/synchronization dependency when changing streams.
 class CudaStreamFence {
  public:
   CudaStreamFence() = default;

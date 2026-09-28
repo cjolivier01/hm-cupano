@@ -316,7 +316,7 @@ TEST(CudaBlendSmallTest, NCompactWorkspaceIsBitExactHalf) {
   check_multi_compact_workspace<__half, 5, false>();
 }
 
-#if GPU_BACKEND_CUDA
+#if GPU_BACKEND_CUDA || GPU_BACKEND_HIP
 TEST(CudaBlendLifetime, ContextCleanupAfterCallerStreamDestruction) {
   constexpr int W = 65, H = 33;
   const std::vector<float> input(W * H * 3, 7.0f);
@@ -376,7 +376,7 @@ TEST(CudaBlendLifetime, ContextCleanupAfterCallerStreamDestruction) {
 }
 #endif
 
-#if GPU_BACKEND_CUDA
+#if GPU_BACKEND_CUDA || GPU_BACKEND_HIP
 TEST(CudaBlendOptimized3, MultiBlockPyramidsMatchCpuReference) {
   for (int channels : {3, 4}) {
     for (const auto size : {std::pair<int, int>{64, 32}, {65, 33}, {257, 65}}) {
@@ -484,6 +484,72 @@ TEST(CudaBlendOptimized3, MultiBlockPyramidsMatchCpuReference) {
       CUDA_CHECK(cudaStreamSynchronize(stream));
       CUDA_CHECK(cudaStreamDestroy(stream));
     }
+  }
+}
+#endif
+
+#if GPU_BACKEND_CUDA || GPU_BACKEND_HIP
+TEST(CudaBlendOptimized3, BytePyramidsDoNotReadPoisonedNeighbors) {
+  constexpr int width = 65, height = 33, batch = 2, levels = 4;
+  for (int channels : {3, 4}) {
+    cudaStream_t stream;
+    CUDA_CHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
+    {
+      CudaBatchLaplacianBlendContext3<unsigned char> context(width, height, levels, batch);
+      const size_t count = static_cast<size_t>(width) * height * channels * batch;
+      unsigned char *images[3], *mask, *output;
+      std::array<std::vector<unsigned char>, 3> host;
+      for (int camera = 0; camera < 3; ++camera) {
+        host[camera].resize(count);
+        for (int b = 0; b < batch; ++b)
+          std::fill_n(host[camera].begin() + b * count / batch, count / batch, 20 + camera * 15 + b * 25);
+        CUDA_CHECK(cudaMallocAsync(&images[camera], count, stream));
+        CUDA_CHECK(cudaMemcpyAsync(images[camera], host[camera].data(), count, cudaMemcpyHostToDevice, stream));
+      }
+      std::vector<unsigned char> host_mask(width * height * 3, 0);
+      for (size_t i = 0; i < host_mask.size(); i += 3)
+        host_mask[i] = 1;
+      CUDA_CHECK(cudaMallocAsync(&mask, host_mask.size(), stream));
+      CUDA_CHECK(cudaMemcpyAsync(mask, host_mask.data(), host_mask.size(), cudaMemcpyHostToDevice, stream));
+      CUDA_CHECK(cudaMallocAsync(&output, count, stream));
+      const std::array<const std::vector<unsigned char*>*, 3> gauss = {
+          &context.d_gauss1, &context.d_gauss2, &context.d_gauss3};
+      const std::array<const std::vector<unsigned char*>*, 3> lap = {&context.d_lap1, &context.d_lap2, &context.d_lap3};
+      for (int frame = 0; frame < 2; ++frame) {
+        if (frame) {
+          for (int camera = 0; camera < 3; ++camera) {
+            for (int level = 1; level < levels; ++level) {
+              const size_t bytes =
+                  static_cast<size_t>(context.widths[level]) * context.heights[level] * channels * batch;
+              CUDA_CHECK(cudaMemsetAsync((*gauss[camera])[level], 0xff, bytes, stream));
+            }
+          }
+        }
+        CUDA_CHECK((cudaBatchedLaplacianBlendOptimized3<unsigned char, float>(
+            images[0], images[1], images[2], mask, output, context, channels, stream)));
+        CUDA_CHECK(cudaStreamSynchronize(stream));
+        for (int camera = 0; camera < 3; ++camera) {
+          for (int level = 0; level < levels; ++level) {
+            const size_t bytes = static_cast<size_t>(context.widths[level]) * context.heights[level] * channels * batch;
+            std::vector<unsigned char> actual(bytes), expected(bytes);
+            for (int b = 0; b < batch; ++b)
+              std::fill_n(expected.begin() + b * bytes / batch, bytes / batch, 20 + camera * 15 + b * 25);
+            CUDA_CHECK(cudaMemcpy(actual.data(), (*gauss[camera])[level], bytes, cudaMemcpyDeviceToHost));
+            ASSERT_EQ(actual, expected) << "camera=" << camera << " level=" << level;
+            if (level < levels - 1) {
+              CUDA_CHECK(cudaMemcpy(actual.data(), (*lap[camera])[level], bytes, cudaMemcpyDeviceToHost));
+              ASSERT_EQ(actual, std::vector<unsigned char>(bytes, 0)) << "camera=" << camera << " level=" << level;
+            }
+          }
+        }
+      }
+      for (auto image : images)
+        CUDA_CHECK(cudaFreeAsync(image, stream));
+      CUDA_CHECK(cudaFreeAsync(mask, stream));
+      CUDA_CHECK(cudaFreeAsync(output, stream));
+    }
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+    CUDA_CHECK(cudaStreamDestroy(stream));
   }
 }
 #endif

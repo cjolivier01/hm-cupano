@@ -28,6 +28,9 @@ output (and when wrapping compact output for download). Destroy owned managed
 outputs before destroying that stream. Blend pyramids and pointer tables allocate
 on their processing stream. Blend contexts record completion events and order
 their async cleanup after the last call, so contexts can outlive caller streams.
+Successive calls on a context must use the same stream or establish an explicit
+GPU dependency before switching streams; a host mutex alone does not order work
+already queued on different streams.
 The low-level wrappers returning CPU images still wait for their output copies;
 the functions returning device output remain asynchronous.
 
