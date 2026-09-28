@@ -152,7 +152,7 @@ class CudaStitchPano:
         # `blend_mode=None` reproduces the historical convention where num_levels == 0 means a hard
         # seam. Mirrors BlendSettings' implicit int constructor in blendMode.h.
         self._blend_mode: BlendMode = blend_mode or ("hard" if num_levels == 0 else "laplacian")
-        self._feather_fraction = float(feather_fraction)
+        feather_fraction = float(feather_fraction)
         self._feather_radius_px = 0.0
         if self._blend_mode == "alpha":
             num_levels = 1
@@ -172,7 +172,7 @@ class CudaStitchPano:
             self._status = CudaStatus(1, "blend_mode must be hard, laplacian or alpha")
             return
         if self._blend_mode == "alpha" and (
-            not math.isfinite(self._feather_fraction) or not 0.0 <= self._feather_fraction <= 1.0
+            not math.isfinite(feather_fraction) or not 0.0 <= feather_fraction <= 1.0
         ):
             self._status = CudaStatus(1, "Alpha blend feather fraction must be in [0, 1]")
             return
@@ -253,11 +253,17 @@ class CudaStitchPano:
                         [control_masks.img2_col, control_masks.img1_col],
                         [control_masks.img2_row, control_masks.img1_row],
                         [
-                            (int(control_masks.positions[1].xpos), int(control_masks.positions[1].ypos)),
-                            (int(control_masks.positions[0].xpos), int(control_masks.positions[0].ypos)),
+                            (
+                                int(control_masks.positions[1].xpos),
+                                int(control_masks.positions[1].ypos),
+                            ),
+                            (
+                                int(control_masks.positions[0].xpos),
+                                int(control_masks.positions[0].ypos),
+                            ),
                         ],
                         2,
-                        FeatherParams(fraction=self._feather_fraction),
+                        FeatherParams(fraction=feather_fraction),
                     )
                 except ValueError as error:
                     # A status, not a raise: the C++ reports this through Result::error, and
@@ -265,8 +271,8 @@ class CudaStitchPano:
                     self._status = CudaStatus(1, str(error))
                     return
                 self._feather_radius_px = feathered.radius_px
-                # No _feather_roi_radius_px here: this path has no seam-derived ROI. Its crop is
-                # the geometric overlap band, and the per-pixel cap keeps R(p) <= 2*coverage, so
+                # This path crops to the geometric overlap band; it has no seam-derived ROI.
+                # The per-pixel cap keeps R(p) <= 2*coverage, so
                 # the band cannot leave the cameras' shared coverage, which is inside that band.
                 weights = self._canvas_manager.cropToBlendRoi(feathered.weights)
                 blend_mask = np.empty(self._context.blend_seam.shape + (2,), dtype=np.float32)
@@ -428,7 +434,7 @@ class CudaStitchPano:
         blended = laplacian_blend_n(
             [full1, full2],
             mask,
-            max(1, self._num_levels),
+            self._num_levels,
             backend=self._backend,
             workspace=scratch.blend_workspace,
         )
@@ -656,9 +662,9 @@ class CudaStitchPanoN:
         # `blend_mode=None` reproduces the historical convention where num_levels == 0 means a hard
         # seam. Mirrors BlendSettings' implicit int constructor in blendMode.h.
         self._blend_mode: BlendMode = blend_mode or ("hard" if num_levels == 0 else "laplacian")
-        self._feather_fraction = float(feather_fraction)
+        feather_fraction = float(feather_fraction)
         self._feather_radius_px = 0.0
-        self._feather_roi_radius_px = 0.0
+        feather_roi_radius_px = 0.0
         if self._blend_mode == "alpha":
             num_levels = 1
         self._num_levels = num_levels
@@ -677,7 +683,7 @@ class CudaStitchPanoN:
             self._status = CudaStatus(1, "blend_mode must be hard, laplacian or alpha")
             return
         if self._blend_mode == "alpha" and (
-            not math.isfinite(self._feather_fraction) or not 0.0 <= self._feather_fraction <= 1.0
+            not math.isfinite(feather_fraction) or not 0.0 <= feather_fraction <= 1.0
         ):
             self._status = CudaStatus(1, "Alpha blend feather fraction must be in [0, 1]")
             return
@@ -747,9 +753,12 @@ class CudaStitchPanoN:
                     seam_index_padded.astype(np.uint8, copy=False),
                     list(control_masks.img_col),
                     list(control_masks.img_row),
-                    [(int(p[0]), int(p[1])) for p in self._canvas_manager.canvas_positions()],
+                    [
+                        (int(p[0]), int(p[1]))
+                        for p in self._canvas_manager.canvas_positions()
+                    ],
                     n,
-                    FeatherParams(fraction=self._feather_fraction),
+                    FeatherParams(fraction=feather_fraction),
                 )
             except ValueError as error:
                 # A status, not a raise: the C++ reports this through Result::error, and
@@ -758,7 +767,7 @@ class CudaStitchPanoN:
                 return
             feather_weights_full = feathered.weights
             self._feather_radius_px = feathered.radius_px
-            self._feather_roi_radius_px = feathered.requested_radius_px
+            feather_roi_radius_px = feathered.requested_radius_px
             # A coverage hole inside an overlap moves a seam, so the ROI has to be derived from
             # the labels the field was actually built from, not from the ones handed in.
             if feathered.corrected_labels is not None:
@@ -771,7 +780,7 @@ class CudaStitchPanoN:
                 # The crossfade spans radius/2 either side of the seam, so the write ROI must
                 # cover it.
                 feather_pad = (
-                    int(math.ceil(self._feather_roi_radius_px / 2.0)) + 1
+                    int(math.ceil(feather_roi_radius_px / 2.0)) + 1
                     if self._blend_mode == "alpha"
                     else 0
                 )
@@ -960,7 +969,7 @@ class CudaStitchPanoN:
             blended = laplacian_blend_n(
                 scratch.compute_buffers,
                 mask,
-                max(1, self._num_levels),
+                self._num_levels,
                 backend=self._backend,
                 workspace=scratch.blend_workspace,
             )
@@ -993,7 +1002,7 @@ class CudaStitchPanoN:
         blended = laplacian_blend_n(
             scratch.compute_buffers,
             mask,
-            max(1, self._num_levels),
+            self._num_levels,
             backend=self._backend,
             workspace=scratch.blend_workspace,
         )

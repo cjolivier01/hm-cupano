@@ -152,21 +152,8 @@ class CudaStitchPanoN {
       int batch_size,
       cudaStream_t stream);
 
-  template <typename T_input>
-  CudaStatus remap_hard(
-      const CudaMat<T_input>& input,
-      const CudaMat<uint16_t>& map_x,
-      const CudaMat<uint16_t>& map_y,
-      uint8_t image_index,
-      const CudaMat<unsigned char>& dest_index_map,
-      CudaMat<T_pipeline>& dest_canvas,
-      int dest_x,
-      int dest_y,
-      int batch_size,
-      cudaStream_t stream);
-
   // Dispatch to cudaBlendN for channels=3 or 4, N in [2..8].
-  CudaStatus blend_soft_dispatch(const std::vector<const BaseScalar_t<T_compute>*>& d_ptrs, cudaStream_t stream);
+  CudaStatus blend_soft_dispatch(cudaStream_t stream);
 
  private:
   std::unique_ptr<StitchingContextN<T_pipeline, T_compute>> stitch_context_;

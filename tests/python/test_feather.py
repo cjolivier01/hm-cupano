@@ -194,13 +194,34 @@ def test_correction_picks_the_deepest_coverer():
     assert np.all(r.corrected_labels[10:14, hole_x : hole_x + hole_w] == 2)
 
 
-def test_zero_fraction_yields_exact_one_hot():
+@pytest.mark.parametrize(
+    "params",
+    [
+        FeatherParams(fraction=0.0),
+        FeatherParams(fraction=0.5 / 64),
+        FeatherParams(max_px=0.0),
+        FeatherParams(max_px=0.5),
+    ],
+)
+def test_subpixel_width_yields_exact_one_hot_without_distance_transforms(
+    params, monkeypatch
+):
     width, height, x0 = 64, 16, 30
     mx, my = full_maps(2, width, height)
     labels = vertical_seam(width, height, x0)
-    result = build_weights(labels, mx, my, [(0, 0), (0, 0)], 2, FeatherParams(fraction=0.0))
+
+    def unexpected_transform(*args, **kwargs):
+        pytest.fail("A subpixel width needs no distance transforms")
+
+    monkeypatch.setattr("cupano.feather.cv2.distanceTransform", unexpected_transform)
+    result = build_weights(labels, mx, my, [(0, 0), (0, 0)], 2, params)
     assert result.hard
     assert result.radius_px == 0.0
+    assert result.min_seam_radius_px == 0.0
+    assert result.requested_radius_px == 0.0
+    assert result.capped_seam_fraction == 0.0
+    assert not result.overlap_capped
+    assert result.corrected_labels is labels
     np.testing.assert_array_equal(result.weights[..., 0], (labels == 0).astype(np.float32))
     np.testing.assert_array_equal(result.weights[..., 1], (labels == 1).astype(np.float32))
 
@@ -265,26 +286,34 @@ def test_uncovered_pixels_get_zero_weight():
     assert np.all(totals[:, 140:] == 0.0)
 
 
-def test_rejects_malformed_input():
+@pytest.mark.parametrize("fraction", [0.0, 0.05])
+def test_rejects_malformed_input(fraction):
     mx, my = full_maps(2, 32, 8)
     labels = vertical_seam(32, 8, 16)
+    params = FeatherParams(fraction=fraction)
     with pytest.raises(ValueError):
-        build_weights(labels.astype(np.float32), mx, my, [(0, 0), (0, 0)], 2)
+        build_weights(labels.astype(np.float32), mx, my, [(0, 0), (0, 0)], 2, params)
     with pytest.raises(ValueError):
-        build_weights(labels, mx, my, [(0, 0), (0, 0)], 3)
+        build_weights(labels, mx, my, [(0, 0), (0, 0)], 3, params)
+    with pytest.raises(ValueError):
+        build_weights(
+            labels, [mx[0].astype(np.float32), mx[1]], my, [(0, 0), (0, 0)], 2, params
+        )
+    with pytest.raises(ValueError):
+        build_weights(labels, [mx[0][:-1], mx[1]], my, [(0, 0), (0, 0)], 2, params)
     with pytest.raises(ValueError):
         build_weights(labels, mx, my, [(0, 0), (0, 0)], 2, FeatherParams(fraction=-0.1))
     # Labels index the per-camera lists directly, so an out-of-range one must be rejected.
     bad_label = labels.copy()
     bad_label[0, 0] = 5
     with pytest.raises(ValueError):
-        build_weights(bad_label, mx, my, [(0, 0), (0, 0)], 2)
+        build_weights(bad_label, mx, my, [(0, 0), (0, 0)], 2, params)
     # NaN must be rejected, not silently degenerate to a hard seam.
     with pytest.raises(ValueError):
         build_weights(labels, mx, my, [(0, 0), (0, 0)], 2, FeatherParams(fraction=float("nan")))
     # An empty seam has no canvas to build a field on.
     with pytest.raises(ValueError):
-        build_weights(np.zeros((0, 0), np.uint8), mx, my, [(0, 0), (0, 0)], 2)
+        build_weights(np.zeros((0, 0), np.uint8), mx, my, [(0, 0), (0, 0)], 2, params)
 
 
 def test_coverage_masks_follow_unmapped_sentinel():

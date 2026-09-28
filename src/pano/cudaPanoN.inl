@@ -434,67 +434,32 @@ CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::remap_soft(
 }
 
 template <typename T_pipeline, typename T_compute>
-template <typename T_input>
-CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::remap_hard(
-    const CudaMat<T_input>& input,
-    const CudaMat<uint16_t>& map_x,
-    const CudaMat<uint16_t>& map_y,
-    uint8_t image_index,
-    const CudaMat<unsigned char>& dest_index_map,
-    CudaMat<T_pipeline>& dest_canvas,
-    int dest_x,
-    int dest_y,
-    int batch_size,
-    cudaStream_t stream) {
-  const T_input default_pixel = T_input{};
-  return batched_remap_kernel_ex_offset_with_dest_map(
-      input.surface(),
-      dest_canvas.surface(),
-      map_x.data(),
-      map_y.data(),
-      default_pixel,
-      image_index,
-      dest_index_map.data(),
-      batch_size,
-      map_x.width(),
-      map_y.height(),
-      dest_x,
-      dest_y,
-      stream);
-}
-
-template <typename T_pipeline, typename T_compute>
-CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::blend_soft_dispatch(
-    const std::vector<const BaseScalar_t<T_compute>*>& d_ptrs,
-    cudaStream_t stream) {
+CudaStatus CudaStitchPanoN<T_pipeline, T_compute>::blend_soft_dispatch(cudaStream_t stream) {
   const int n = stitch_context_->n_images;
   const int C = detailN::num_channels_v<T_compute>;
   auto d_mask = stitch_context_->cudaBlendSoftSeam.get();
   auto out = stitch_context_->cudaBlendOut->data_raw();
   const int blend_width = stitch_context_->cudaBlendOut->width();
   const int blend_height = stitch_context_->cudaBlendOut->height();
-  // Alpha mode reads its inputs through the device pointer table uploaded at construction, which
-  // mirrors cudaFull_raw. Both call sites pass exactly that vector.
-  assert(blend_.mode != BlendMode::kAlpha || d_ptrs.data() == stitch_context_->cudaFull_raw.data());
 
-#define BLEND_N_CASE(NVAL, CH)                                                            \
-  do {                                                                                    \
-    if (blend_.mode == BlendMode::kAlpha) {                                               \
-      return CudaStatus(                                                                  \
-          cudaBatchedAlphaBlendN<BaseScalar_t<T_compute>, float, NVAL, CH>(               \
-              stitch_context_->d_blend_inputs.get(),                                      \
-              d_mask,                                                                     \
-              out,                                                                        \
-              blend_width,                                                                \
-              blend_height,                                                               \
-              stitch_context_->batch_size(),                                              \
-              stream));                                                                   \
-    }                                                                                     \
-    auto& ctx = std::get<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, NVAL>>( \
-        stitch_context_->laplacian_blend_context);                                        \
-    return CudaStatus(                                                                    \
-        cudaBatchedLaplacianBlendWithContextN<BaseScalar_t<T_compute>, float, NVAL, CH>(  \
-            d_ptrs, d_mask, out, ctx, stream, /*cacheMaskPyramid=*/true));                \
+#define BLEND_N_CASE(NVAL, CH)                                                                    \
+  do {                                                                                            \
+    if (blend_.mode == BlendMode::kAlpha) {                                                       \
+      return CudaStatus(                                                                          \
+          cudaBatchedAlphaBlendN<BaseScalar_t<T_compute>, float, NVAL, CH>(                       \
+              stitch_context_->d_blend_inputs.get(),                                              \
+              d_mask,                                                                             \
+              out,                                                                                \
+              blend_width,                                                                        \
+              blend_height,                                                                       \
+              stitch_context_->batch_size(),                                                      \
+              stream));                                                                           \
+    }                                                                                             \
+    auto& ctx = std::get<CudaBatchLaplacianBlendContextN<BaseScalar_t<T_compute>, NVAL>>(         \
+        stitch_context_->laplacian_blend_context);                                                \
+    return CudaStatus(                                                                            \
+        cudaBatchedLaplacianBlendWithContextN<BaseScalar_t<T_compute>, float, NVAL, CH>(          \
+            stitch_context_->cudaFull_raw, d_mask, out, ctx, stream, /*cacheMaskPyramid=*/true)); \
   } while (0)
 
   if (C == 3) {
@@ -686,7 +651,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T
     }
 
     {
-      CudaStatus s = blend_soft_dispatch(stitch_context_->cudaFull_raw, stream);
+      CudaStatus s = blend_soft_dispatch(stream);
       if (!s.ok())
         return s;
     }
@@ -731,7 +696,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T
   }
 
   {
-    CudaStatus s = blend_soft_dispatch(stitch_context_->cudaFull_raw, stream);
+    CudaStatus s = blend_soft_dispatch(stream);
     if (!s.ok())
       return s;
   }

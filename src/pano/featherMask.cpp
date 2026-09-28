@@ -109,6 +109,21 @@ Result build_weights(
     return result;
   }
 
+  // Width is a fraction of the narrowest camera footprint, so it scales with the canvas.
+  int narrowest = std::numeric_limits<int>::max();
+  for (int i = 0; i < n_images; ++i) {
+    narrowest = std::min(narrowest, remap_x[i].cols);
+  }
+  const float radius = std::min(params.fraction * static_cast<float>(narrowest), params.max_px);
+  if (!(radius >= kMinUsefulRadius)) {
+    // Subpixel widths reproduce the hard seam exactly, including its uncorrected labels.
+    // No coverage or distance fields are needed for this one-hot partition.
+    result.weights = one_hot_planes(seam_index, n_images);
+    result.corrected_labels = seam_index;
+    result.hard = true;
+    return result;
+  }
+
   const cv::Size canvas = seam_index.size();
   const int mask_type = distance_mask(params.fast);
 
@@ -150,26 +165,14 @@ Result build_weights(
     }
   }
 
-  // Requested width, as a fraction of the narrowest camera footprint so the number keeps its
-  // meaning across rigs and across max_output_width rescaling.
-  int narrowest = std::numeric_limits<int>::max();
-  for (int i = 0; i < n_images; ++i) {
-    narrowest = std::min(narrowest, remap_x[i].cols);
-  }
-  float radius = std::min(params.fraction * static_cast<float>(narrowest), params.max_px);
-
   // Cap the crossfade per pixel at what the cameras that actually contribute there can support.
   //
   // A global minimum does not survive real data: it samples pixels no camera covers (whose owner
   // depth is zero) and lets one pinhole collapse the whole canvas. On a 14220x4938 two-camera rig
   // that reduced a requested 439 px to 0 and turned alpha mode into a hard seam.
   //
-  // The contributors at p are the owner plus every camera whose region comes within half the
-  // requested width, since those are exactly the cameras with non-zero weight. Capping at twice
-  // the shallowest contributor coverage keeps the whole band inside data all of them have. A
-  // "covered by at least two cameras" test is not equivalent for N > 2: a third camera blanketing
-  // the area inflates the count and the cap never engages, while the two cameras that actually
-  // meet at the seam are strangled by their own tapers.
+  // Each camera must either have enough coverage depth for the resulting local radius or lie
+  // outside its reach. The bound below resolves both conditions at that same radius.
   //
   // Both cameras at a pixel divide by the same radius, so S(t) + S(1-t) == 1 still holds pointwise.
   cv::Mat cap(canvas, CV_32F, cv::Scalar(std::numeric_limits<float>::max()));
@@ -248,32 +251,8 @@ Result build_weights(
         static_cast<float>(cv::countNonZero(capped_at_seam)) / static_cast<float>(cv::countNonZero(seam_boundary));
   }
 
-  if (!(seam_max >= kMinUsefulRadius)) {
-    // Nowhere along the seam can support even a one-pixel crossfade. Degenerate to the exact
-    // one-hot partition, built from the original labels so the uploaded buffer is bit-identical to
-    // the hard-seam mask. That deliberately also discards the coverage correction, because the
-    // point of this path is to match hard-seam output exactly.
-    result.weights = one_hot_planes(seam_index, n_images);
-    // The ROI must come from the same labels the field was built from, which on this path is the
-    // input: the one-hot field above discards the correction so the result matches the hard seam
-    // byte for byte.
-    result.corrected_labels = seam_index;
-    result.radius_px = 0.0f;
-    result.min_seam_radius_px = 0.0f;
-    result.requested_radius_px = 0.0f;
-    result.capped_seam_fraction = 0.0f;
-    result.hard = true;
-    return result;
-  }
-
-  // A floor on the divisor. It cannot bind today and is kept only so a future change cannot
-  // divide by a sub-pixel radius: both masks distance_mask() can return, DIST_MASK_PRECISE and
-  // DIST_MASK_5, give at least 1 for any foreground pixel, so allowed >= 2 wherever a camera
-  // covers and cap stays FLT_MAX where none does, giving radius_map >= min(2, radius); and
-  // reaching this line needs seam_max >= 1, which forces radius >= 1. (DIST_MASK_3 would give
-  // 0.955 and the conclusion would still hold, but only just.) There is deliberately no
-  // per-pixel hard-seam fallback here, because there is no pixel for it to fire on.
-  cv::max(radius_map, static_cast<double>(kMinUsefulRadius), radius_map);
+  // Both supported distance transforms give coverage depth >= 1 wherever a camera covers.
+  // The cap is therefore >= 2, and the requested radius already passed the >= 1 check above.
   cv::Mat half_radius_map = radius_map * 0.5;
 
   std::vector<cv::Mat> planes(n_images);

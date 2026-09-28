@@ -630,25 +630,29 @@ TEST(FeatherMaskTest, CorrectionPicksTheDeepestCoverer) {
   }
 }
 
-// Zero width must reproduce the existing hard-seam mask exactly, so alpha mode with the feather
-// turned off is a no-op rather than an approximation.
-TEST(FeatherMaskTest, ZeroFractionYieldsExactOneHot) {
+// Widths below one pixel preserve the hard-seam mask and all hard-result metadata.
+TEST(FeatherMaskTest, SubpixelWidthYieldsExactOneHot) {
   constexpr int W = 64, H = 16, x0 = 30;
   const Rig rig = make_rig({{W, H}, {W, H}}, {{0, 0}, {0, 0}});
   const cv::Mat labels = vertical_seam(W, H, x0);
 
-  Params params;
-  params.fraction = 0.0f;
-  const Result r = build_weights(labels, rig.remap_x, rig.remap_y, rig.positions, 2, params);
-  ASSERT_TRUE(r.error.empty()) << r.error;
-  EXPECT_TRUE(r.hard);
-  EXPECT_FLOAT_EQ(r.radius_px, 0.0f);
+  for (const Params& params : {Params{0.0f}, Params{0.5f / W}, Params{0.05f, 0.0f}, Params{0.05f, 0.5f}}) {
+    const Result r = build_weights(labels, rig.remap_x, rig.remap_y, rig.positions, 2, params);
+    ASSERT_TRUE(r.error.empty()) << r.error;
+    EXPECT_TRUE(r.hard);
+    EXPECT_FLOAT_EQ(r.radius_px, 0.0f);
+    EXPECT_FLOAT_EQ(r.min_seam_radius_px, 0.0f);
+    EXPECT_FLOAT_EQ(r.requested_radius_px, 0.0f);
+    EXPECT_FLOAT_EQ(r.capped_seam_fraction, 0.0f);
+    EXPECT_FALSE(r.overlap_capped);
+    EXPECT_EQ(r.corrected_labels.data, labels.data);
 
-  for (int y = 0; y < H; ++y) {
-    for (int x = 0; x < W; ++x) {
-      const float expected0 = (x < x0) ? 1.0f : 0.0f;
-      EXPECT_FLOAT_EQ(weight_at(r.weights, x, y, 0), expected0);
-      EXPECT_FLOAT_EQ(weight_at(r.weights, x, y, 1), 1.0f - expected0);
+    for (int y = 0; y < H; ++y) {
+      for (int x = 0; x < W; ++x) {
+        const float expected0 = (x < x0) ? 1.0f : 0.0f;
+        EXPECT_FLOAT_EQ(weight_at(r.weights, x, y, 0), expected0);
+        EXPECT_FLOAT_EQ(weight_at(r.weights, x, y, 1), 1.0f - expected0);
+      }
     }
   }
 }
@@ -773,22 +777,28 @@ TEST(FeatherMaskTest, UncoveredPixelsGetZeroWeight) {
 TEST(FeatherMaskTest, RejectsMalformedInput) {
   const Rig rig = make_rig({{32, 8}, {32, 8}}, {{0, 0}, {0, 0}});
   const cv::Mat labels = vertical_seam(32, 8, 16);
-  Params params;
-
   cv::Mat float_labels;
   labels.convertTo(float_labels, CV_32F);
-  EXPECT_FALSE(build_weights(float_labels, rig.remap_x, rig.remap_y, rig.positions, 2, params).error.empty());
-  EXPECT_FALSE(build_weights(cv::Mat(), rig.remap_x, rig.remap_y, rig.positions, 2, params).error.empty());
-  EXPECT_FALSE(build_weights(labels, rig.remap_x, rig.remap_y, rig.positions, 3, params).error.empty());
+  // Labels index the per-camera vectors directly, so an out-of-range one would read out of bounds.
+  cv::Mat bad_label = labels.clone();
+  bad_label.at<uint8_t>(0, 0) = 5;
+  for (float fraction : {0.0f, 0.05f}) {
+    Params params;
+    params.fraction = fraction;
+    EXPECT_FALSE(build_weights(float_labels, rig.remap_x, rig.remap_y, rig.positions, 2, params).error.empty());
+    EXPECT_FALSE(build_weights(cv::Mat(), rig.remap_x, rig.remap_y, rig.positions, 2, params).error.empty());
+    EXPECT_FALSE(build_weights(labels, rig.remap_x, rig.remap_y, rig.positions, 3, params).error.empty());
+    EXPECT_FALSE(build_weights(bad_label, rig.remap_x, rig.remap_y, rig.positions, 2, params).error.empty());
+    std::vector<cv::Mat> invalid_maps = rig.remap_x;
+    invalid_maps[0].convertTo(invalid_maps[0], CV_32F);
+    EXPECT_FALSE(build_weights(labels, invalid_maps, rig.remap_y, rig.positions, 2, params).error.empty());
+    invalid_maps[0] = rig.remap_x[0].row(0);
+    EXPECT_FALSE(build_weights(labels, invalid_maps, rig.remap_y, rig.positions, 2, params).error.empty());
+  }
 
   Params negative;
   negative.fraction = -0.1f;
   EXPECT_FALSE(build_weights(labels, rig.remap_x, rig.remap_y, rig.positions, 2, negative).error.empty());
-
-  // Labels index the per-camera vectors directly, so an out-of-range one would read out of bounds.
-  cv::Mat bad_label = labels.clone();
-  bad_label.at<uint8_t>(0, 0) = 5;
-  EXPECT_FALSE(build_weights(bad_label, rig.remap_x, rig.remap_y, rig.positions, 2, params).error.empty());
 }
 
 TEST(FeatherMaskTest, CoverageMasksFollowUnmappedSentinel) {

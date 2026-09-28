@@ -182,7 +182,7 @@ reach far past the widest radius any seam pixel got; outside alpha mode that
 extra term is zero, leaving existing callers' ROIs untouched.
 
 `cupano/feather.py` mirrors the C++ step for step and calls the same `cv2.distanceTransform`.
-`scripts/compare_feather_parity.py --all` checks the two element by element over six rigs (2, 3
+`scripts/compare_feather_parity.py --all` checks the two element by element over seven rigs (2, 3
 and 8 cameras, a blanketing third, a grazing zero-weight camera, a coverage hole, the hard
 fallback) and reports bit-identical weights, labels and metadata on all of them. Expect one
 float32 ULP on some fraction of elements on some builds rather than exact equality: OpenCV's

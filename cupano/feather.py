@@ -124,6 +124,22 @@ def build_weights(
         raise ValueError("Feather mask seam index contains a label outside [0, n_images)")
 
     canvas_shape = seam_index.shape
+    narrowest = min(int(m.shape[1]) for m in remap_x)
+    # Match the C++ float32 product so overlap_capped agrees across implementations.
+    radius = float(
+        min(
+            np.float32(params.fraction) * np.float32(narrowest),
+            np.float32(params.max_px),
+        )
+    )
+    if not radius >= MIN_USEFUL_RADIUS:
+        # Subpixel widths reproduce the hard seam exactly, including its uncorrected labels.
+        # No coverage or distance fields are needed for this one-hot partition.
+        one_hot = np.zeros(canvas_shape + (n_images,), dtype=np.float32)
+        for i in range(n_images):
+            one_hot[..., i] = (seam_index == i).astype(np.float32)
+        return FeatherResult(weights=one_hot, corrected_labels=seam_index, hard=True)
+
     mask_type = _distance_mask(params.fast)
 
     coverage = coverage_masks(canvas_shape, remap_x, remap_y, positions)
@@ -142,11 +158,6 @@ def build_weights(
     if needs_fix.any():
         masked_depth = np.where(covered, depth, -np.inf)
         labels[needs_fix] = np.argmax(masked_depth, axis=0).astype(np.uint8)[needs_fix]
-
-    narrowest = min(int(m.shape[1]) for m in remap_x)
-    # float32 to match the C++, which computes this in float. A float64 product here rounds
-    # differently and makes overlap_capped disagree across the two implementations.
-    radius = float(min(np.float32(params.fraction) * np.float32(narrowest), np.float32(params.max_px)))
 
     # Cap the crossfade per pixel at what the cameras that actually contribute there can support.
     #
@@ -205,31 +216,8 @@ def build_weights(
             np.count_nonzero(radius_map[seam_boundary] < np.float32(radius))
         ) / float(np.count_nonzero(seam_boundary))
 
-    if not max_radius >= MIN_USEFUL_RADIUS:
-        # Nowhere along the seam can support even a one-pixel crossfade. Degenerate to the exact
-        # one-hot partition, from the original labels so the buffer matches the hard-seam mask.
-        one_hot = np.zeros(canvas_shape + (n_images,), dtype=np.float32)
-        for i in range(n_images):
-            one_hot[..., i] = (seam_index == i).astype(np.float32)
-        result.weights = one_hot
-        result.radius_px = 0.0
-        result.min_seam_radius_px = 0.0
-        result.requested_radius_px = 0.0
-        result.capped_seam_fraction = 0.0
-        # The ROI must come from the same labels the field was built from, which on this path is
-        # the input: the one-hot above discards the correction so the result matches the hard seam.
-        result.corrected_labels = seam_index
-        result.hard = True
-        return result
-
-    # A floor on the divisor. It cannot bind today and is kept only so a future change cannot
-    # divide by a sub-pixel radius: both masks _distance_mask() can return, DIST_MASK_PRECISE and
-    # DIST_MASK_5, give at least 1 for any foreground pixel, so allowed >= 2 wherever a camera
-    # covers and cap stays FLT_MAX where none does, giving radius_map >= min(2, radius); and
-    # reaching this line needs max_radius >= 1, which forces radius >= 1. (DIST_MASK_3 would give
-    # 0.955 and the conclusion would still hold, but only just.) There is deliberately no
-    # per-pixel hard-seam fallback, because there is no pixel for it to fire on.
-    radius_map = np.maximum(radius_map, MIN_USEFUL_RADIUS)
+    # Both supported distance transforms give coverage depth >= 1 wherever a camera covers.
+    # The cap is therefore >= 2, and the requested radius already passed the >= 1 check above.
     half_radius_map = radius_map * 0.5
 
     planes = np.zeros(canvas_shape + (n_images,), dtype=np.float32)
