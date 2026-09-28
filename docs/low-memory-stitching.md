@@ -12,6 +12,25 @@ The trailing constructor option `compact_workspace` defaults to false. When enab
 
 A null output canvas requests managed output. Full-canvas soft blending with matching pipeline/compute types can return a non-owning view of compact scratch. It is valid until the next process call or context destruction. Other cases allocate owned output. `CudaMat::owns_memory()` distinguishes the two: retain and reuse owned output to avoid per-frame allocation, and consume borrowed output on the producing stream before reuse. Existing callers can continue supplying owned output.
 
+`CudaMat` constructors accept a trailing `std::optional<cudaStream_t>`. Omitting it
+or passing `std::nullopt` preserves synchronous `cudaMalloc`/`cudaFree` behavior.
+Supplying a stream uses `cudaMallocAsync`/`cudaFreeAsync`; an explicitly supplied
+default stream (`cudaStream_t{}` or `nullptr`) also selects the async APIs.
+For example, `CudaMat<half4>(batch, width, height, 1, stream)` allocates on `stream`.
+Keep that stream alive until the matrix is destroyed, and order any access from
+other streams after allocation and before release. CPU-image constructors and
+`download()` wait for their host copies to finish. `upload()` without an override
+uses the matrix's stream; for an async matrix, keep the source image alive until
+the upload completes. Borrowed matrices never free their pointers.
+
+All three panorama paths pass their processing stream when allocating managed
+output (and when wrapping compact output for download). Destroy owned managed
+outputs before destroying that stream. Blend pyramids and pointer tables allocate
+on their processing stream. Blend contexts record completion events and order
+their async cleanup after the last call, so contexts can outlive caller streams.
+The low-level wrappers returning CPU images still wait for their output copies;
+the functions returning device output remain asynchronous.
+
 Low-level blend contexts expose `reuseInputs`. Their input images must be writable and refilled before each call. Two-/three-image contexts retain their established input-pointer lifetime contract; N-image contexts rebind inputs on each call. Context calls must be serialized. Outputs may alias the supported input scratch or use separate allocations.
 
 ## Validation

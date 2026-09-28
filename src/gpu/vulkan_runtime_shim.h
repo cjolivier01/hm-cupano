@@ -288,6 +288,26 @@ inline cudaError_t cudaFree(T* ptr) {
   return cudaFree(reinterpret_cast<void*>(ptr));
 }
 
+// CPU compatibility operations complete immediately; the stream is accepted for API parity.
+inline cudaError_t cudaMallocAsync(void** ptr, std::size_t size, cudaStream_t) {
+  return cudaMalloc(ptr, size);
+}
+
+template <typename T>
+inline cudaError_t cudaMallocAsync(T** ptr, std::size_t size, cudaStream_t stream) {
+  return cudaMallocAsync(reinterpret_cast<void**>(ptr), size, stream);
+}
+
+inline cudaError_t cudaFreeAsync(void* ptr, cudaStream_t) {
+  return cudaFree(ptr);
+}
+
+inline cudaError_t cudaStreamWaitEvent(cudaStream_t, cudaEvent_t event, unsigned int) {
+  return cudaEventSynchronize(event);
+}
+
+constexpr unsigned int cudaEventDisableTiming = 2;
+
 inline cudaError_t cudaMemset(void* dst, int value, std::size_t count) {
   if (!dst) {
     cuda_set_last_error(cudaErrorInvalidDevicePointer);

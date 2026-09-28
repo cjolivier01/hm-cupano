@@ -6,6 +6,7 @@ cc_library(
     name = "gpu_runtime",
     hdrs = [
         "gpu_runtime.h",
+        "cudaStreamFence.h",
         "gpu_gl_interop.h",
         "vulkan_runtime_shim.h",
     ],
@@ -18,6 +19,7 @@ filegroup(
     name = "gpu_public_headers",
     srcs = [
         "gpu_runtime.h",
+        "cudaStreamFence.h",
         "gpu_gl_interop.h",
         "vulkan_runtime_shim.h",
     ],

@@ -377,6 +377,9 @@ cudaError_t cudaBatchedLaplacianBlendOptimized3(
     CudaBatchLaplacianBlendContext3<T>& context,
     int channels,
     cudaStream_t stream) {
+  CUDA_CHECK(context.completion.initialize());
+  hm::gpu::CudaStreamFence::RecordOnExit record_completion(context.completion, stream);
+
   if (context.reuseInputs)
     return cudaErrorInvalidValue;
   // Initialize context if needed
@@ -414,17 +417,17 @@ cudaError_t cudaBatchedLaplacianBlendOptimized3(
       size_t sizeMask = static_cast<size_t>(w) * h * 3 * sizeof(T);
 
       // Allocate Laplacian and blend buffers
-      CUDA_CHECK(cudaMalloc((void**)&context.d_lap1[level], sizeImg));
-      CUDA_CHECK(cudaMalloc((void**)&context.d_lap2[level], sizeImg));
-      CUDA_CHECK(cudaMalloc((void**)&context.d_lap3[level], sizeImg));
-      CUDA_CHECK(cudaMalloc((void**)&context.d_blend[level], sizeImg));
+      CUDA_CHECK(cudaMallocAsync((void**)&context.d_lap1[level], sizeImg, stream));
+      CUDA_CHECK(cudaMallocAsync((void**)&context.d_lap2[level], sizeImg, stream));
+      CUDA_CHECK(cudaMallocAsync((void**)&context.d_lap3[level], sizeImg, stream));
+      CUDA_CHECK(cudaMallocAsync((void**)&context.d_blend[level], sizeImg, stream));
 
       if (level > 0) {
-        CUDA_CHECK(cudaMalloc((void**)&context.d_maskPyr[level], sizeMask));
-        CUDA_CHECK(cudaMalloc((void**)&context.d_gauss1[level], sizeImg));
-        CUDA_CHECK(cudaMalloc((void**)&context.d_gauss2[level], sizeImg));
-        CUDA_CHECK(cudaMalloc((void**)&context.d_gauss3[level], sizeImg));
-        CUDA_CHECK(cudaMalloc((void**)&context.d_reconstruct[level], sizeImg));
+        CUDA_CHECK(cudaMallocAsync((void**)&context.d_maskPyr[level], sizeMask, stream));
+        CUDA_CHECK(cudaMallocAsync((void**)&context.d_gauss1[level], sizeImg, stream));
+        CUDA_CHECK(cudaMallocAsync((void**)&context.d_gauss2[level], sizeImg, stream));
+        CUDA_CHECK(cudaMallocAsync((void**)&context.d_gauss3[level], sizeImg, stream));
+        CUDA_CHECK(cudaMallocAsync((void**)&context.d_reconstruct[level], sizeImg, stream));
       } else {
         // Level 0 uses input pointers
         context.d_maskPyr[0] = const_cast<T*>(d_mask);

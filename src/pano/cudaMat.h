@@ -2,6 +2,7 @@
 
 #include <cupano/gpu/gpu_runtime.h>
 #include <opencv2/opencv.hpp>
+#include <optional>
 #include <vector>
 
 #include "cupano/cuda/cudaTypes.h"
@@ -363,6 +364,10 @@ struct SurfaceInfo {
 template <typename T>
 class CudaMat {
  public:
+  // No stream (nullopt): synchronous allocation/free, preserving existing callers.
+  // Explicit stream, including cudaStream_t{}: stream-ordered allocation/free.
+  // Keep that stream alive until destruction and order all other-stream accesses
+  // before destruction. CPU-image constructors and download() remain blocking.
   using element_type = T;
   using base_element_type = BaseScalar_t<T>;
 
@@ -378,7 +383,7 @@ class CudaMat {
    * @param mat The input cv::Mat.
    * @param copy If true, the data is copied to device memory.
    */
-  CudaMat(const cv::Mat& mat, bool copy = true);
+  CudaMat(const cv::Mat& mat, bool copy = true, std::optional<cudaStream_t> stream = std::nullopt);
 
   /**
    * @brief Constructs a CudaMat from a batch of cv::Mat images.
@@ -388,7 +393,7 @@ class CudaMat {
    * @param mat_batch A vector of cv::Mat images.
    * @param copy If true, the data is copied to device memory.
    */
-  CudaMat(const std::vector<cv::Mat>& mat_batch, bool copy = true);
+  CudaMat(const std::vector<cv::Mat>& mat_batch, bool copy = true, std::optional<cudaStream_t> stream = std::nullopt);
 
   /**
    * @brief Constructs a CudaMat with explicit dimensions and pixel type.
@@ -402,13 +407,13 @@ class CudaMat {
    * @param C Number of channels.
    * @param type The CUDA pixel type.
    */
-  CudaMat(int B, int W, int H, int C, CudaPixelType type);
+  CudaMat(int B, int W, int H, int C, CudaPixelType type, std::optional<cudaStream_t> stream = std::nullopt);
 
-  CudaMat(int B, int W, int H, int C = 1);
+  CudaMat(int B, int W, int H, int C = 1, std::optional<cudaStream_t> stream = std::nullopt);
 
-  CudaMat(T* dataptr, int B, int W, int H, int C = 1);
+  CudaMat(T* dataptr, int B, int W, int H, int C = 1, std::optional<cudaStream_t> stream = std::nullopt);
 
-  CudaMat(const SurfaceInfo& surface_info, int B);
+  CudaMat(const SurfaceInfo& surface_info, int B, std::optional<cudaStream_t> stream = std::nullopt);
 
   /**
    * @brief Destructor.
@@ -436,7 +441,10 @@ class CudaMat {
    */
   cv::Mat download(int batch_item = 0) const;
 
-  cudaError_t upload(const cv::Mat& cpu_mat, int batch_item = 0, cudaStream_t stream = 0);
+  cudaError_t upload(const cv::Mat& cpu_mat, int batch_item = 0) {
+    return upload(cpu_mat, batch_item, stream_.value_or(cudaStream_t{}));
+  }
+  cudaError_t upload(const cv::Mat& cpu_mat, int batch_item, cudaStream_t stream);
 
   /// @brief Returns a pointer to the device memory.
   T* data();
@@ -502,6 +510,11 @@ class CudaMat {
   const BaseScalar_t<T>* data_raw() const;
 
  private:
+  cudaError_t allocate(size_t bytes) {
+    return stream_ ? cudaMallocAsync(&d_data_, bytes, *stream_) : cudaMalloc(&d_data_, bytes);
+  }
+
+  std::optional<cudaStream_t> stream_;
   T* d_data_{nullptr}; ///< Pointer to device memory.
   int rows_{0}, cols_{0}; ///< Image dimensions.
   int pitch_{0};

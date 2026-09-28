@@ -491,11 +491,12 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     if constexpr (std::is_same_v<T_pipeline, T_compute>) {
       if (!stitch_context_->is_hard_seam() && !stitch_context_->minimizes_blend && stitch_context_->compact_workspace) {
         auto& scratch = *stitch_context_->cudaFull0;
-        canvas = std::make_unique<CudaMat<T_pipeline>>(scratch.data(), batch_size(), canvas_width(), canvas_height());
+        canvas = std::make_unique<CudaMat<T_pipeline>>(
+            scratch.data(), batch_size(), canvas_width(), canvas_height(), 1, stream);
       }
     }
     if (!canvas)
-      canvas = std::make_unique<CudaMat<T_pipeline>>(batch_size(), canvas_width(), canvas_height());
+      canvas = std::make_unique<CudaMat<T_pipeline>>(batch_size(), canvas_width(), canvas_height(), 1, stream);
     if (!canvas->is_valid())
       return CudaStatus(cudaErrorMemoryAllocation, "Could not allocate panorama output");
   }

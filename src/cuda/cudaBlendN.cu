@@ -541,10 +541,10 @@ cudaError_t cudaBatchedLaplacianBlendN(
   size_t level0ImgBytes = size_t(widths[0]) * heights[0] * CHANNELS * batchSize * sizeof(T);
   size_t level0MaskBytes = size_t(widths[0]) * heights[0] * N_IMAGES * sizeof(T);
   for (int i = 0; i < N_IMAGES; ++i) {
-    CUDA_CHECK(cudaMalloc(&d_gauss[i][0], level0ImgBytes));
+    CUDA_CHECK(cudaMallocAsync(&d_gauss[i][0], level0ImgBytes, stream));
     CUDA_CHECK(cudaMemcpyAsync(d_gauss[i][0], h_imagePtrs[i], level0ImgBytes, cudaMemcpyHostToDevice, stream));
   }
-  CUDA_CHECK(cudaMalloc(&d_maskPyr[0], level0MaskBytes));
+  CUDA_CHECK(cudaMallocAsync(&d_maskPyr[0], level0MaskBytes, stream));
   CUDA_CHECK(cudaMemcpyAsync(d_maskPyr[0], h_mask, level0MaskBytes, cudaMemcpyHostToDevice, stream));
 
   // 5) Allocate higher levels
@@ -552,10 +552,14 @@ cudaError_t cudaBatchedLaplacianBlendN(
     size_t imgBytes = size_t(widths[lvl]) * heights[lvl] * CHANNELS * batchSize * sizeof(T);
     size_t maskBytes = size_t(widths[lvl]) * heights[lvl] * N_IMAGES * sizeof(T);
     for (int i = 0; i < N_IMAGES; ++i)
-      CUDA_CHECK(cudaMalloc(&d_gauss[i][lvl], imgBytes));
-    CUDA_CHECK(cudaMalloc(&d_maskPyr[lvl], maskBytes));
+      CUDA_CHECK(cudaMallocAsync(&d_gauss[i][lvl], imgBytes, stream));
+    CUDA_CHECK(cudaMallocAsync(&d_maskPyr[lvl], maskBytes, stream));
   }
 
+  std::vector<std::vector<const T*>> host_const_tables;
+  std::vector<std::vector<T*>> host_tables;
+  host_const_tables.reserve(5 * numLevels);
+  host_tables.reserve(numLevels);
   dim3 blk(16, 16);
   // 6) Build Gaussian pyramids
   for (int lvl = 0; lvl < numLevels - 1; ++lvl) {
@@ -563,15 +567,16 @@ cudaError_t cudaBatchedLaplacianBlendN(
     int outW = widths[lvl + 1], outH = heights[lvl + 1];
     dim3 gridImg((outW + 15) / 16, (outH + 15) / 16, batchSize);
     // prepare device-array-of-ptrs
-    std::vector<const T*> h_in(N_IMAGES), h_out(N_IMAGES);
+    auto& h_in = host_const_tables.emplace_back(N_IMAGES);
+    auto& h_out = host_const_tables.emplace_back(N_IMAGES);
     for (int i = 0; i < N_IMAGES; ++i) {
       h_in[i] = d_gauss[i][lvl];
       h_out[i] = d_gauss[i][lvl + 1];
     }
     const T** d_in;
     T** d_out;
-    CUDA_CHECK(cudaMalloc(&d_in, N_IMAGES * sizeof(T*)));
-    CUDA_CHECK(cudaMalloc(&d_out, N_IMAGES * sizeof(T*)));
+    CUDA_CHECK(cudaMallocAsync(&d_in, N_IMAGES * sizeof(T*), stream));
+    CUDA_CHECK(cudaMallocAsync(&d_out, N_IMAGES * sizeof(T*), stream));
     CUDA_CHECK(cudaMemcpyAsync(d_in, h_in.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
     CUDA_CHECK(cudaMemcpyAsync(d_out, h_out.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
 
@@ -579,8 +584,8 @@ cudaError_t cudaBatchedLaplacianBlendN(
         <<<gridImg, blk, 0, stream>>>(d_in, inW, inH, d_out, outW, outH, batchSize);
     CUDA_CHECK(cudaGetLastError());
 
-    cudaFree(d_in);
-    cudaFree(d_out);
+    cudaFreeAsync(d_in, stream);
+    cudaFreeAsync(d_out, stream);
 
     // mask downsample
     dim3 gridMask((outW + 15) / 16, (outH + 15) / 16);
@@ -593,9 +598,9 @@ cudaError_t cudaBatchedLaplacianBlendN(
   for (int lvl = 0; lvl < numLevels; ++lvl) {
     size_t imgBytes = size_t(widths[lvl]) * heights[lvl] * CHANNELS * batchSize * sizeof(T);
     for (int i = 0; i < N_IMAGES; ++i)
-      CUDA_CHECK(cudaMalloc(&d_lap[i][lvl], imgBytes));
-    CUDA_CHECK(cudaMalloc(&d_blend[lvl], imgBytes));
-    CUDA_CHECK(cudaMalloc(&d_reconstruct[lvl], imgBytes));
+      CUDA_CHECK(cudaMallocAsync(&d_lap[i][lvl], imgBytes, stream));
+    CUDA_CHECK(cudaMallocAsync(&d_blend[lvl], imgBytes, stream));
+    CUDA_CHECK(cudaMallocAsync(&d_reconstruct[lvl], imgBytes, stream));
   }
 
   // 8) Compute Laplacians
@@ -605,8 +610,9 @@ cudaError_t cudaBatchedLaplacianBlendN(
     dim3 gridLap((wH + 15) / 16, (hH + 15) / 16, batchSize);
 
     // prepare ptr arrays
-    std::vector<const T*> h_high(N_IMAGES), h_low(N_IMAGES);
-    std::vector<T*> h_lap(N_IMAGES);
+    auto& h_high = host_const_tables.emplace_back(N_IMAGES);
+    auto& h_low = host_const_tables.emplace_back(N_IMAGES);
+    auto& h_lap = host_tables.emplace_back(N_IMAGES);
     for (int i = 0; i < N_IMAGES; ++i) {
       h_high[i] = d_gauss[i][lvl];
       h_low[i] = d_gauss[i][lvl + 1];
@@ -615,9 +621,9 @@ cudaError_t cudaBatchedLaplacianBlendN(
     const T** d_high;
     const T** d_low;
     T** d_lapArr;
-    CUDA_CHECK(cudaMalloc(&d_high, N_IMAGES * sizeof(T*)));
-    CUDA_CHECK(cudaMalloc(&d_low, N_IMAGES * sizeof(T*)));
-    CUDA_CHECK(cudaMalloc(&d_lapArr, N_IMAGES * sizeof(T*)));
+    CUDA_CHECK(cudaMallocAsync(&d_high, N_IMAGES * sizeof(T*), stream));
+    CUDA_CHECK(cudaMallocAsync(&d_low, N_IMAGES * sizeof(T*), stream));
+    CUDA_CHECK(cudaMallocAsync(&d_lapArr, N_IMAGES * sizeof(T*), stream));
     CUDA_CHECK(cudaMemcpyAsync(d_high, h_high.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
     CUDA_CHECK(cudaMemcpyAsync(d_low, h_low.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
     CUDA_CHECK(cudaMemcpyAsync(d_lapArr, h_lap.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
@@ -626,9 +632,9 @@ cudaError_t cudaBatchedLaplacianBlendN(
         <<<gridLap, blk, 0, stream>>>(d_high, wH, hH, d_low, wL, hL, d_lapArr, batchSize);
     CUDA_CHECK(cudaGetLastError());
 
-    cudaFree(d_high);
-    cudaFree(d_low);
-    cudaFree(d_lapArr);
+    cudaFreeAsync(d_high, stream);
+    cudaFreeAsync(d_low, stream);
+    cudaFreeAsync(d_lapArr, stream);
   }
 
   // 9) Blend pyramids
@@ -636,17 +642,17 @@ cudaError_t cudaBatchedLaplacianBlendN(
     int w = widths[lvl], h = heights[lvl];
     dim3 gridBlend((w + 15) / 16, (h + 15) / 16, batchSize);
 
-    std::vector<const T*> h_lap(N_IMAGES);
+    auto& h_lap = host_const_tables.emplace_back(N_IMAGES);
     for (int i = 0; i < N_IMAGES; ++i)
       h_lap[i] = d_lap[i][lvl];
     const T** d_lapArr;
-    CUDA_CHECK(cudaMalloc(&d_lapArr, N_IMAGES * sizeof(T*)));
+    CUDA_CHECK(cudaMallocAsync(&d_lapArr, N_IMAGES * sizeof(T*), stream));
     CUDA_CHECK(cudaMemcpyAsync(d_lapArr, h_lap.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
 
     BatchedBlendKernelN<T, F_T, N_IMAGES, CHANNELS>
         <<<gridBlend, blk, 0, stream>>>(d_lapArr, d_maskPyr[lvl], d_blend[lvl], w, h, batchSize);
     CUDA_CHECK(cudaGetLastError());
-    cudaFree(d_lapArr);
+    cudaFreeAsync(d_lapArr, stream);
   }
 
   // 10) Reconstruct bottom-up into a device buffer at level 0.
@@ -675,13 +681,14 @@ cudaError_t cudaBatchedLaplacianBlendN(
   // 12) Free all device memory
   for (int lvl = 0; lvl < numLevels; ++lvl) {
     for (int i = 0; i < N_IMAGES; ++i) {
-      cudaFree(d_gauss[i][lvl]);
-      cudaFree(d_lap[i][lvl]);
+      cudaFreeAsync(d_gauss[i][lvl], stream);
+      cudaFreeAsync(d_lap[i][lvl], stream);
     }
-    cudaFree(d_maskPyr[lvl]);
-    cudaFree(d_blend[lvl]);
-    cudaFree(d_reconstruct[lvl]);
+    cudaFreeAsync(d_maskPyr[lvl], stream);
+    cudaFreeAsync(d_blend[lvl], stream);
+    cudaFreeAsync(d_reconstruct[lvl], stream);
   }
+  CUDA_CHECK(cudaStreamSynchronize(stream));
   return cudaGetLastError();
 }
 
@@ -696,6 +703,9 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
     CudaBatchLaplacianBlendContextN<T, N_IMAGES>& context,
     cudaStream_t stream,
     bool cacheMaskPyramid) {
+  CUDA_CHECK(context.completion.initialize());
+  hm::gpu::CudaStreamFence::RecordOnExit record_completion(context.completion, stream);
+
   // 1) Validate
   if ((int)d_imagePtrs.size() != N_IMAGES)
     return cudaErrorInvalidValue;
@@ -717,6 +727,14 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
   }
   if (context.reuseInputs)
     context.d_blend[0] = context.d_gauss[0][0];
+
+  // Allocate pointer tables on the first processing stream, alongside the pyramids.
+  if (!context.d_ptrsA)
+    CUDA_CHECK(cudaMallocAsync(reinterpret_cast<void**>(&context.d_ptrsA), N_IMAGES * sizeof(T*), stream));
+  if (!context.d_ptrsB)
+    CUDA_CHECK(cudaMallocAsync(reinterpret_cast<void**>(&context.d_ptrsB), N_IMAGES * sizeof(T*), stream));
+  if (!context.d_ptrsC)
+    CUDA_CHECK(cudaMallocAsync(reinterpret_cast<void**>(&context.d_ptrsC), N_IMAGES * sizeof(T*), stream));
 
   // 2) Initialization: allocate buffers if needed
   if (!context.initialized) {
@@ -750,19 +768,19 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
 
       if (!context.reuseInputs) {
         for (int i = 0; i < N_IMAGES; ++i) {
-          CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&context.d_lap[i][lvl]), sizeImg));
+          CUDA_CHECK(cudaMallocAsync(reinterpret_cast<void**>(&context.d_lap[i][lvl]), sizeImg, stream));
           context.allocation_size += sizeImg;
         }
-        CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&context.d_blend[lvl]), sizeImg));
+        CUDA_CHECK(cudaMallocAsync(reinterpret_cast<void**>(&context.d_blend[lvl]), sizeImg, stream));
         context.allocation_size += sizeImg;
       }
 
       if (lvl > 0) {
-        CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&context.d_maskPyr[lvl]), sizeMask));
+        CUDA_CHECK(cudaMallocAsync(reinterpret_cast<void**>(&context.d_maskPyr[lvl]), sizeMask, stream));
         context.allocation_size += sizeMask;
 
         for (int i = 0; i < N_IMAGES; ++i) {
-          CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&context.d_gauss[i][lvl]), sizeImg));
+          CUDA_CHECK(cudaMallocAsync(reinterpret_cast<void**>(&context.d_gauss[i][lvl]), sizeImg, stream));
           context.allocation_size += sizeImg;
         }
         if (context.reuseInputs) {
@@ -771,7 +789,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
           context.d_blend[lvl] = context.d_gauss[0][lvl];
           context.d_reconstruct[lvl] = context.d_blend[lvl];
         } else {
-          CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&context.d_reconstruct[lvl]), sizeImg));
+          CUDA_CHECK(cudaMallocAsync(reinterpret_cast<void**>(&context.d_reconstruct[lvl]), sizeImg, stream));
           context.allocation_size += sizeImg;
         }
       }

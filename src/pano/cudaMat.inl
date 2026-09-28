@@ -75,7 +75,8 @@ inline int cudaPixelTypeChannels(CudaPixelType fmt) {
  * @param copy If true, copies the data to device memory.
  */
 template <typename T>
-CudaMat<T>::CudaMat(const cv::Mat& mat, bool copy) : rows_(mat.rows), cols_(mat.cols), batch_size_(1) {
+CudaMat<T>::CudaMat(const cv::Mat& mat, bool copy, std::optional<cudaStream_t> stream)
+    : stream_(stream), rows_(mat.rows), cols_(mat.cols), batch_size_(1) {
   // Convert the cv::Mat type (an integer) to the corresponding CudaPixelType.
   type_ = cvMatToCudaPixelType(mat);
   // Get the expected element size (in bytes) for the specified CUDA pixel type.
@@ -85,12 +86,17 @@ CudaMat<T>::CudaMat(const cv::Mat& mat, bool copy) : rows_(mat.rows), cols_(mat.
   // Calculate the total amount of memory required.
   size_t total_size = mat.total() * expectedElemSize;
   // Allocate memory on the device (GPU).
-  cudaMalloc(&d_data_, total_size);
+  allocate(total_size);
   // Verify that the cv::Mat data is stored in continuous memory.
   assert(mat.isContinuous());
   // If requested, copy the image data from host to device.
   if (copy) {
-    cudaMemcpy(d_data_, mat.data, total_size, cudaMemcpyHostToDevice);
+    if (stream_) {
+      cudaMemcpyAsync(d_data_, mat.data, total_size, cudaMemcpyHostToDevice, *stream_);
+      cudaStreamSynchronize(*stream_); // The caller may release the host image on return.
+    } else {
+      cudaMemcpy(d_data_, mat.data, total_size, cudaMemcpyHostToDevice);
+    }
   }
 }
 
@@ -105,8 +111,8 @@ CudaMat<T>::CudaMat(const cv::Mat& mat, bool copy) : rows_(mat.rows), cols_(mat.
  * @param copy If true, copies data to device memory.
  */
 template <typename T>
-CudaMat<T>::CudaMat(const std::vector<cv::Mat>& mat_batch, bool copy)
-    : batch_size_(static_cast<int>(mat_batch.size())) {
+CudaMat<T>::CudaMat(const std::vector<cv::Mat>& mat_batch, bool copy, std::optional<cudaStream_t> stream)
+    : stream_(stream), batch_size_(static_cast<int>(mat_batch.size())) {
   // Ensure that there is at least one image in the batch.
   assert(batch_size_ > 0);
   // Use the first image to determine dimensions and pixel type.
@@ -124,7 +130,7 @@ CudaMat<T>::CudaMat(const std::vector<cv::Mat>& mat_batch, bool copy)
   // Calculate the total memory size required for all images.
   size_t total_size = size_each * batch_size_;
   // Allocate device memory for the entire batch.
-  cudaError_t cuerr = cudaMalloc(&d_data_, total_size);
+  cudaError_t cuerr = allocate(total_size);
   // If allocation succeeds and data copy is requested, copy each image.
   if (cuerr == cudaSuccess && copy) {
     uint8_t* p = reinterpret_cast<uint8_t*>(d_data_);
@@ -136,10 +142,15 @@ CudaMat<T>::CudaMat(const std::vector<cv::Mat>& mat_batch, bool copy)
       // Confirm that the image's element size matches the expected size.
       assert(mat.elemSize() == expectedElemSize);
       // Copy the image data from host to the appropriate location in device memory.
-      cudaMemcpy(p, mat.data, size_each, cudaMemcpyHostToDevice);
+      if (stream_)
+        cudaMemcpyAsync(p, mat.data, size_each, cudaMemcpyHostToDevice, *stream_);
+      else
+        cudaMemcpy(p, mat.data, size_each, cudaMemcpyHostToDevice);
       // Move the pointer to the next image location.
       p += size_each;
     }
+    if (stream_)
+      cudaStreamSynchronize(*stream_);
   }
 }
 
@@ -158,7 +169,8 @@ CudaMat<T>::CudaMat(const std::vector<cv::Mat>& mat_batch, bool copy)
  * @param type The CUDA pixel type.
  */
 template <typename T>
-CudaMat<T>::CudaMat(int B, int W, int H, int C, CudaPixelType type) : batch_size_(B), rows_(H), cols_(W), type_(type) {
+CudaMat<T>::CudaMat(int B, int W, int H, int C, CudaPixelType type, std::optional<cudaStream_t> stream)
+    : stream_(stream), rows_(H), cols_(W), type_(type), batch_size_(B) {
   // Determine the expected number of channels for the given CUDA pixel type.
   int expectedChannels = cudaPixelTypeChannels(type_);
   // Ensure the provided channel count is correct.
@@ -170,7 +182,7 @@ CudaMat<T>::CudaMat(int B, int W, int H, int C, CudaPixelType type) : batch_size
   // Compute the total memory size needed.
   const size_t total_size = static_cast<size_t>(B * W * H) * elemSize;
   // Allocate memory on the device.
-  cudaMalloc(&d_data_, total_size);
+  allocate(total_size);
 }
 
 /**
@@ -186,8 +198,9 @@ CudaMat<T>::CudaMat(int B, int W, int H, int C, CudaPixelType type) : batch_size
  * @param C Number of channels (used for validation).
  */
 template <typename T>
-CudaMat<T>::CudaMat(int B, int W, int H, int C)
-    : rows_(H),
+CudaMat<T>::CudaMat(int B, int W, int H, int C, std::optional<cudaStream_t> stream)
+    : stream_(stream),
+      rows_(H),
       cols_(W),
       type_(CudaTypeToPixelType<T>::value), // Inferred from T
       batch_size_(B) {
@@ -199,7 +212,7 @@ CudaMat<T>::CudaMat(int B, int W, int H, int C)
   assert(sizeof(T) == elemSize);
   // Allocate device memory based on the total number of pixels and element size.
   size_t total_size = static_cast<size_t>(B * W * H) * elemSize;
-  cudaMalloc(&d_data_, total_size);
+  allocate(total_size);
 }
 
 /**
@@ -216,8 +229,9 @@ CudaMat<T>::CudaMat(int B, int W, int H, int C)
  * @param C Number of channels (used for validation).
  */
 template <typename T>
-CudaMat<T>::CudaMat(T* d_data, int B, int W, int H, int C)
-    : d_data_(d_data),
+CudaMat<T>::CudaMat(T* d_data, int B, int W, int H, int C, std::optional<cudaStream_t> stream)
+    : stream_(stream),
+      d_data_(d_data),
       rows_(H),
       cols_(W),
       type_(CudaTypeToPixelType<T>::value), // Pixel type inferred from T
@@ -241,7 +255,8 @@ CudaMat<T>::CudaMat(T* d_data, int B, int W, int H, int C)
  * @param B Batch size.
  */
 template <typename T>
-CudaMat<T>::CudaMat(const SurfaceInfo& surface_info, int B) : type_(CudaTypeToPixelType<T>::value) {
+CudaMat<T>::CudaMat(const SurfaceInfo& surface_info, int B, std::optional<cudaStream_t> stream)
+    : stream_(stream), type_(CudaTypeToPixelType<T>::value) {
   // Validate that the surface information contains valid pointers and dimensions.
   assert(surface_info.data_ptr && surface_info.width && surface_info.height && B);
   // Check that if a pitch is provided, it is sufficient for the given width.
@@ -268,7 +283,10 @@ template <typename T>
 CudaMat<T>::~CudaMat() {
   // Free the device memory only if it was allocated by this instance.
   if (d_data_ && owns_) {
-    cudaFree(d_data_);
+    if (stream_)
+      cudaFreeAsync(d_data_, *stream_);
+    else
+      cudaFree(d_data_);
   }
 }
 
@@ -303,7 +321,12 @@ cv::Mat CudaMat<T>::download(int batch_item) const {
   // Calculate the starting address for the desired batch item.
   const uint8_t* src_ptr = reinterpret_cast<const uint8_t*>(d_data_) + batch_item * size_each;
   // Copy the data from device memory (GPU) to the host memory (CPU).
-  cudaMemcpy(mat.data, src_ptr, size_each, cudaMemcpyDeviceToHost);
+  if (stream_) {
+    cudaMemcpyAsync(mat.data, src_ptr, size_each, cudaMemcpyDeviceToHost, *stream_);
+    cudaStreamSynchronize(*stream_);
+  } else {
+    cudaMemcpy(mat.data, src_ptr, size_each, cudaMemcpyDeviceToHost);
+  }
   // If the pitch is greater than the number of columns, extract the valid region.
   if (pitch_cols != cols_) {
     mat = mat(cv::Rect(0, 0, cols_, rows_));
@@ -336,7 +359,7 @@ cudaError_t CudaMat<T>::upload(const cv::Mat& cpu_mat, int batch_item, cudaStrea
   assert(d_data_);
   uint8_t* src_ptr = reinterpret_cast<uint8_t*>(d_data_) + batch_item * size_each;
   // Copy the data from device memory (GPU) to the host memory (CPU).
-  if (!stream) {
+  if (!stream && !stream_) {
     return cudaMemcpy(src_ptr, cpu_mat.data, size_each, cudaMemcpyHostToDevice);
   } else {
     return cudaMemcpyAsync(src_ptr, cpu_mat.data, size_each, cudaMemcpyHostToDevice, stream);

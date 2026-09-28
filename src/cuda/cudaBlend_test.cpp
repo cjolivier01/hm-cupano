@@ -314,3 +314,65 @@ TEST(CudaBlendSmallTest, NCompactWorkspaceIsBitExactFloat) {
 TEST(CudaBlendSmallTest, NCompactWorkspaceIsBitExactHalf) {
   check_multi_compact_workspace<__half, 5, false>();
 }
+
+#if GPU_BACKEND_CUDA
+TEST(CudaBlendLifetime, ContextCleanupAfterCallerStreamDestruction) {
+  // The separate optimized kernel currently requires its fused pyramid to fit
+  // in one block: its existing block barrier cannot order cross-block reads.
+  constexpr int W = 16, H = 16;
+  const std::vector<float> input(W * H * 3, 7.0f);
+  const std::vector<float> mask(W * H * 3, 1.0f / 3.0f);
+  float *d_input, *d_mask, *d_output;
+  CUDA_CHECK(cudaMalloc(&d_input, input.size() * sizeof(float)));
+  CUDA_CHECK(cudaMalloc(&d_mask, mask.size() * sizeof(float)));
+  CUDA_CHECK(cudaMalloc(&d_output, input.size() * sizeof(float)));
+  CUDA_CHECK(cudaMemcpy(d_input, input.data(), input.size() * sizeof(float), cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy(d_mask, mask.data(), mask.size() * sizeof(float), cudaMemcpyHostToDevice));
+
+  for (int variant = 0; variant < 4; ++variant) {
+    std::vector<float> reference;
+    for (bool wait_before_destroy : {true, false}) {
+      cudaStream_t stream;
+      CUDA_CHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
+      {
+        CudaBatchLaplacianBlendContext<float> two(W, H, 3, 1);
+        CudaBatchLaplacianBlendContext3<float> three(W, H, 3, 1);
+        CudaBatchLaplacianBlendContextN<float, 3> many(W, H, 3, 1);
+        if (variant == 0) {
+          CUDA_CHECK(
+              (cudaBatchedLaplacianBlendWithContext<float, float>(d_input, d_input, d_mask, d_output, two, 3, stream)));
+        } else if (variant == 1) {
+          CUDA_CHECK((cudaBatchedLaplacianBlendWithContext3<float, float>(
+              d_input, d_input, d_input, d_mask, d_output, three, 3, stream)));
+        } else if (variant == 2) {
+          CUDA_CHECK((cudaBatchedLaplacianBlendWithContextN<float, float, 3, 3>(
+              {d_input, d_input, d_input}, d_mask, d_output, many, stream)));
+        } else {
+          CUDA_CHECK((cudaBatchedLaplacianBlendOptimized3<float, float>(
+              d_input, d_input, d_input, d_mask, d_output, three, 3, stream)));
+        }
+        // Destroying a stream does not wait for its kernels. The contexts must
+        // retain a dependency on that work without accessing the destroyed handle.
+        if (wait_before_destroy)
+          CUDA_CHECK(cudaStreamSynchronize(stream));
+        CUDA_CHECK(cudaStreamDestroy(stream));
+      }
+      CUDA_CHECK(cudaDeviceSynchronize());
+      std::vector<float> output(input.size());
+      CUDA_CHECK(cudaMemcpy(output.data(), d_output, output.size() * sizeof(float), cudaMemcpyDeviceToHost));
+      if (wait_before_destroy) {
+        reference = output;
+      } else {
+        EXPECT_EQ(output, reference) << "variant=" << variant;
+      }
+      if (variant < 3) {
+        for (float value : output)
+          ASSERT_NEAR(value, 7.0f, 1e-4f) << "variant=" << variant;
+      }
+    }
+  }
+  CUDA_CHECK(cudaFree(d_input));
+  CUDA_CHECK(cudaFree(d_mask));
+  CUDA_CHECK(cudaFree(d_output));
+}
+#endif
