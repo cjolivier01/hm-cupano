@@ -8,8 +8,8 @@ three-camera implementation keeps its own launch geometry.
 Reconstruction accumulates the alpha-valid interpolation weight once per pixel,
 then reconstructs the color channels and copies alpha afterward. This preserves
 the addition order and division, while shortening the live state across the
-existing device-side alpha diagnostic. Standard and compact workspaces retain
-the same allocation sizes, pixel formats, pyramid levels and ownership rules.
+existing device-side alpha diagnostic. The kernel changes retain the
+workspace allocation sizes, pixel formats and pyramid levels.
 
 On SM 12.0, reconstruction uses `__launch_bounds__(128, 12)` to give the compiler
 the register budget for twelve resident blocks (1536 threads). Other architectures
@@ -41,3 +41,21 @@ end-to-end reproduction and archive/low-memory qualification.
 batches, RGB/RGBA, float/half, and standard/compact workspaces across the three
 reference implementations. Poisoned outputs are checked against known pixels
 so a shared launch-grid mistake cannot pass by comparing two incorrect outputs.
+
+## Borrowing standard-workspace output
+
+The panorama `process` API also accepts an opt-in `borrow_workspace_output` flag.
+With a null canvas, matching pixel types and full-canvas soft blending, it returns
+a view of the existing blend output. Standard-workspace callers otherwise retain
+owned output by default; compact mode keeps its existing borrowing behavior.
+Explicit canvases, hard seams, minimized blending and mixed pixel types preserve
+owned/caller-supplied storage. See [low-memory stitching](low-memory-stitching.md)
+for stream ordering and lifetime requirements.
+
+In hstream's high-bit path this removes a 462.5 MiB FP16 panorama allocation, one
+clear and a 626.2 us device copy per frame. Fresh Program/FAKE comparisons against
+the kernel-only revision measured 95.24/94.71 FPS before and 103.02/102.35 FPS
+afterward, another 8.1% gain. Resident compute warps averaged 78.60% before and
+79.00% afterward; SM activity was 96.25% and 95.80%. These are separate runs from
+the kernel comparison above. Removing memory traffic improves throughput without
+needing larger batches or higher occupancy.

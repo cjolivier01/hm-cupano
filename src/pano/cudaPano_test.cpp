@@ -334,18 +334,24 @@ TEST(CudaPanoMinimizeBlendTest, NoOverlapFallsBackToFullCanvasBlend) {
 
 namespace {
 template <typename Pixel>
-void check_compact_borrowed_2() {
-  constexpr int w = 97, h = 35, n = 2;
-  constexpr int canvas_width = w + 24 * (n - 1);
+void check_compact_borrowed_2(
+    bool compact_workspace = true,
+    bool minimize_blend = false,
+    bool supplied_output = false) {
+  const int w = minimize_blend ? 513 : 97, h = 35, n = 2;
+  const int stride = minimize_blend ? 400 : 24;
+  const int canvas_width = w + stride * (n - 1);
   cv::Mat seam(h, canvas_width, CV_8U, cv::Scalar(0));
   for (int x = 0; x < canvas_width; ++x)
     seam.col(x).setTo(x < canvas_width / 2 ? 1 : 0);
-  auto masks = make_masks(w, h, 24, seam);
-  for (int levels : {1, 4}) {
-    hm::pano::cuda::CudaStitchPano<Pixel, Pixel> reference(1, levels, masks, true, false, 0, false);
-    hm::pano::cuda::CudaStitchPano<Pixel, Pixel> compact(1, levels, masks, true, false, 0, true);
+  auto masks = make_masks(w, h, stride, seam);
+  for (int levels : {0, 1, 4}) {
+    hm::pano::cuda::CudaStitchPano<Pixel, Pixel> reference(1, levels, masks, true, minimize_blend, 0, false);
+    hm::pano::cuda::CudaStitchPano<Pixel, Pixel> compact(1, levels, masks, true, minimize_blend, 0, compact_workspace);
     ASSERT_TRUE(reference.status().ok()) << reference.status().message();
     ASSERT_TRUE(compact.status().ok()) << compact.status().message();
+    if (minimize_blend && levels)
+      ASSERT_TRUE(compact.minimizes_blend()) << "fixture must exercise owned minimized output";
     for (int frame = 0; frame < 3; ++frame) {
       std::vector<std::unique_ptr<hm::CudaMat<Pixel>>> inputs;
       std::vector<const hm::CudaMat<Pixel>*> ptrs;
@@ -358,11 +364,18 @@ void check_compact_borrowed_2() {
       }
       auto expected = reference.process(*inputs[0], *inputs[1], 0, nullptr);
       ASSERT_TRUE(expected.ok()) << expected.status().message();
-      auto actual = compact.process(*inputs[0], *inputs[1], 0, nullptr);
+      auto canvas = supplied_output ? std::make_unique<hm::CudaMat<Pixel>>(1, canvas_width, h) : nullptr;
+      const auto* supplied_pointer = canvas ? canvas->data() : nullptr;
+      auto actual =
+          compact.process(*inputs[0], *inputs[1], 0, std::move(canvas), /*borrow_workspace_output=*/!compact_workspace);
       ASSERT_TRUE(actual.ok()) << actual.status().message();
       CUDA_CHECK(cudaDeviceSynchronize());
       auto owned = expected.ConsumeValueOrDie();
       auto borrowed = actual.ConsumeValueOrDie();
+      EXPECT_TRUE(owned->owns_memory());
+      EXPECT_EQ(borrowed->owns_memory(), supplied_output || levels == 0 || compact.minimizes_blend());
+      if (supplied_output)
+        EXPECT_EQ(borrowed->data(), supplied_pointer);
       EXPECT_EQ(borrowed->width(), canvas_width);
       EXPECT_EQ(borrowed->height(), h);
       cv::Mat a = owned->download(), b = borrowed->download();
@@ -459,6 +472,19 @@ TEST(CudaPanoCompactTest, BorrowedOutputMatchesOwnedFloat4) {
 }
 TEST(CudaPanoCompactTest, BorrowedOutputMatchesOwnedHalf4) {
   check_compact_borrowed_2<half4>();
+}
+
+TEST(CudaPanoOutputTest, StandardWorkspaceBorrowedOutputMatchesOwnedFloat4) {
+  check_compact_borrowed_2<float4>(false);
+}
+TEST(CudaPanoOutputTest, StandardWorkspaceBorrowedOutputMatchesOwnedHalf4) {
+  check_compact_borrowed_2<half4>(false);
+}
+TEST(CudaPanoOutputTest, BorrowRequestKeepsMinimizedOutputOwned) {
+  check_compact_borrowed_2<half4>(false, true);
+}
+TEST(CudaPanoOutputTest, BorrowRequestPreservesSuppliedCanvas) {
+  check_compact_borrowed_2<half4>(false, false, true);
 }
 
 TEST(CudaPanoCompactTest, InvalidContextDumpReturnsError) {

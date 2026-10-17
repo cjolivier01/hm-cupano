@@ -128,16 +128,18 @@ class CudaStitchPanoN {
   }
 
   // Inputs are pointers to N CudaMat<T_pipeline> with same batch.
-  // A null canvas requests managed output. With compact_workspace, equal pipeline/compute pixel types,
+  // A null canvas requests managed output. With compact_workspace or borrow_workspace_output, equal pixel types,
   // and full-canvas soft blending, this is a non-owning view of internal scratch. It remains valid only
   // until the next process call or stitcher destruction. Consume it on the same stream before reuse.
+  // Supplied canvases take precedence; other managed-output cases return owned storage.
   // Rgb10A2 inputs fuse unpacking into remapping and require half4 pipeline/compute types.
   // All inputs must remain alive until work on stream completes; calls sharing a stitcher are serialized.
   template <typename T_input = T_pipeline>
   CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> process(
       const std::vector<const CudaMat<T_input>*>& inputs,
       cudaStream_t stream,
-      std::unique_ptr<CudaMat<T_pipeline>>&& canvas);
+      std::unique_ptr<CudaMat<T_pipeline>>&& canvas,
+      bool borrow_workspace_output = false);
 
  private:
   // Internal helpers

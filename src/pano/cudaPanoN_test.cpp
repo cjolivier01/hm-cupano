@@ -369,18 +369,25 @@ TEST(CudaPanoNMinimizeBlendTest, MultiSeamIntersectionMatchesFullBlend) {
 
 namespace {
 template <typename Pixel>
-void check_compact_borrowed_4() {
-  constexpr int w = 97, h = 35, n = 4;
-  constexpr int canvas_width = w + 24 * (n - 1);
+void check_compact_borrowed_4(
+    bool compact_workspace = true,
+    bool minimize_blend = false,
+    bool supplied_output = false) {
+  const int w = minimize_blend ? 513 : 97, h = 35, n = 4;
+  const int stride = minimize_blend ? 400 : 24;
+  const int canvas_width = w + stride * (n - 1);
   cv::Mat seam(h, canvas_width, CV_8U, cv::Scalar(0));
   for (int x = 0; x < canvas_width; ++x)
     seam.col(x).setTo(std::min(n - 1, x * n / canvas_width));
-  auto masks = make_masks({{w, h}, {w, h}, {w, h}, {w, h}}, {{0, 0}, {24, 0}, {48, 0}, {72, 0}}, seam);
-  for (int levels : {1, 4}) {
-    hm::pano::cuda::CudaStitchPanoN<Pixel, Pixel> reference(1, levels, masks, false, true, 0, false);
-    hm::pano::cuda::CudaStitchPanoN<Pixel, Pixel> compact(1, levels, masks, false, true, 0, true);
+  auto masks =
+      make_masks({{w, h}, {w, h}, {w, h}, {w, h}}, {{0, 0}, {stride, 0}, {2 * stride, 0}, {3 * stride, 0}}, seam);
+  for (int levels : {0, 1, 4}) {
+    hm::pano::cuda::CudaStitchPanoN<Pixel, Pixel> reference(1, levels, masks, minimize_blend, true, 0, false);
+    hm::pano::cuda::CudaStitchPanoN<Pixel, Pixel> compact(1, levels, masks, minimize_blend, true, 0, compact_workspace);
     ASSERT_TRUE(reference.status().ok()) << reference.status().message();
     ASSERT_TRUE(compact.status().ok()) << compact.status().message();
+    if (minimize_blend && levels)
+      ASSERT_TRUE(compact.minimizes_blend()) << "fixture must exercise owned minimized output";
     for (int frame = 0; frame < 3; ++frame) {
       std::vector<std::unique_ptr<hm::CudaMat<Pixel>>> inputs;
       std::vector<const hm::CudaMat<Pixel>*> ptrs;
@@ -393,11 +400,17 @@ void check_compact_borrowed_4() {
       }
       auto expected = reference.process(ptrs, 0, nullptr);
       ASSERT_TRUE(expected.ok()) << expected.status().message();
-      auto actual = compact.process(ptrs, 0, nullptr);
+      auto canvas = supplied_output ? std::make_unique<hm::CudaMat<Pixel>>(1, canvas_width, h) : nullptr;
+      const auto* supplied_pointer = canvas ? canvas->data() : nullptr;
+      auto actual = compact.process(ptrs, 0, std::move(canvas), /*borrow_workspace_output=*/!compact_workspace);
       ASSERT_TRUE(actual.ok()) << actual.status().message();
       CUDA_CHECK(cudaDeviceSynchronize());
       auto owned = expected.ConsumeValueOrDie();
       auto borrowed = actual.ConsumeValueOrDie();
+      EXPECT_TRUE(owned->owns_memory());
+      EXPECT_EQ(borrowed->owns_memory(), supplied_output || levels == 0 || compact.minimizes_blend());
+      if (supplied_output)
+        EXPECT_EQ(borrowed->data(), supplied_pointer);
       EXPECT_EQ(borrowed->width(), canvas_width);
       EXPECT_EQ(borrowed->height(), h);
       cv::Mat a = owned->download(), b = borrowed->download();
@@ -479,6 +492,19 @@ TEST(CudaPanoNCompactTest, BorrowedOutputMatchesOwnedFloat4) {
 }
 TEST(CudaPanoNCompactTest, BorrowedOutputMatchesOwnedHalf4) {
   check_compact_borrowed_4<half4>();
+}
+
+TEST(CudaPanoNOutputTest, StandardWorkspaceBorrowedOutputMatchesOwnedFloat4) {
+  check_compact_borrowed_4<float4>(false);
+}
+TEST(CudaPanoNOutputTest, StandardWorkspaceBorrowedOutputMatchesOwnedHalf4) {
+  check_compact_borrowed_4<half4>(false);
+}
+TEST(CudaPanoNOutputTest, BorrowRequestKeepsMinimizedOutputOwned) {
+  check_compact_borrowed_4<half4>(false, true);
+}
+TEST(CudaPanoNOutputTest, BorrowRequestPreservesSuppliedCanvas) {
+  check_compact_borrowed_4<half4>(false, false, true);
 }
 // ControlMasksN derives the canvas from the remaps and positions, never from the seam mask, and
 // CanvasManagerN::convertMaskMat only pads. An oversized seam therefore reaches the blend kernel,
