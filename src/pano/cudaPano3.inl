@@ -481,7 +481,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
     const CudaMat<T_input>& inputImage2,
     cudaStream_t stream,
     std::unique_ptr<CudaMat<T_pipeline>>&& canvas,
-    bool fused) {
+    bool fused,
+    bool borrow_workspace_output) {
   static_assert(
       std::is_same_v<T_input, T_pipeline> ||
           (std::is_same_v<T_input, Rgb10A2> && std::is_same_v<T_pipeline, half4> && std::is_same_v<T_compute, half4>),
@@ -489,7 +490,8 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPano3<T_pipeline, T
   CUDA_RETURN_IF_ERROR(status_);
   if (!canvas) {
     if constexpr (std::is_same_v<T_pipeline, T_compute>) {
-      if (!stitch_context_->is_hard_seam() && !stitch_context_->minimizes_blend && stitch_context_->compact_workspace) {
+      if (!stitch_context_->is_hard_seam() && !stitch_context_->minimizes_blend &&
+          (stitch_context_->compact_workspace || borrow_workspace_output)) {
         auto& scratch = *stitch_context_->cudaFull0;
         canvas = std::make_unique<CudaMat<T_pipeline>>(
             scratch.data(), batch_size(), canvas_width(), canvas_height(), 1, stream);

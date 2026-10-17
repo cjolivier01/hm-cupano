@@ -512,7 +512,8 @@ template <typename T_input>
 CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T_compute>::process(
     const std::vector<const CudaMat<T_input>*>& inputs,
     cudaStream_t stream,
-    std::unique_ptr<CudaMat<T_pipeline>>&& canvas) {
+    std::unique_ptr<CudaMat<T_pipeline>>&& canvas,
+    bool borrow_workspace_output) {
   static_assert(
       std::is_same_v<T_input, T_pipeline> ||
           (std::is_same_v<T_input, Rgb10A2> && std::is_same_v<T_pipeline, half4> && std::is_same_v<T_compute, half4>),
@@ -520,7 +521,7 @@ CudaStatusOr<std::unique_ptr<CudaMat<T_pipeline>>> CudaStitchPanoN<T_pipeline, T
   CUDA_RETURN_IF_ERROR(status_);
   if (!canvas) {
     if constexpr (std::is_same_v<T_pipeline, T_compute>) {
-      if (compact_workspace_ && !stitch_context_->is_hard_seam() && !minimizes_blend()) {
+      if ((compact_workspace_ || borrow_workspace_output) && !stitch_context_->is_hard_seam() && !minimizes_blend()) {
         canvas = std::make_unique<CudaMat<T_pipeline>>(
             stitch_context_->cudaBlendOut->data(), batch_size(), canvas_width(), canvas_height(), 1, stream);
       }

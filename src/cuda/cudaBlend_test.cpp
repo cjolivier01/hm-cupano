@@ -314,6 +314,89 @@ TEST(CudaBlendSmallTest, NCompactWorkspaceIsBitExactHalf) {
   check_multi_compact_workspace<__half, 5, false>();
 }
 
+namespace {
+template <typename T>
+void check_partial_tiles() {
+  for (const auto size : {std::pair<int, int>{1, 1}, {31, 3}, {33, 5}, {65, 9}}) {
+    const int width = size.first, height = size.second, batch = 2;
+    for (int channels : {3, 4}) {
+      const size_t pixels = static_cast<size_t>(width) * height;
+      std::vector<T> input(pixels * channels * batch), output(input.size());
+      for (int b = 0; b < batch; ++b) {
+        for (size_t pixel = 0; pixel < pixels; ++pixel) {
+          for (int c = 0; c < channels; ++c)
+            input[(b * pixels + pixel) * channels + c] = T(c == 3 ? 255.0f : 7.0f + 8 * b + c);
+        }
+      }
+      std::vector<T> mask_two(pixels, T(1.0f)), mask_three(pixels * 3, T(0.0f));
+      for (size_t pixel = 0; pixel < pixels; ++pixel)
+        mask_three[pixel * 3] = T(1.0f);
+
+      cudaStream_t stream;
+      CUDA_CHECK(cudaStreamCreate(&stream));
+      T *images[3], *mask, *result;
+      const size_t bytes = input.size() * sizeof(T);
+      for (auto& image : images)
+        CUDA_CHECK(cudaMalloc(&image, bytes));
+      CUDA_CHECK(cudaMalloc(&mask, mask_three.size() * sizeof(T)));
+      CUDA_CHECK(cudaMalloc(&result, bytes));
+      for (int variant : {2, 3, 4}) {
+        for (bool compact : {false, true}) {
+          for (int levels : {1, 3}) {
+            SCOPED_TRACE(
+                ::testing::Message() << width << "x" << height << " channels=" << channels << " variant=" << variant
+                                     << " compact=" << compact << " levels=" << levels);
+            for (auto image : images)
+              CUDA_CHECK(cudaMemcpyAsync(image, input.data(), bytes, cudaMemcpyHostToDevice, stream));
+            const auto& weights = variant == 2 ? mask_two : mask_three;
+            CUDA_CHECK(
+                cudaMemcpyAsync(mask, weights.data(), weights.size() * sizeof(T), cudaMemcpyHostToDevice, stream));
+            // Unwritten edge pixels must fail even if both workspace modes use
+            // the same incorrect launch grid.
+            CUDA_CHECK(cudaMemsetAsync(result, 0xcd, bytes, stream));
+            if (variant == 2) {
+              CudaBatchLaplacianBlendContext<T> context(width, height, levels, batch, compact);
+              CUDA_CHECK((cudaBatchedLaplacianBlendWithContext<T, float>(
+                  images[0], images[1], mask, result, context, channels, stream)));
+            } else if (variant == 3) {
+              CudaBatchLaplacianBlendContext3<T> context(width, height, levels, batch, compact);
+              CUDA_CHECK((cudaBatchedLaplacianBlendWithContext3<T, float>(
+                  images[0], images[1], images[2], mask, result, context, channels, stream)));
+            } else {
+              CudaBatchLaplacianBlendContextN<T, 3> context(width, height, levels, batch, compact);
+              const std::vector<const T*> pointers{images[0], images[1], images[2]};
+              if (channels == 4) {
+                CUDA_CHECK(
+                    (cudaBatchedLaplacianBlendWithContextN<T, float, 3, 4>(pointers, mask, result, context, stream)));
+              } else {
+                CUDA_CHECK(
+                    (cudaBatchedLaplacianBlendWithContextN<T, float, 3, 3>(pointers, mask, result, context, stream)));
+              }
+            }
+            CUDA_CHECK(cudaMemcpyAsync(output.data(), result, bytes, cudaMemcpyDeviceToHost, stream));
+            CUDA_CHECK(cudaStreamSynchronize(stream));
+            EXPECT_EQ(std::memcmp(input.data(), output.data(), bytes), 0);
+          }
+        }
+      }
+      for (auto image : images)
+        CUDA_CHECK(cudaFree(image));
+      CUDA_CHECK(cudaFree(mask));
+      CUDA_CHECK(cudaFree(result));
+      CUDA_CHECK(cudaStreamDestroy(stream));
+    }
+  }
+}
+} // namespace
+
+TEST(CudaBlendSmallTest, PartialTilesPreserveEveryFloatPixel) {
+  check_partial_tiles<float>();
+}
+
+TEST(CudaBlendSmallTest, PartialTilesPreserveEveryHalfPixel) {
+  check_partial_tiles<__half>();
+}
+
 #if GPU_BACKEND_CUDA || GPU_BACKEND_HIP
 TEST(CudaBlendLifetime, ContextCleanupAfterCallerStreamDestruction) {
   constexpr int W = 65, H = 33;
