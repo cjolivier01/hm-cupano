@@ -311,7 +311,13 @@ __global__ void BatchedBlendKernelN(
 // 5) Reconstruction: upsample low + add Laplacian for N_IMAGES inputs
 // -----------------------------------------------------------------------------
 template <typename T, typename F_T, int N_IMAGES, int CHANNELS>
-__global__ void BatchedReconstructKernelN(
+__global__
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 1200
+// SM 12.0 has 1536 resident threads per SM. Keep the 128-thread
+// reconstruction blocks within the register budget for all 12 blocks.
+__launch_bounds__(128, 12)
+#endif
+void BatchedReconstructKernelN(
     const T* const* lowerRes,
     int lowW,
     int lowH,
@@ -371,21 +377,25 @@ __global__ void BatchedReconstructKernelN(
       keep11 = !(static_cast<F_T>(L11[3]) == F_T(0));
     }
 
-    for (int c = 0; c < CHANNELS; ++c) {
-      if (CHANNELS == 4 && c == 3) {
-        // Copy alpha directly
-        outPtr[3] = lap[3];
-        continue;
-      }
+    F_T weightSum = 0;
+    if (keep00)
+      weightSum += w00;
+    if (keep10)
+      weightSum += w10;
+    if (keep01)
+      weightSum += w01;
+    if (keep11)
+      weightSum += w11;
+
+    constexpr int color_channels = CHANNELS == 4 ? 3 : CHANNELS;
+    for (int c = 0; c < color_channels; ++c) {
 
       F_T sum = 0;
-      F_T weightSum = 0;
 
       auto try_add = [&](const T* px, bool keep, F_T w) {
         if (!keep)
           return;
         sum += static_cast<F_T>(px[c]) * w;
-        weightSum += w;
       };
 
       try_add(L00, keep00, w00);
@@ -396,6 +406,8 @@ __global__ void BatchedReconstructKernelN(
       F_T interp = (weightSum > F_T(0)) ? (sum / weightSum) : F_T(0);
       outPtr[c] = static_cast<T>(interp + static_cast<F_T>(lap[c]));
     }
+    if constexpr (CHANNELS == 4)
+      outPtr[3] = lap[3];
   }
 }
 
@@ -403,7 +415,13 @@ __global__ void BatchedReconstructKernelN(
 // 5b) Reconstruction for a *single* blended pyramid (no N_IMAGES loop)
 // -------------------------------------------------------------------------
 template <typename T, typename F_T, int CHANNELS>
-__global__ void BatchedReconstructKernel1(
+__global__
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 1200
+// SM 12.0 has 1536 resident threads per SM. Keep the 128-thread
+// reconstruction blocks within the register budget for all 12 blocks.
+__launch_bounds__(128, 12)
+#endif
+void BatchedReconstructKernel1(
     const T* lowerRes, // [batch×lowH×lowW×CHANNELS]
     int lowW,
     int lowH,
@@ -461,21 +479,25 @@ __global__ void BatchedReconstructKernel1(
     keep11 = !(static_cast<F_T>(L11[3]) == F_T(0));
   }
 
-  for (int c = 0; c < CHANNELS; ++c) {
-    if (CHANNELS == 4 && c == 3) {
-      // Copy alpha directly.
-      outPtr[3] = lap[3];
-      continue;
-    }
+  F_T weightSum = 0;
+  if (keep00)
+    weightSum += w00;
+  if (keep10)
+    weightSum += w10;
+  if (keep01)
+    weightSum += w01;
+  if (keep11)
+    weightSum += w11;
+
+  constexpr int color_channels = CHANNELS == 4 ? 3 : CHANNELS;
+  for (int c = 0; c < color_channels; ++c) {
 
     F_T sum = 0;
-    F_T weightSum = 0;
 
     auto try_add = [&](const T* px, bool keep, F_T w) {
       if (!keep)
         return;
       sum += static_cast<F_T>(px[c]) * w;
-      weightSum += w;
     };
 
     try_add(L00, keep00, w00);
@@ -486,6 +508,8 @@ __global__ void BatchedReconstructKernel1(
     F_T interp = (weightSum > F_T(0)) ? (sum / weightSum) : F_T(0);
     outPtr[c] = static_cast<T>(interp + static_cast<F_T>(lap[c]));
   }
+  if constexpr (CHANNELS == 4)
+    outPtr[3] = lap[3];
 }
 
 } // namespace
@@ -560,12 +584,12 @@ cudaError_t cudaBatchedLaplacianBlendN(
   std::vector<std::vector<T*>> host_tables;
   host_const_tables.reserve(5 * numLevels);
   host_tables.reserve(numLevels);
-  dim3 blk(16, 16);
+  dim3 block(32, 4);
   // 6) Build Gaussian pyramids
   for (int lvl = 0; lvl < numLevels - 1; ++lvl) {
     int inW = widths[lvl], inH = heights[lvl];
     int outW = widths[lvl + 1], outH = heights[lvl + 1];
-    dim3 gridImg((outW + 15) / 16, (outH + 15) / 16, batchSize);
+    dim3 gridImg((outW + block.x - 1) / block.x, (outH + block.y - 1) / block.y, batchSize);
     // prepare device-array-of-ptrs
     auto& h_in = host_const_tables.emplace_back(N_IMAGES);
     auto& h_out = host_const_tables.emplace_back(N_IMAGES);
@@ -581,16 +605,16 @@ cudaError_t cudaBatchedLaplacianBlendN(
     CUDA_CHECK(cudaMemcpyAsync(d_out, h_out.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
 
     FusedBatchedDownsampleKernelN<T, F_T, N_IMAGES, CHANNELS>
-        <<<gridImg, blk, 0, stream>>>(d_in, inW, inH, d_out, outW, outH, batchSize);
+        <<<gridImg, block, 0, stream>>>(d_in, inW, inH, d_out, outW, outH, batchSize);
     CUDA_CHECK(cudaGetLastError());
 
     cudaFreeAsync(d_in, stream);
     cudaFreeAsync(d_out, stream);
 
     // mask downsample
-    dim3 gridMask((outW + 15) / 16, (outH + 15) / 16);
+    dim3 gridMask((outW + block.x - 1) / block.x, (outH + block.y - 1) / block.y);
     FusedBatchedDownsampleMaskN<T, N_IMAGES>
-        <<<gridMask, blk, 0, stream>>>(d_maskPyr[lvl], inW, inH, d_maskPyr[lvl + 1], outW, outH);
+        <<<gridMask, block, 0, stream>>>(d_maskPyr[lvl], inW, inH, d_maskPyr[lvl + 1], outW, outH);
     CUDA_CHECK(cudaGetLastError());
   }
 
@@ -607,7 +631,7 @@ cudaError_t cudaBatchedLaplacianBlendN(
   for (int lvl = 0; lvl < numLevels - 1; ++lvl) {
     int wH = widths[lvl], hH = heights[lvl];
     int wL = widths[lvl + 1], hL = heights[lvl + 1];
-    dim3 gridLap((wH + 15) / 16, (hH + 15) / 16, batchSize);
+    dim3 gridLap((wH + block.x - 1) / block.x, (hH + block.y - 1) / block.y, batchSize);
 
     // prepare ptr arrays
     auto& h_high = host_const_tables.emplace_back(N_IMAGES);
@@ -629,7 +653,7 @@ cudaError_t cudaBatchedLaplacianBlendN(
     CUDA_CHECK(cudaMemcpyAsync(d_lapArr, h_lap.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
 
     BatchedComputeLaplacianKernelN<T, F_T, N_IMAGES, CHANNELS>
-        <<<gridLap, blk, 0, stream>>>(d_high, wH, hH, d_low, wL, hL, d_lapArr, batchSize);
+        <<<gridLap, block, 0, stream>>>(d_high, wH, hH, d_low, wL, hL, d_lapArr, batchSize);
     CUDA_CHECK(cudaGetLastError());
 
     cudaFreeAsync(d_high, stream);
@@ -640,7 +664,7 @@ cudaError_t cudaBatchedLaplacianBlendN(
   // 9) Blend pyramids
   for (int lvl = 0; lvl < numLevels; ++lvl) {
     int w = widths[lvl], h = heights[lvl];
-    dim3 gridBlend((w + 15) / 16, (h + 15) / 16, batchSize);
+    dim3 gridBlend((w + block.x - 1) / block.x, (h + block.y - 1) / block.y, batchSize);
 
     auto& h_lap = host_const_tables.emplace_back(N_IMAGES);
     for (int i = 0; i < N_IMAGES; ++i)
@@ -650,7 +674,7 @@ cudaError_t cudaBatchedLaplacianBlendN(
     CUDA_CHECK(cudaMemcpyAsync(d_lapArr, h_lap.data(), N_IMAGES * sizeof(T*), cudaMemcpyHostToDevice, stream));
 
     BatchedBlendKernelN<T, F_T, N_IMAGES, CHANNELS>
-        <<<gridBlend, blk, 0, stream>>>(d_lapArr, d_maskPyr[lvl], d_blend[lvl], w, h, batchSize);
+        <<<gridBlend, block, 0, stream>>>(d_lapArr, d_maskPyr[lvl], d_blend[lvl], w, h, batchSize);
     CUDA_CHECK(cudaGetLastError());
     cudaFreeAsync(d_lapArr, stream);
   }
@@ -664,13 +688,13 @@ cudaError_t cudaBatchedLaplacianBlendN(
   for (int lvl = last - 1; lvl >= 0; --lvl) {
     int wH = widths[lvl], hH = heights[lvl];
     int wL = widths[lvl + 1], hL = heights[lvl + 1];
-    dim3 gridRecon((wH + 15) / 16, (hH + 15) / 16, batchSize);
+    dim3 gridRecon((wH + block.x - 1) / block.x, (hH + block.y - 1) / block.y, batchSize);
 
     const T* low = d_reconstruct[lvl + 1];
     const T* lap = d_blend[lvl];
     T* out = d_reconstruct[lvl];
     BatchedReconstructKernel1<T, F_T, CHANNELS>
-        <<<gridRecon, blk, 0, stream>>>(low, wL, hL, lap, wH, hH, out, batchSize);
+        <<<gridRecon, block, 0, stream>>>(low, wL, hL, lap, wH, hH, out, batchSize);
     CUDA_CHECK(cudaGetLastError());
   }
 
@@ -797,7 +821,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
   }
 
   const int batchSize = context.batchSize;
-  dim3 block(16, 16);
+  dim3 block(32, 4);
 
   if (rebuildMaskPyramid) {
     for (int lvl = 0; lvl < context.numLevels - 1; ++lvl) {
@@ -805,7 +829,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
       const int inH = context.heights[lvl];
       const int outW = context.widths[lvl + 1];
       const int outH = context.heights[lvl + 1];
-      dim3 gridMask((outW + 15) / 16, (outH + 15) / 16);
+      dim3 gridMask((outW + block.x - 1) / block.x, (outH + block.y - 1) / block.y);
       FusedBatchedDownsampleMaskN<T, N_IMAGES>
           <<<gridMask, block, 0, stream>>>(context.d_maskPyr[lvl], inW, inH, context.d_maskPyr[lvl + 1], outW, outH);
       CUDA_CHECK(cudaGetLastError());
@@ -816,7 +840,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
   for (int lvl = 0; lvl < context.numLevels - 1; ++lvl) {
     int inW = context.widths[lvl], inH = context.heights[lvl];
     int outW = context.widths[lvl + 1], outH = context.heights[lvl + 1];
-    dim3 gridImg((outW + 15) / 16, (outH + 15) / 16, batchSize);
+    dim3 gridImg((outW + block.x - 1) / block.x, (outH + block.y - 1) / block.y, batchSize);
 
     for (int i = 0; i < N_IMAGES; ++i) {
       context.h_ptrsA[i] = context.d_gauss[i][lvl];
@@ -837,7 +861,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
   for (int lvl = 0; lvl < context.numLevels - 1; ++lvl) {
     int wH = context.widths[lvl], hH = context.heights[lvl];
     int wL = context.widths[lvl + 1], hL = context.heights[lvl + 1];
-    dim3 gridLap((wH + 15) / 16, (hH + 15) / 16, batchSize);
+    dim3 gridLap((wH + block.x - 1) / block.x, (hH + block.y - 1) / block.y, batchSize);
 
     for (int i = 0; i < N_IMAGES; ++i) {
       context.h_ptrsA[i] = context.d_gauss[i][lvl];
@@ -870,7 +894,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
   // 5) Blend pyramids
   for (int lvl = 0; lvl < context.numLevels; ++lvl) {
     int w = context.widths[lvl], h = context.heights[lvl];
-    dim3 gridBlend((w + 15) / 16, (h + 15) / 16, batchSize);
+    dim3 gridBlend((w + block.x - 1) / block.x, (h + block.y - 1) / block.y, batchSize);
 
     for (int i = 0; i < N_IMAGES; ++i) {
       context.h_ptrsA[i] = context.d_lap[i][lvl];
@@ -901,7 +925,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContextN(
   for (int lvl = last - 1; lvl >= 0; --lvl) {
     int wH = context.widths[lvl], hH = context.heights[lvl];
     int wL = context.widths[lvl + 1], hL = context.heights[lvl + 1];
-    dim3 gridRecon((wH + 15) / 16, (hH + 15) / 16, batchSize);
+    dim3 gridRecon((wH + block.x - 1) / block.x, (hH + block.y - 1) / block.y, batchSize);
 
     const T* low = d_reconstruct;
     const T* lap = context.d_blend[lvl];
@@ -969,8 +993,8 @@ cudaError_t cudaBatchedAlphaBlendN(
   if (imageWidth <= 0 || imageHeight <= 0 || batchSize <= 0)
     return cudaErrorInvalidValue;
 
-  dim3 block(16, 16);
-  dim3 grid((imageWidth + 15) / 16, (imageHeight + 15) / 16, batchSize);
+  dim3 block(32, 4);
+  dim3 grid((imageWidth + block.x - 1) / block.x, (imageHeight + block.y - 1) / block.y, batchSize);
   BatchedBlendKernelN<T, F_T, N_IMAGES, CHANNELS>
       <<<grid, block, 0, stream>>>(d_imagePtrs, d_mask, d_output, imageWidth, imageHeight, batchSize);
   CUDA_CHECK(cudaGetLastError());

@@ -607,7 +607,13 @@ __global__ void BatchedBlendKernel(
 // Batched reconstruction kernel for images.
 // Reconstruction is performed per channel via bilinear upsampling and addition of the blended Laplacian.
 template <typename T, typename F_T>
-__global__ void BatchedReconstructKernel(
+__global__
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 1200
+// SM 12.0 has 1536 resident threads per SM. Keep the 128-thread
+// reconstruction blocks within the register budget for all 12 blocks.
+__launch_bounds__(128, 12)
+#endif
+void BatchedReconstructKernel(
     const T* __restrict__ lowerRes,
     int lowWidth,
     int lowHeight,
@@ -690,30 +696,26 @@ __global__ void BatchedReconstructKernel(
     keep11 = !(static_cast<F_T>(lowImage[idx11 + 3]) == F_T(0));
   }
 
-  for (int c = 0; c < channels; ++c) {
-    if (channels == 4 && c == 3) {
-      // Copy alpha channel from Laplacian image
-      F_T alpha = static_cast<F_T>(lapImage[idxOut + c]);
+  F_T weightSum = 0;
+  if (keep00)
+    weightSum += w00;
+  if (keep10)
+    weightSum += w10;
+  if (keep01)
+    weightSum += w01;
+  if (keep11)
+    weightSum += w11;
 
-#ifdef PRINT_STRANGE_ALPHAS
-      if (alpha != F_T(0) && alpha != F_T(255)) {
-        printf("BatchedReconstructKernel(): Strange alpha %f\n", static_cast<float>(alpha));
-      }
-#endif
-
-      reconImage[idxOut + c] = static_cast<T>(alpha);
-      continue;
-    }
+  const int color_channels = channels == 4 ? 3 : channels;
+  for (int c = 0; c < color_channels; ++c) {
 
     // Alpha-aware bilinear interpolation
     F_T sum = 0;
-    F_T weightSum = 0;
 
     auto try_add = [&](int idx, bool keep, F_T w) {
       if (!keep)
         return;
       sum += static_cast<F_T>(lowImage[idx + c]) * w;
-      weightSum += w;
     };
 
     try_add(idx00, keep00, w00);
@@ -727,6 +729,18 @@ __global__ void BatchedReconstructKernel(
     // Add Laplacian detail
     F_T computedValue = upVal + static_cast<F_T>(lapImage[idxOut + c]);
     reconImage[idxOut + c] = static_cast<T>(computedValue);
+  }
+
+  // Alpha needs no interpolation. Handle it after the color loop so the
+  // diagnostic does not keep interpolation state live across its call.
+  if (channels == 4) {
+    const F_T alpha = static_cast<F_T>(lapImage[idxOut + 3]);
+    reconImage[idxOut + 3] = static_cast<T>(alpha);
+#ifdef PRINT_STRANGE_ALPHAS
+    if (alpha != F_T(0) && alpha != F_T(255)) {
+      printf("BatchedReconstructKernel(): Strange alpha %f\n", static_cast<float>(alpha));
+    }
+#endif
   }
 }
 
@@ -783,7 +797,7 @@ cudaError_t cudaBatchedLaplacianBlend(
     cudaMallocAsync((void**)&d_maskPyr[level], sizeMask, stream);
   }
 
-  dim3 block(16, 16, 1);
+  dim3 block(32, 4, 1);
 
   // 1. Build Gaussian pyramids.
   for (int level = 0; level < numLevels - 1; level++) {
@@ -960,7 +974,7 @@ cudaError_t cudaBatchedLaplacianBlendWithContext(
     }
   }
 
-  dim3 block(16, 16, 1);
+  dim3 block(32, 4, 1);
 
   // 0. Build the mask Gaussian pyramid once by default, or per call when caching is disabled.
   //
@@ -1224,8 +1238,8 @@ cudaError_t cudaBatchedAlphaBlend(
   if (imageWidth <= 0 || imageHeight <= 0 || batchSize <= 0 || channels < 1 || channels > 4)
     return cudaErrorInvalidValue;
 
-  dim3 block(16, 16);
-  dim3 grid((imageWidth + 15) / 16, (imageHeight + 15) / 16, batchSize);
+  dim3 block(32, 4);
+  dim3 grid((imageWidth + block.x - 1) / block.x, (imageHeight + block.y - 1) / block.y, batchSize);
   BatchedBlendKernel<T, F_T>
       <<<grid, block, 0, stream>>>(d_image1, d_image2, d_mask, d_output, imageWidth, imageHeight, batchSize, channels);
   CUDA_CHECK(cudaGetLastError());
