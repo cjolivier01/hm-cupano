@@ -1,5 +1,14 @@
 # Repository Guidelines
 
+## Worktrees
+- Start new work in a Git worktree that is a sibling of this checkout, never inside it: `git worktree add -b <task> ../hm-cupano-<task>`.
+- If this checkout is already a worktree, keep the work here rather than nesting another one. Check with `[ "$(git rev-parse --git-dir)" != "$(git rev-parse --git-common-dir)" ]`.
+- Leave the primary checkout (usually on `master`) unmodified; use it to fetch, compare revisions and review. An explicit instruction to work elsewhere wins.
+- There is no `.bazelignore` here, so a worktree anywhere under the repository root adds a second set of `BUILD.bazel` files to `//...` and breaks `bazelisk build //...`.
+- Bazel keys its output base on the workspace path, so each worktree builds cold and keeps its own `bazel-*` symlinks.
+- Place the worktree under `src/` next to the other checkouts, not in `/tmp`: a worktree whose parent repository directory disappears leaves a dead `gitdir:` pointer and an unusable tree.
+- Remove the worktree once its branch merges (`git worktree remove ../hm-cupano-<task>`), and run `git worktree prune` if the directory was deleted by hand, otherwise the stale entry keeps its branch locked.
+
 ## Project Structure & Modules
 - `src/`: C++/CUDA sources
   - `cuda/`: CUDA kernels and headers
